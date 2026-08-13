@@ -3,6 +3,7 @@ package linux
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,6 +12,12 @@ import (
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	"golang.org/x/sys/unix"
+)
+
+const (
+	maxPathProfileBytes  = 1 << 20
+	pathProfileReadChunk = 32 * 1024
 )
 
 var pathProfileNames = []string{
@@ -67,7 +74,17 @@ func (pathProbe) Paths(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, pathScanFailed(err)
 	}
-	profiles, err := readPathProfiles(ctx, home)
+	home, err = validatePathProbeHome(home)
+	if err != nil {
+		return nil, pathScanFailed(err)
+	}
+	homeFD, err := openPathProbeHome(home)
+	if err != nil {
+		return nil, pathScanFailed(err)
+	}
+	defer unix.Close(homeFD)
+
+	profiles, err := readPathProfiles(ctx, homeFD)
 	if err != nil {
 		return nil, pathScanFailed(err)
 	}
@@ -80,13 +97,38 @@ func (pathProbe) Paths(ctx context.Context) ([]string, error) {
 	}), nil
 }
 
-func readPathProfiles(ctx context.Context, home string) (map[string][]byte, error) {
+func validatePathProbeHome(home string) (string, error) {
+	if home == "" || !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return "", errors.New("invalid user home")
+	}
+	return home, nil
+}
+
+func openPathProbeHome(home string) (int, error) {
+	fd, err := unix.Open(home, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+
+	var info unix.Stat_t
+	if err := unix.Fstat(fd, &info); err != nil {
+		_ = unix.Close(fd)
+		return -1, err
+	}
+	if info.Mode&unix.S_IFMT != unix.S_IFDIR {
+		_ = unix.Close(fd)
+		return -1, errors.New("user home is not a directory")
+	}
+	return fd, nil
+}
+
+func readPathProfiles(ctx context.Context, homeFD int) (map[string][]byte, error) {
 	profiles := make(map[string][]byte, len(pathProfileNames))
 	for _, name := range pathProfileNames {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		contents, err := os.ReadFile(filepath.Join(home, name))
+		contents, err := readPathProfile(ctx, homeFD, name)
 		if err == nil {
 			profiles[name] = contents
 			continue
@@ -97,6 +139,61 @@ func readPathProfiles(ctx context.Context, home string) (map[string][]byte, erro
 		return nil, err
 	}
 	return profiles, nil
+}
+
+func readPathProfile(ctx context.Context, homeFD int, name string) ([]byte, error) {
+	fd, err := unix.Openat(homeFD, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), name)
+	if file == nil {
+		_ = unix.Close(fd)
+		return nil, errors.New("open profile file")
+	}
+	defer file.Close()
+
+	var info unix.Stat_t
+	if err := unix.Fstat(fd, &info); err != nil {
+		return nil, err
+	}
+	if info.Mode&unix.S_IFMT != unix.S_IFREG {
+		return nil, errors.New("profile is not a regular file")
+	}
+	if info.Size > maxPathProfileBytes {
+		return nil, errors.New("profile exceeds size limit")
+	}
+	return readBoundedPathProfile(ctx, file)
+}
+
+func readBoundedPathProfile(ctx context.Context, reader io.Reader) ([]byte, error) {
+	contents := make([]byte, 0, pathProfileReadChunk)
+	buffer := make([]byte, pathProfileReadChunk)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		count, err := reader.Read(buffer)
+		if count > 0 {
+			if count > maxPathProfileBytes-len(contents) {
+				return nil, errors.New("profile exceeds size limit")
+			}
+			contents = append(contents, buffer[:count]...)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err == io.EOF {
+			return contents, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			return nil, io.ErrNoProgress
+		}
+	}
 }
 
 func pathScanFailed(cause error) error {
