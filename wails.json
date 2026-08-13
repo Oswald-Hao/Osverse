@@ -2,8 +2,8 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Osverse",
   "outputfilename": "osverse",
-  "build:tags": "webkit2_40",
-  "frontend:install": "npm install",
+  "build:tags": "",
+  "frontend:install": "npm ci",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto"
