@@ -12,6 +12,11 @@ type SystemProbe interface {
 	Probe(context.Context) (domain.SystemInfo, error)
 }
 
+// PathProbe discovers absolute command-search directories without executing shell profiles.
+type PathProbe interface {
+	Paths(context.Context) ([]string, error)
+}
+
 // CommandRequest describes one direct process invocation.
 type CommandRequest struct {
 	Path        string
