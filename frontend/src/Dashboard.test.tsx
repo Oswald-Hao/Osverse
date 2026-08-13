@@ -1,0 +1,272 @@
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { EnvironmentSnapshot } from './domain'
+import type { EnvironmentScanState } from './hooks/useEnvironmentScan'
+import App from './App'
+
+const mockUseEnvironmentScan = vi.fn<() => EnvironmentScanState>()
+
+vi.mock('./hooks/useEnvironmentScan', () => ({
+  useEnvironmentScan: () => mockUseEnvironmentScan(),
+}))
+
+const refresh = vi.fn()
+
+const snapshot: EnvironmentSnapshot = {
+  scannedAt: '2026-08-13T08:05:06Z',
+  system: {
+    distribution: 'Ubuntu',
+    version: '24.04',
+    architecture: 'x86_64',
+    shell: '/bin/bash',
+    supported: true,
+    unsupportedReason: '',
+  },
+  components: [
+    {
+      id: 'claude-code',
+      name: 'Claude Code',
+      category: 'Core CLI',
+      status: 'installed',
+      installations: [
+        {
+          path: '/usr/bin/claude',
+          resolvedPath: '/opt/claude/bin/claude',
+          version: '1.2.3',
+          source: 'path',
+          managed: false,
+        },
+      ],
+      message: 'Installed',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
+      id: 'codex-cli',
+      name: 'Codex CLI',
+      category: 'Core CLI',
+      status: 'conflict',
+      installations: [
+        {
+          path: '/usr/bin/codex',
+          resolvedPath: '/opt/codex/bin/codex',
+          version: '2.0.0',
+          source: 'path',
+          managed: false,
+        },
+        {
+          path: '/home/test/.local/bin/codex',
+          resolvedPath: '/home/test/tools/codex',
+          version: '1.9.0',
+          source: 'path',
+          managed: false,
+        },
+      ],
+      message: 'Multiple installations detected',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
+      id: 'opencode-cli',
+      name: 'OpenCode CLI',
+      category: 'Core CLI',
+      status: 'missing',
+      installations: [],
+      message: 'Not detected',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
+      id: 'claude-desktop',
+      name: 'Claude Desktop',
+      category: 'Desktop Applications',
+      status: 'unsupported',
+      installations: [],
+      message: 'Unsupported on this system',
+      minimumOS: 'Ubuntu 22.04',
+    },
+    {
+      id: 'chatgpt-desktop',
+      name: 'ChatGPT Desktop',
+      category: 'Desktop Applications',
+      status: 'broken',
+      installations: [],
+      message: 'Installation evidence found without an executable',
+      minimumOS: 'Ubuntu 24.04',
+    },
+    {
+      id: 'opencode-desktop',
+      name: 'OpenCode Desktop',
+      category: 'Desktop Applications',
+      status: 'failed',
+      installations: [],
+      message: 'Scan failed',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
+      id: 'cc-switch',
+      name: 'CC Switch',
+      category: 'Management Tools',
+      status: 'update_available',
+      installations: [],
+      message: 'Update available',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
+      id: 'cockpit-tools',
+      name: 'Cockpit Tools',
+      category: 'Management Tools',
+      status: 'detecting',
+      installations: [],
+      message: 'Detecting',
+      minimumOS: 'Ubuntu 20.04',
+    },
+  ],
+  ready: 1,
+  total: 8,
+  needsAttention: 5,
+}
+
+function scanState(
+  overrides: Partial<EnvironmentScanState> = {},
+): EnvironmentScanState {
+  return {
+    snapshot,
+    phase: 'ready',
+    error: null,
+    refresh,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  refresh.mockReset()
+  mockUseEnvironmentScan.mockReset()
+  mockUseEnvironmentScan.mockReturnValue(scanState())
+})
+
+afterEach(cleanup)
+
+describe('environment status dashboard', () => {
+  it('renders system facts, deterministic scan time, and summary counts', () => {
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: '环境状态' })).toBeVisible()
+    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
+    expect(screen.getByText('x86_64')).toBeVisible()
+    expect(screen.getByText('/bin/bash')).toBeVisible()
+    expect(screen.getByText('支持')).toBeVisible()
+    expect(screen.getByText('2026年8月13日')).toBeVisible()
+    expect(screen.getByText('16:05:06')).toBeVisible()
+    expect(screen.getByRole('article', { name: '已就绪 1' })).toBeVisible()
+    expect(screen.getByRole('article', { name: '工具总数 8' })).toBeVisible()
+    expect(screen.getByRole('article', { name: '需要关注 5' })).toBeVisible()
+  })
+
+  it('separates the exact backend categories into labelled sections', () => {
+    render(<App />)
+
+    const cli = screen.getByRole('region', { name: '命令行工具' })
+    const desktop = screen.getByRole('region', { name: '桌面应用' })
+    const management = screen.getByRole('region', { name: '管理工具' })
+
+    expect(within(cli).getByText('Claude Code')).toBeVisible()
+    expect(within(cli).getByText('Codex CLI')).toBeVisible()
+    expect(within(cli).queryByText('Claude Desktop')).not.toBeInTheDocument()
+    expect(within(desktop).getByText('Claude Desktop')).toBeVisible()
+    expect(within(desktop).getByText('ChatGPT Desktop')).toBeVisible()
+    expect(within(management).getByText('CC Switch')).toBeVisible()
+    expect(within(management).getByText('Cockpit Tools')).toBeVisible()
+  })
+
+  it('uses distinct Chinese labels for every relevant status', () => {
+    render(<App />)
+
+    for (const label of [
+      '已安装',
+      '未安装',
+      '安装冲突',
+      '系统不支持',
+      '安装异常',
+      '检测失败',
+      '可更新',
+      '检测中',
+    ]) {
+      expect(screen.getByText(label)).toBeVisible()
+    }
+  })
+
+  it('shows every conflict path and its resolved target', () => {
+    render(<App />)
+
+    const conflictCard = screen
+      .getByRole('heading', { name: 'Codex CLI' })
+      .closest('article')
+    expect(conflictCard).not.toBeNull()
+    const card = within(conflictCard as HTMLElement)
+    expect(card.getByText('/usr/bin/codex')).toBeVisible()
+    expect(card.getByText('/opt/codex/bin/codex')).toBeVisible()
+    expect(card.getByText('/home/test/.local/bin/codex')).toBeVisible()
+    expect(card.getByText('/home/test/tools/codex')).toBeVisible()
+  })
+
+  it('refreshes through the hook and keeps mutation actions disabled', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新环境状态' }))
+    expect(refresh).toHaveBeenCalledTimes(1)
+
+    const actions = screen.getAllByRole('button', {
+      name: /安装|更新|配置/,
+    })
+    expect(actions.length).toBeGreaterThan(0)
+    for (const action of actions) {
+      expect(action).toBeDisabled()
+    }
+    expect(screen.getAllByText('将在下一阶段开放').length).toBeGreaterThan(0)
+  })
+
+  it('announces an initial scan without rendering a stale dashboard', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({ snapshot: null, phase: 'scanning' }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在扫描环境')
+    expect(screen.queryByRole('heading', { name: '命令行工具' })).not.toBeInTheDocument()
+  })
+
+  it('announces refresh progress while retaining the last snapshot', () => {
+    mockUseEnvironmentScan.mockReturnValue(scanState({ phase: 'scanning' }))
+
+    render(<App />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在刷新环境状态')
+    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Codex CLI' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '刷新环境状态' })).toBeDisabled()
+  })
+
+  it('announces errors and retains the last good snapshot', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({ phase: 'error', error: 'SCAN_FAILED: 刷新失败' }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('SCAN_FAILED: 刷新失败')
+    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Codex CLI' })).toBeVisible()
+  })
+
+  it('renders an accessible retry path after an initial error', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({ snapshot: null, phase: 'error', error: '环境扫描失败' }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('环境扫描失败')
+    fireEvent.click(screen.getByRole('button', { name: '重新扫描' }))
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+})
