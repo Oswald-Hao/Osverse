@@ -155,6 +155,23 @@ func TestDetectDesktopConflictingExecutablesAreStable(t *testing.T) {
 	}
 }
 
+func TestDetectDesktopBelowFloorMultipleExecutablesRemainInstalled(t *testing.T) {
+	spec := desktopSpecsByID(DesktopSpecs())["claude-desktop"]
+	firstDir := t.TempDir()
+	secondDir := t.TempDir()
+	writeExecutable(t, firstDir, spec.ExecutableName, 0o700)
+	writeExecutable(t, secondDir, spec.ExecutableName, 0o700)
+	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("20.04"), []string{secondDir, firstDir},
+		fakePackageQuery{versions: map[string]string{spec.PackageName: "1.2.3"}}, fstest.MapFS{}, "/home/tester")
+	if err != nil {
+		t.Fatalf("DetectDesktop() error = %v", err)
+	}
+	if component.Status != domain.StatusInstalled || len(component.Installations) != 2 ||
+		!strings.Contains(strings.ToLower(component.Message), "unsupported") {
+		t.Fatalf("component = %#v, want installed with two paths and unsupported warning", component)
+	}
+}
+
 func TestDetectDesktopRejectsUnsafeEvidence(t *testing.T) {
 	spec := desktopSpecsByID(DesktopSpecs())["cc-switch"]
 	directory := t.TempDir()
@@ -212,15 +229,16 @@ func TestDesktopComponentProbeDescriptorAndDelegation(t *testing.T) {
 
 func TestDpkgQueryFixedRequestAndInstalledResult(t *testing.T) {
 	runner := &desktopRecordingRunner{result: platform.CommandResult{
-		ExitCode: 0, Stdout: "install ok installed\t1.2.3-1ubuntu1\n",
+		ExitCode: 0, Stdout: "claude-desktop\tii \t2:1.2.3:vendor-1ubuntu1\n",
 	}}
 	version, installed, err := (DpkgQuery{Runner: runner}).InstalledVersion(context.Background(), "claude-desktop")
-	if err != nil || !installed || version != "1.2.3-1ubuntu1" {
+	if err != nil || !installed || version != "2:1.2.3:vendor-1ubuntu1" {
 		t.Fatalf("InstalledVersion() = (%q, %t, %v)", version, installed, err)
 	}
 	want := platform.CommandRequest{
-		Path: "/usr/bin/dpkg-query", Args: []string{"-W", "-f=${Status}\t${Version}", "claude-desktop"},
-		Timeout: 3 * time.Second, OutputLimit: 64 * 1024,
+		Path: "/usr/bin/dpkg-query",
+		Args: []string{"-W", "-f=${binary:Package}\t${db:Status-Abbrev}\t${Version}", "claude-desktop"},
+		Env:  []string{"LC_ALL=C"}, Timeout: 3 * time.Second, OutputLimit: 64 * 1024,
 	}
 	if !reflect.DeepEqual(runner.requests, []platform.CommandRequest{want}) {
 		t.Fatalf("requests = %#v, want fixed request %#v", runner.requests, []platform.CommandRequest{want})
@@ -229,7 +247,7 @@ func TestDpkgQueryFixedRequestAndInstalledResult(t *testing.T) {
 
 func TestDpkgQueryNotInstalledAndNonzeroFailures(t *testing.T) {
 	notInstalledRunner := &desktopRecordingRunner{
-		result: platform.CommandResult{ExitCode: 1, Stderr: "dpkg-query localized/private not-found detail"},
+		result: platform.CommandResult{ExitCode: 1, Stderr: "dpkg-query: no packages found matching missing-package\n"},
 		err:    domain.NewPublicError(domain.ErrCommandFailed, "command failed", errors.New("private")),
 	}
 	version, installed, err := (DpkgQuery{Runner: notInstalledRunner}).InstalledVersion(context.Background(), "missing-package")
@@ -237,15 +255,56 @@ func TestDpkgQueryNotInstalledAndNonzeroFailures(t *testing.T) {
 		t.Fatalf("not installed = (%q, %t, %v), want empty, false, nil", version, installed, err)
 	}
 
-	failure := errors.New("private runner failure")
-	_, _, err = (DpkgQuery{Runner: &desktopRecordingRunner{
-		result: platform.CommandResult{ExitCode: 2, Stderr: "secret output"}, err: failure,
-	}}).InstalledVersion(context.Background(), "claude-desktop")
-	if !errors.Is(err, failure) {
-		t.Fatalf("nonzero error = %v, want runner failure", err)
+	operationalFailures := []struct {
+		name   string
+		result platform.CommandResult
+		err    error
+	}{
+		{
+			name:   "database permission error on exit one",
+			result: platform.CommandResult{ExitCode: 1, Stderr: "dpkg-query: error: cannot read database: Permission denied\n", Truncated: true},
+			err:    domain.NewPublicError(domain.ErrCommandFailed, "command failed", errors.New("permission private")),
+		},
+		{
+			name:   "launch failure",
+			result: platform.CommandResult{ExitCode: -1},
+			err:    errors.New("private launch failure"),
+		},
 	}
-	if strings.Contains(err.Error(), "secret output") {
-		t.Fatalf("nonzero error leaks command output: %v", err)
+	for _, tt := range operationalFailures {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, gotErr := (DpkgQuery{Runner: &desktopRecordingRunner{result: tt.result, err: tt.err}}).
+				InstalledVersion(context.Background(), "claude-desktop")
+			if !errors.Is(gotErr, tt.err) {
+				t.Fatalf("error = %v, want operational runner error", gotErr)
+			}
+			if strings.Contains(gotErr.Error(), tt.result.Stderr) && tt.result.Stderr != "" {
+				t.Fatalf("error leaks command output: %v", gotErr)
+			}
+		})
+	}
+}
+
+func TestDpkgQueryValidNoninstalledStates(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  string
+		version string
+	}{
+		{name: "config files remain", status: "rc ", version: "1.2.3-1"},
+		{name: "not installed", status: "un ", version: ""},
+		{name: "half configured", status: "iF ", version: "2:1.0:vendor-3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout := "claude-desktop\t" + tt.status + "\t" + tt.version
+			version, installed, err := (DpkgQuery{Runner: &desktopRecordingRunner{
+				result: platform.CommandResult{ExitCode: 0, Stdout: stdout},
+			}}).InstalledVersion(context.Background(), "claude-desktop")
+			if err != nil || installed || version != tt.version {
+				t.Fatalf("InstalledVersion() = (%q, %t, %v), want (%q, false, nil)", version, installed, err, tt.version)
+			}
+		})
 	}
 }
 
@@ -254,11 +313,15 @@ func TestDpkgQueryRejectsInvalidResultsWithoutOutputLeak(t *testing.T) {
 		name   string
 		result platform.CommandResult
 	}{
-		{name: "malformed status", result: platform.CommandResult{ExitCode: 0, Stdout: "deinstall ok config-files\t1.2.3"}},
-		{name: "missing version", result: platform.CommandResult{ExitCode: 0, Stdout: "install ok installed\t"}},
-		{name: "invalid version", result: platform.CommandResult{ExitCode: 0, Stdout: "install ok installed\t1.2 private"}},
-		{name: "extra field", result: platform.CommandResult{ExitCode: 0, Stdout: "install ok installed\t1.2.3\textra"}},
-		{name: "multiline", result: platform.CommandResult{ExitCode: 0, Stdout: "install ok installed\t1.2.3\nsecret"}},
+		{name: "malformed status", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tzz \t1.2.3"}},
+		{name: "undocumented desired state", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\twh \t1.2.3"}},
+		{name: "wrong status case", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tiH \t1.2.3"}},
+		{name: "short status", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii\t1.2.3"}},
+		{name: "wrong package", result: platform.CommandResult{ExitCode: 0, Stdout: "other-package\tii \t1.2.3"}},
+		{name: "missing installed version", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t"}},
+		{name: "invalid version", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t1.2 private"}},
+		{name: "extra field", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t1.2.3\textra"}},
+		{name: "multiline", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t1.2.3\nsecret"}},
 		{name: "truncated", result: platform.CommandResult{ExitCode: 0, Stdout: "private-prefix", Truncated: true}},
 	}
 	for _, tt := range tests {
@@ -288,7 +351,7 @@ func TestDpkgQueryDoesNotMapTimedOutExitOneToNotInstalled(t *testing.T) {
 func TestDpkgQueryCancellationDoesNotRunOrParse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	runner := &desktopRecordingRunner{result: platform.CommandResult{ExitCode: 0, Stdout: "install ok installed\t1.2.3"}}
+	runner := &desktopRecordingRunner{result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t1.2.3"}}
 	_, _, err := (DpkgQuery{Runner: runner}).InstalledVersion(ctx, "claude-desktop")
 	if !errors.Is(err, context.Canceled) || len(runner.requests) != 0 {
 		t.Fatalf("canceled query error = %v, requests = %d; want context.Canceled and no execution", err, len(runner.requests))
@@ -369,7 +432,7 @@ func TestDetectDesktopFilesystemPresenceDoesNotReadDesktopContents(t *testing.T)
 		t.Fatal(err)
 	}
 	desktopPath := filepath.Join(desktopDir, spec.DesktopFileName)
-	if err := os.WriteFile(desktopPath, make([]byte, 2<<20), 0o000); err != nil {
+	if err := os.WriteFile(desktopPath, make([]byte, 2<<20), 0o400); err != nil {
 		t.Fatal(err)
 	}
 	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{directory},
@@ -404,4 +467,91 @@ func TestDetectDesktopRejectsSymlinkedApplicationDirectoryEscape(t *testing.T) {
 	if component.Status != domain.StatusMissing {
 		t.Fatalf("symlinked application directory escape produced %#v, want missing", component)
 	}
+}
+
+func TestFixedDesktopEvidencePinsOpenedRegularFile(t *testing.T) {
+	rootDir := t.TempDir()
+	directory := filepath.Join(rootDir, "usr", "share", "applications")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	desktopPath := filepath.Join(directory, "cc-switch.desktop")
+	if err := os.WriteFile(desktopPath, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := fixedDesktopEvidence(context.Background(), os.DirFS(rootDir), "/home/tester", "cc-switch.desktop")
+	if err != nil || len(evidence) != 1 {
+		t.Fatalf("fixedDesktopEvidence() = (%#v, %v), want one pinned file", evidence, err)
+	}
+	defer closeDesktopEvidence(evidence)
+	if err := os.Remove(desktopPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", desktopPath); err != nil {
+		t.Fatal(err)
+	}
+	if !desktopEvidenceUnchanged(evidence) {
+		t.Fatal("pinned desktop evidence became invalid after pathname replacement")
+	}
+}
+
+func TestDetectDesktopExecutableAliasSwapFailsEvidence(t *testing.T) {
+	spec := desktopSpecsByID(DesktopSpecs())["cc-switch"]
+	directory := t.TempDir()
+	executable := writeExecutable(t, directory, spec.ExecutableName, 0o700)
+	replacement := writeExecutable(t, t.TempDir(), spec.ExecutableName, 0o700)
+	root := &statActionFS{
+		FS: fstest.MapFS{
+			"usr/share/applications/" + spec.DesktopFileName: &fstest.MapFile{Data: []byte("ignored"), Mode: 0o644},
+		},
+		actionAt: 2,
+		action: func() {
+			if err := os.Remove(executable); err != nil {
+				t.Errorf("Remove executable: %v", err)
+				return
+			}
+			if err := os.Symlink(replacement, executable); err != nil {
+				t.Errorf("Symlink replacement: %v", err)
+			}
+		},
+	}
+	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{directory},
+		fakePackageQuery{}, root, "/home/tester")
+	if err != nil {
+		t.Fatalf("DetectDesktop() error = %v", err)
+	}
+	if component.Status != domain.StatusBroken || len(component.Installations) != 0 {
+		t.Fatalf("swapped executable produced %#v, want broken without stale evidence", component)
+	}
+}
+
+type statActionFS struct {
+	fs.FS
+	actionAt int
+	stats    int
+	action   func()
+}
+
+func (fsys *statActionFS) Open(name string) (fs.File, error) {
+	file, err := fsys.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if filepath.Base(name) != "cc-switch.desktop" {
+		return file, nil
+	}
+	return &statActionFile{File: file, owner: fsys}, nil
+}
+
+type statActionFile struct {
+	fs.File
+	owner *statActionFS
+}
+
+func (file *statActionFile) Stat() (fs.FileInfo, error) {
+	file.owner.stats++
+	if file.owner.stats == file.owner.actionAt {
+		file.owner.action()
+	}
+	return file.File.Stat()
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -24,7 +25,7 @@ const (
 )
 
 var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
-var debianVersion = regexp.MustCompile(`^(?:[0-9]+:)?[0-9][A-Za-z0-9.+~]*(?:-[A-Za-z0-9.+~]+)?$`)
+var debianVersion = regexp.MustCompile(`^(?:[0-9]+:)?[0-9][A-Za-z0-9.+:~-]*$`)
 
 // PackageQuery reports the installed version of one fixed package name.
 type PackageQuery interface {
@@ -105,10 +106,11 @@ func DetectDesktop(
 		return desktopComponent(spec, domain.StatusBroken, nil, ""), err
 	}
 
-	desktopPaths, err := fixedDesktopPaths(ctx, fsys, home, spec.DesktopFileName)
+	desktopEvidence, err := fixedDesktopEvidence(ctx, fsys, home, spec.DesktopFileName)
 	if err != nil {
 		return desktopComponent(spec, domain.StatusBroken, nil, ""), err
 	}
+	defer closeDesktopEvidence(desktopEvidence)
 	candidates, canceled := commandCandidates(ctx, []string{spec.ExecutableName}, paths)
 	defer closeCommandCandidates(candidates)
 	if canceled || ctx.Err() != nil {
@@ -116,7 +118,7 @@ func DetectDesktop(
 	}
 
 	allowed := desktopAllowed(system, spec.MinimumUbuntu)
-	hasInstallEvidence := packageInstalled || len(desktopPaths) > 0
+	hasInstallEvidence := packageInstalled || len(desktopEvidence) > 0
 	if !hasInstallEvidence {
 		if !allowed {
 			return desktopComponent(spec, domain.StatusUnsupported, nil, desktopUnsupported), nil
@@ -124,6 +126,9 @@ func DetectDesktop(
 		return desktopComponent(spec, domain.StatusMissing, nil, missingMessage), nil
 	}
 	if len(candidates) == 0 {
+		return desktopComponent(spec, domain.StatusBroken, nil, desktopBrokenMessage), nil
+	}
+	if !desktopEvidenceUnchanged(desktopEvidence) || !desktopCandidatesUnchanged(candidates) {
 		return desktopComponent(spec, domain.StatusBroken, nil, desktopBrokenMessage), nil
 	}
 
@@ -144,14 +149,13 @@ func DetectDesktop(
 	sort.Slice(installations, func(i, j int) bool {
 		return installations[i].Path < installations[j].Path
 	})
+	if !allowed {
+		return desktopComponent(spec, domain.StatusInstalled, installations, desktopInstalledWarning), nil
+	}
 	if len(installations) > 1 {
 		return desktopComponent(spec, domain.StatusConflict, installations, conflictMessage), nil
 	}
-	message := installedMessage
-	if !allowed {
-		message = desktopInstalledWarning
-	}
-	return desktopComponent(spec, domain.StatusInstalled, installations, message), nil
+	return desktopComponent(spec, domain.StatusInstalled, installations, installedMessage), nil
 }
 
 // DpkgQuery is the production package-query adapter.
@@ -169,15 +173,13 @@ func (query DpkgQuery) InstalledVersion(ctx context.Context, packageName string)
 	}
 	result, err := query.Runner.Run(ctx, platform.CommandRequest{
 		Path:        "/usr/bin/dpkg-query",
-		Args:        []string{"-W", "-f=${Status}\t${Version}", packageName},
+		Args:        []string{"-W", "-f=${binary:Package}\t${db:Status-Abbrev}\t${Version}", packageName},
+		Env:         []string{"LC_ALL=C"},
 		Timeout:     desktopQueryTimeout,
 		OutputLimit: desktopQueryOutputLimit,
 	})
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return "", false, ctxErr
-	}
-	if result.Truncated {
-		return "", false, invalidDesktopResult(errors.New("truncated package query output"))
 	}
 	if result.TimedOut {
 		if err != nil {
@@ -185,11 +187,14 @@ func (query DpkgQuery) InstalledVersion(ctx context.Context, packageName string)
 		}
 		return "", false, domain.NewPublicError(domain.ErrCommandTimeout, "package query timed out", nil)
 	}
-	if result.ExitCode == 1 && result.Stdout == "" {
+	if err != nil && exactDpkgNotFound(result, packageName) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
+	}
+	if result.Truncated {
+		return "", false, invalidDesktopResult(errors.New("truncated package query output"))
 	}
 	if result.TimedOut || result.ExitCode != 0 {
 		return "", false, domain.NewPublicError(domain.ErrCommandFailed, "package query failed", nil)
@@ -200,10 +205,11 @@ func (query DpkgQuery) InstalledVersion(ctx context.Context, packageName string)
 		return "", false, invalidDesktopResult(errors.New("malformed package query output"))
 	}
 	fields := strings.Split(line, "\t")
-	if len(fields) != 2 || fields[0] != "install ok installed" || !validDpkgVersion(fields[1]) {
+	if len(fields) != 3 || fields[0] != packageName || !validDpkgStatus(fields[1]) ||
+		(fields[2] != "" && !validDpkgVersion(fields[2])) || fields[1] == "ii " && fields[2] == "" {
 		return "", false, invalidDesktopResult(errors.New("malformed package query result"))
 	}
-	return fields[1], true, nil
+	return fields[2], fields[1] == "ii ", nil
 }
 
 // DesktopComponentProbe adapts desktop detection to the scan component API.
@@ -246,29 +252,37 @@ func validDesktopFileName(name string) bool {
 		!filepath.IsAbs(name) && strings.HasSuffix(name, ".desktop")
 }
 
-func fixedDesktopPaths(ctx context.Context, fsys fs.FS, home, name string) ([]string, error) {
+type desktopEvidence struct {
+	path string
+	file fs.File
+	info fs.FileInfo
+}
+
+func fixedDesktopEvidence(ctx context.Context, fsys fs.FS, home, name string) ([]desktopEvidence, error) {
 	directories := []string{"/usr/share/applications", "/usr/local/share/applications"}
 	if cleanHome, ok := safeDesktopHome(home); ok {
 		directories = append(directories, filepath.Join(cleanHome, ".local", "share", "applications"))
 	}
-	found := make([]string, 0, len(directories))
+	found := make([]desktopEvidence, 0, len(directories))
 	for _, directory := range directories {
 		if err := ctx.Err(); err != nil {
+			closeDesktopEvidence(found)
 			return nil, err
 		}
 		path, ok := containedDesktopPath(directory, name)
 		if !ok {
 			return nil, invalidDesktopResult(errors.New("desktop path escaped application directory"))
 		}
-		present, err := regularDirectoryEntry(fsys, filepath.ToSlash(strings.TrimPrefix(directory, "/")), name)
+		evidence, present, err := openDesktopEvidence(fsys, filepath.ToSlash(strings.TrimPrefix(directory, "/")), name, path)
 		if err != nil {
+			closeDesktopEvidence(found)
 			return nil, err
 		}
 		if present {
-			found = append(found, path)
+			found = append(found, evidence)
 		}
 	}
-	sort.Strings(found)
+	sort.Slice(found, func(i, j int) bool { return found[i].path < found[j].path })
 	return found, nil
 }
 
@@ -288,32 +302,108 @@ func containedDesktopPath(directory, name string) (string, bool) {
 	return path, filepath.Dir(path) == directory
 }
 
-func regularDirectoryEntry(fsys fs.FS, directory, name string) (bool, error) {
+func openDesktopEvidence(fsys fs.FS, directory, name, displayPath string) (desktopEvidence, bool, error) {
 	directoryOK, err := containedFSDirectory(fsys, directory)
 	if err != nil || !directoryOK {
-		return false, err
+		return desktopEvidence{}, false, err
 	}
 	entries, err := fs.ReadDir(fsys, directory)
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return desktopEvidence{}, false, nil
 	}
 	if err != nil {
-		return false, err
+		return desktopEvidence{}, false, err
 	}
 	for _, entry := range entries {
 		if entry.Name() != name {
 			continue
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {
-			return false, nil
+			return desktopEvidence{}, false, nil
 		}
-		info, err := entry.Info()
+		entryInfo, err := entry.Info()
 		if err != nil {
-			return false, err
+			return desktopEvidence{}, false, err
 		}
-		return info.Mode().IsRegular(), nil
+		if !entryInfo.Mode().IsRegular() {
+			return desktopEvidence{}, false, nil
+		}
+		file, err := fsys.Open(filepath.ToSlash(filepath.Join(directory, name)))
+		if errors.Is(err, fs.ErrNotExist) {
+			return desktopEvidence{}, false, nil
+		}
+		if err != nil {
+			return desktopEvidence{}, false, err
+		}
+		openedInfo, err := file.Stat()
+		if err != nil || !openedInfo.Mode().IsRegular() ||
+			(entryInfo.Sys() != nil && openedInfo.Sys() != nil && !os.SameFile(entryInfo, openedInfo)) {
+			_ = file.Close()
+			if err != nil {
+				return desktopEvidence{}, false, err
+			}
+			return desktopEvidence{}, false, nil
+		}
+		evidence := desktopEvidence{path: displayPath, file: file, info: openedInfo}
+		if osFile, ok := file.(*os.File); ok {
+			resolved, ok := resolvedOpenFile(osFile)
+			if !ok {
+				_ = file.Close()
+				return desktopEvidence{}, false, nil
+			}
+			root, err := fsys.Open(".")
+			if err != nil {
+				_ = file.Close()
+				return desktopEvidence{}, false, err
+			}
+			rootFile, rootOK := root.(*os.File)
+			rootResolved, rootResolvedOK := resolvedOpenFile(rootFile)
+			_ = root.Close()
+			expectedDirectory := filepath.Join(rootResolved, filepath.FromSlash(directory))
+			if !rootOK || !rootResolvedOK || filepath.Dir(resolved) != expectedDirectory {
+				_ = file.Close()
+				return desktopEvidence{}, false, nil
+			}
+		}
+		return evidence, true, nil
 	}
-	return false, nil
+	return desktopEvidence{}, false, nil
+}
+
+func resolvedOpenFile(file *os.File) (string, bool) {
+	if file == nil {
+		return "", false
+	}
+	resolved, err := os.Readlink(filepath.Join("/proc/self/fd", strconv.FormatUint(uint64(file.Fd()), 10)))
+	return filepath.Clean(resolved), err == nil && filepath.IsAbs(resolved)
+}
+
+func desktopEvidenceUnchanged(evidence []desktopEvidence) bool {
+	for _, item := range evidence {
+		info, err := item.file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			return false
+		}
+		if item.info.Sys() != nil && info.Sys() != nil && !os.SameFile(item.info, info) {
+			return false
+		}
+	}
+	return true
+}
+
+func closeDesktopEvidence(evidence []desktopEvidence) {
+	for _, item := range evidence {
+		_ = item.file.Close()
+	}
+}
+
+func desktopCandidatesUnchanged(candidates []commandCandidate) bool {
+	for _, candidate := range candidates {
+		if !directCandidateUnchanged(candidate) {
+			return false
+		}
+	}
+	return true
 }
 
 func containedFSDirectory(fsys fs.FS, directory string) (bool, error) {
@@ -386,7 +476,20 @@ func singleDpkgLine(output string) (string, bool) {
 }
 
 func validDpkgVersion(version string) bool {
-	return debianVersion.MatchString(version)
+	return debianVersion.MatchString(version) && !strings.HasSuffix(version, "-")
+}
+
+func validDpkgStatus(status string) bool {
+	if len(status) != 3 || !strings.ContainsRune("uihrp", rune(status[0])) ||
+		!strings.ContainsRune("ncUFhWti", rune(status[1])) {
+		return false
+	}
+	return status[2] == ' ' || status[2] == 'R'
+}
+
+func exactDpkgNotFound(result platform.CommandResult, packageName string) bool {
+	return result.ExitCode == 1 && result.Stdout == "" && !result.TimedOut && !result.Truncated &&
+		result.Stderr == "dpkg-query: no packages found matching "+packageName+"\n"
 }
 
 func desktopComponent(
