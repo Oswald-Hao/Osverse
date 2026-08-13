@@ -194,6 +194,98 @@ describe('environment status dashboard', () => {
     }
   })
 
+  it('labels installing distinctly', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({
+        snapshot: {
+          ...snapshot,
+          components: snapshot.components.map((component) =>
+            component.id === 'cockpit-tools'
+              ? { ...component, status: 'installing' }
+              : component,
+          ),
+        },
+      }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByText('安装中')).toBeVisible()
+  })
+
+  it('shows the reason when the current system is unsupported', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({
+        snapshot: {
+          ...snapshot,
+          system: {
+            ...snapshot.system,
+            supported: false,
+            unsupportedReason: '仅支持 Ubuntu 22.04 及以上版本',
+          },
+        },
+      }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByText('不支持')).toBeVisible()
+    expect(screen.getByText('仅支持 Ubuntu 22.04 及以上版本')).toBeVisible()
+  })
+
+  it('keeps every category visible when the scan has no components', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({
+        snapshot: {
+          ...snapshot,
+          components: [],
+          ready: 0,
+          total: 0,
+          needsAttention: 0,
+        },
+      }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByRole('region', { name: '命令行工具' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '桌面应用' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '管理工具' })).toBeVisible()
+    expect(screen.getAllByText('本分类暂无扫描项')).toHaveLength(3)
+  })
+
+  it('renders invalid scan timestamps as unknown without a dateTime value', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({ snapshot: { ...snapshot, scannedAt: 'not-a-date' } }),
+    )
+
+    render(<App />)
+
+    const unknownTime = screen.getByText('扫描时间未知')
+    expect(unknownTime).toBeVisible()
+    expect(unknownTime).not.toHaveAttribute('datetime')
+    expect(screen.queryByText('not-a-date')).not.toBeInTheDocument()
+  })
+
+  it('exposes static sidebar labels without navigation or decorative icons', () => {
+    render(<App />)
+
+    const overview = screen.getByRole('region', { name: '状态概览' })
+    for (const label of ['环境概览', '工具状态', '系统信息']) {
+      expect(
+        within(overview).getByRole('listitem', { name: label }),
+      ).toBeVisible()
+    }
+    expect(within(overview).queryByRole('navigation')).not.toBeInTheDocument()
+    expect(within(overview).queryByRole('img')).not.toBeInTheDocument()
+    for (const glyph of ['⌁', '⌘', '◈']) {
+      expect(within(overview).getByText(glyph)).toHaveAttribute(
+        'aria-hidden',
+        'true',
+      )
+    }
+  })
+
   it('shows every conflict path and its resolved target', () => {
     render(<App />)
 

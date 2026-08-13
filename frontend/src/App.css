@@ -9,6 +9,7 @@
   --surface: rgba(255, 255, 255, 0.92);
   --text: #1d2940;
   --muted: #67748a;
+  --muted-aa: #59677d;
   --success: #117a57;
   --warning: #a85d12;
   --danger: #a9433e;
@@ -35,8 +36,21 @@ code {
 }
 
 button:focus-visible {
-  outline: 3px solid rgba(46, 114, 229, 0.45);
+  outline: 3px solid #071d40;
   outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
 }
 
 .app-shell {
@@ -109,12 +123,6 @@ button:focus-visible {
   border-radius: 15px;
 }
 
-.sidebar__current {
-  color: white !important;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 3px 0 var(--accent-teal);
-}
-
 .sidebar__icon {
   display: grid;
   flex: 0 0 27px;
@@ -163,7 +171,7 @@ button:focus-visible {
 .dashboard-header p,
 .tool-section__header p {
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-aa);
 }
 
 .dashboard-header .eyebrow,
@@ -263,10 +271,18 @@ button:focus-visible {
 
 .system-card {
   display: grid;
-  grid-template-columns: minmax(280px, 1.1fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   align-items: center;
   gap: 28px;
   padding: 24px 26px;
+}
+
+.system-card > *,
+.system-facts > *,
+.summary-card > *,
+.tool-grid > li,
+.tool-card__topline > * {
+  min-width: 0;
 }
 
 .system-card__intro {
@@ -296,7 +312,7 @@ button:focus-visible {
   flex-wrap: wrap;
   gap: 5px;
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.82rem;
 }
 
@@ -315,7 +331,7 @@ button:focus-visible {
 
 .system-facts dt {
   margin-bottom: 4px;
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.72rem;
 }
 
@@ -362,7 +378,7 @@ button:focus-visible {
 }
 
 .summary-card span {
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.76rem;
 }
 
@@ -427,7 +443,7 @@ button:focus-visible {
 }
 
 .tool-card__id {
-  color: var(--muted);
+  color: var(--muted-aa);
   letter-spacing: 0.08em;
 }
 
@@ -454,7 +470,7 @@ button:focus-visible {
 .tool-card__message {
   min-height: 2.6em;
   margin: 15px 0;
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.83rem;
   line-height: 1.5;
 }
@@ -484,7 +500,7 @@ button:focus-visible {
 }
 
 .installations dt {
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.7rem;
 }
 
@@ -510,7 +526,7 @@ button:focus-visible {
 }
 
 .tool-card__footer > span {
-  color: var(--muted);
+  color: var(--muted-aa);
   font-size: 0.7rem;
 }
 
@@ -534,7 +550,7 @@ button:focus-visible {
 
 .tool-section__empty {
   padding: 20px;
-  color: var(--muted);
+  color: var(--muted-aa);
   text-align: center;
   background: rgba(255, 255, 255, 0.55);
   border: 1px dashed #bdcad9;
@@ -565,7 +581,7 @@ button:focus-visible {
   margin: 20px 0;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1060px) {
   .app-shell {
     grid-template-columns: 76px minmax(0, 1fr);
     gap: 20px;
@@ -583,10 +599,20 @@ button:focus-visible {
 
   .brand { padding-inline: 0; }
   .brand h1,
-  .sidebar__label,
+  .sidebar__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    white-space: nowrap;
+    border: 0;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+  }
   .sidebar__phase { display: none; }
   .sidebar li { justify-content: center; padding: 0; }
-  .sidebar__current { box-shadow: inset 0 -3px var(--accent-teal); }
   .dashboard-main { padding: 12px 0 40px; }
   .system-card { grid-template-columns: 1fr; }
 }
@@ -609,7 +635,7 @@ button:focus-visible {
 
   .brand { padding: 0; }
   .brand__mark { width: 34px; height: 34px; }
-  .sidebar nav { margin-left: auto; }
+  .sidebar__overview { margin-left: auto; }
   .sidebar ul { display: flex; gap: 5px; }
   .sidebar li { min-width: 38px; min-height: 38px; margin: 0; }
   .dashboard-header { align-items: flex-end; margin-top: 18px; }

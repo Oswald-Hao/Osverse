@@ -63,7 +63,11 @@ function EmptyState({
 function formatScanTime(scannedAt: string) {
   const instant = new Date(scannedAt)
   if (Number.isNaN(instant.getTime())) {
-    return { date: scannedAt, time: '' }
+    return {
+      date: '扫描时间未知',
+      time: '',
+      dateTime: undefined,
+    }
   }
 
   return {
@@ -80,6 +84,7 @@ function formatScanTime(scannedAt: string) {
       second: '2-digit',
       hourCycle: 'h23',
     }).format(instant),
+    dateTime: scannedAt,
   }
 }
 
@@ -153,8 +158,9 @@ function App() {
                 {snapshot.system.distribution} {snapshot.system.version}
               </h3>
               <p className="scan-time">
-                上次扫描：<time dateTime={snapshot.scannedAt}>{scanned.date}</time>
-                <span>{scanned.time}</span>
+                上次扫描：
+                <time dateTime={scanned.dateTime}>{scanned.date}</time>
+                {scanned.time && <span>{scanned.time}</span>}
               </p>
             </div>
           </div>
