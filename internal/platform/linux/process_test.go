@@ -120,12 +120,12 @@ func TestExecRunnerCallerCancellationKillsDescendantHoldingPipes(t *testing.T) {
 	}
 }
 
-func TestExecRunnerIndependentNonzeroExitWinsCancellationRace(t *testing.T) {
+func TestExecRunnerIndependentNonzeroExitWinsDeadlineRace(t *testing.T) {
 	dir := t.TempDir()
 	parentMarker := filepath.Join(dir, "parent.pid")
 	descendantMarker := filepath.Join(dir, "descendant.pid")
 	release := filepath.Join(dir, "release")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
 	defer cancel()
 	req := helperRequest("exit-after-release", parentMarker, descendantMarker, release)
 	req.Timeout = 30 * time.Second
@@ -160,7 +160,14 @@ func TestExecRunnerIndependentNonzeroExitWinsCancellationRace(t *testing.T) {
 		t.Fatalf("release helper process: %v", err)
 	}
 	waitForPIDFDReady(t, parentPIDFD)
-	cancel()
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("context error = %v, want deadline exceeded", ctx.Err())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("deadline-bearing context did not expire")
+	}
 
 	select {
 	case got := <-done:
