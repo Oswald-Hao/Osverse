@@ -25,7 +25,7 @@ const (
 	desktopInstalledWarning = "Installed, but unsupported on this system"
 )
 
-var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?$`)
+var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?$`)
 
 // PackageQuery reports the installed version of one fixed package name.
 type PackageQuery interface {

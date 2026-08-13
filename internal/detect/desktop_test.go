@@ -268,13 +268,24 @@ func TestDpkgQueryMultiarchPackageIdentity(t *testing.T) {
 	if len(runner.requests) != 1 || !reflect.DeepEqual(runner.requests[0].Args, wantArgs) {
 		t.Fatalf("request args = %#v, want %#v", runner.requests, wantArgs)
 	}
+	hyphenatedRunner := &desktopRecordingRunner{result: platform.CommandResult{
+		ExitCode: 0, Stdout: "libc6\tii \t2.35-0ubuntu3.14",
+	}}
+	if _, installed, err := (DpkgQuery{Runner: hyphenatedRunner}).
+		InstalledVersion(context.Background(), "libc6:linux-amd64"); err != nil || !installed {
+		t.Fatalf("hyphenated architecture = (installed %t, error %v), want installed", installed, err)
+	}
 
 	for _, invalid := range []string{
 		"libc6:amd64:evil", "libc6:", ":amd64", "libc6:amd64/evil",
-		"libc6:AMD64", "libc6:-amd64", "libc6:amd64-", "libc6:amd.64",
+		"libc6:AMD64", "libc6:-amd64", "libc6:amd64-", "libc6:amd--64", "libc6:amd.64",
 	} {
-		if _, _, err := (DpkgQuery{Runner: &desktopRecordingRunner{}}).InstalledVersion(context.Background(), invalid); !hasPublicCode(err, domain.ErrInvalidResult) {
+		invalidRunner := &desktopRecordingRunner{}
+		if _, _, err := (DpkgQuery{Runner: invalidRunner}).InstalledVersion(context.Background(), invalid); !hasPublicCode(err, domain.ErrInvalidResult) {
 			t.Fatalf("package %q error = %v, want INVALID_RESULT", invalid, err)
+		}
+		if len(invalidRunner.requests) != 0 {
+			t.Fatalf("package %q executed %d request(s), want zero", invalid, len(invalidRunner.requests))
 		}
 	}
 	for _, outputName := range []string{"libc", "libc60", "xlibc6", "libc6-extra", "libc6:amd64"} {
