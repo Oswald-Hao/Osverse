@@ -62,49 +62,32 @@ func TestExecRunnerPinnedExecutableIgnoresReplacedPath(t *testing.T) {
 	}
 }
 
-func TestExecRunnerPinnedScriptIgnoresReplacedPath(t *testing.T) {
+func TestExecRunnerDirectEnvShellScriptPreservesPathSiblingAndStdinEOF(t *testing.T) {
 	directory := t.TempDir()
 	commandPath := filepath.Join(directory, "command")
 	resourcePath := filepath.Join(directory, "version")
-	if err := os.WriteFile(resourcePath, []byte("pinned-script 1.2.3"), 0o600); err != nil {
+	if err := os.WriteFile(resourcePath, []byte("script 1.2.3"), 0o600); err != nil {
 		t.Fatalf("write sibling resource: %v", err)
 	}
-	contents := "#!/bin/sh\nresource=${0%/*}/version\nIFS= read -r version < \"$resource\"\nprintf '%s %s' \"$version\" \"$1\"\n"
+	contents := "#!/usr/bin/env sh\nresource=${0%/*}/version\nIFS= read -r version < \"$resource\"\nif IFS= read -r unexpected; then exit 9; fi\nprintf '%s %s %s' \"$0\" \"$version\" \"$1\"\n"
 	if err := os.WriteFile(commandPath, []byte(contents), 0o700); err != nil {
-		t.Fatalf("write pinned script: %v", err)
-	}
-	fd, err := unix.Open(commandPath, unix.O_PATH|unix.O_CLOEXEC, 0)
-	if err != nil {
-		t.Fatalf("pin script: %v", err)
-	}
-	pinned := os.NewFile(uintptr(fd), commandPath)
-	if pinned == nil {
-		_ = unix.Close(fd)
-		t.Fatal("construct pinned script file")
-	}
-	defer pinned.Close()
-
-	if err := os.Rename(commandPath, filepath.Join(directory, "original")); err != nil {
-		t.Fatalf("move pinned script: %v", err)
-	}
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
-		t.Fatalf("write replacement script: %v", err)
+		t.Fatalf("write script: %v", err)
 	}
 
 	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
-		Path:             commandPath,
-		PinnedExecutable: pinned,
-		Args:             []string{"--version"},
+		Path: commandPath,
+		Args: []string{"--version"},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v; result = %#v", err, result)
 	}
-	if result.Stdout != "pinned-script 1.2.3 --version" {
-		t.Fatalf("Stdout = %q, want pinned sibling resource and fixed argument", result.Stdout)
+	want := commandPath + " script 1.2.3 --version"
+	if result.Stdout != want {
+		t.Fatalf("Stdout = %q, want direct path, sibling resource, stdin EOF, and fixed argument %q", result.Stdout, want)
 	}
 }
 
-func TestExecRunnerPinnedNodeScriptResolvesSiblingAfterPathReplacement(t *testing.T) {
+func TestExecRunnerDirectNodeScriptPreservesOwnPathAndSibling(t *testing.T) {
 	const nodePath = "/usr/bin/node"
 	if _, err := os.Stat(nodePath); err != nil {
 		t.Skipf("Node interpreter unavailable at %s: %v", nodePath, err)
@@ -123,28 +106,9 @@ process.stdout.write(fs.readFileSync(path.join(__dirname, "version"), "utf8") + 
 	if err := os.WriteFile(commandPath, []byte(contents), 0o700); err != nil {
 		t.Fatalf("write pinned Node script: %v", err)
 	}
-	fd, err := unix.Open(commandPath, unix.O_PATH|unix.O_CLOEXEC, 0)
-	if err != nil {
-		t.Fatalf("pin Node script: %v", err)
-	}
-	pinned := os.NewFile(uintptr(fd), commandPath)
-	if pinned == nil {
-		_ = unix.Close(fd)
-		t.Fatal("construct pinned Node script file")
-	}
-	defer pinned.Close()
-
-	if err := os.Rename(commandPath, filepath.Join(directory, "original")); err != nil {
-		t.Fatalf("move pinned Node script: %v", err)
-	}
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
-		t.Fatalf("write replacement: %v", err)
-	}
-
 	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
-		Path:             commandPath,
-		PinnedExecutable: pinned,
-		Args:             []string{"--version"},
+		Path: commandPath,
+		Args: []string{"--version"},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v; result = %#v", err, result)

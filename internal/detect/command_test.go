@@ -78,10 +78,8 @@ func TestCommandDetectorInstalledUsesExplicitPathFixedArgsAndBounds(t *testing.T
 	if request.Timeout != 3*time.Second || request.OutputLimit != 64*1024 {
 		t.Errorf("request bounds = timeout %v, output %d; want 3s and 65536", request.Timeout, request.OutputLimit)
 	}
-	if request.PinnedExecutable == nil {
-		t.Error("request has no pinned executable")
-	} else if _, err := request.PinnedExecutable.Stat(); err == nil {
-		t.Error("pinned executable remains open after Detect returned")
+	if request.PinnedExecutable != nil {
+		t.Error("non-ELF request unexpectedly pins executable")
 	}
 }
 
@@ -280,6 +278,7 @@ func TestCommandDetectorExecutesPinnedObjectWhenAliasChanges(t *testing.T) {
 		delegate:    platformlinux.NewExecRunner(),
 		alias:       alias,
 		replacement: replacement,
+		wantPinned:  true,
 	}
 
 	component := (CommandDetector{Runner: runner}).Detect(context.Background(), spec, []string{directory})
@@ -290,6 +289,69 @@ func TestCommandDetectorExecutesPinnedObjectWhenAliasChanges(t *testing.T) {
 	if component.Installations[0].ResolvedPath != original {
 		t.Fatalf("ResolvedPath = %q, want pinned original %q", component.Installations[0].ResolvedPath, original)
 	}
+	if runner.recordedPinned == nil {
+		t.Fatal("ELF runner did not receive a pinned executable")
+	} else if _, err := runner.recordedPinned.Stat(); err == nil {
+		t.Error("pinned ELF executable remains open after Detect returned")
+	}
+}
+
+func TestCommandDetectorDirectEnvShellScriptPreservesPathSiblingAndStdinEOF(t *testing.T) {
+	directory := t.TempDir()
+	commandPath := filepath.Join(directory, "test-cli")
+	resourcePath := filepath.Join(directory, "version")
+	if err := os.WriteFile(resourcePath, []byte("1.2.3"), 0o600); err != nil {
+		t.Fatalf("write sibling resource: %v", err)
+	}
+	contents := "#!/usr/bin/env sh\nresource=${0%/*}/version\nIFS= read -r version < \"$resource\"\nif IFS= read -r unexpected; then exit 9; fi\nprintf 'test-cli %s path=%s stdin=eof' \"$version\" \"$0\"\n"
+	if err := os.WriteFile(commandPath, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write executable script: %v", err)
+	}
+	spec := testCommandSpec
+	spec.VersionPattern = regexp.MustCompile(`^test-cli ([0-9]+\.[0-9]+\.[0-9]+) path=` + regexp.QuoteMeta(commandPath) + ` stdin=eof$`)
+	runner := &recordingCommandRunner{delegate: platformlinux.NewExecRunner()}
+
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), spec, []string{directory})
+
+	if component.Status != domain.StatusInstalled || component.Installations[0].Version != "1.2.3" {
+		t.Fatalf("component = %#v, want direct generic script semantics", component)
+	}
+	if len(runner.requests) != 1 || runner.requests[0].PinnedExecutable != nil {
+		t.Fatalf("request = %#v, want direct-path script execution without pinned field", runner.requests)
+	}
+}
+
+func TestCommandDetectorScriptReplacementBeforeExecutionIsBroken(t *testing.T) {
+	directory := t.TempDir()
+	commandPath := writeVersionScript(t, directory, "test-cli", "1.2.3", "")
+	replacement := writeVersionScript(t, directory, "replacement", "9.9.9", "")
+	runner := &swappingCommandRunner{
+		delegate:    platformlinux.NewExecRunner(),
+		alias:       commandPath,
+		replacement: replacement,
+		wantPinned:  false,
+	}
+
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), testCommandSpec, []string{directory})
+
+	assertBrokenWithoutStaleInstallation(t, component)
+}
+
+func TestCommandDetectorScriptReplacementDuringExecutionIsBroken(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "started")
+	commandPath := writeVersionScript(t, directory, "test-cli", "1.2.3", marker)
+	replacement := writeVersionScript(t, directory, "replacement", "9.9.9", "")
+	runner := &duringExecutionSwappingRunner{
+		delegate:    platformlinux.NewExecRunner(),
+		alias:       commandPath,
+		replacement: replacement,
+		marker:      marker,
+	}
+
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), testCommandSpec, []string{directory})
+
+	assertBrokenWithoutStaleInstallation(t, component)
 }
 
 func TestCommandDetectorMidEnumerationCancellationDoesNotRunOrReturnMissing(t *testing.T) {
@@ -470,15 +532,21 @@ type fakeCommandRunner struct {
 }
 
 type swappingCommandRunner struct {
-	delegate    platform.CommandRunner
-	alias       string
-	replacement string
+	delegate       platform.CommandRunner
+	alias          string
+	replacement    string
+	wantPinned     bool
+	recordedPinned *os.File
 }
 
 func (runner *swappingCommandRunner) Run(
 	ctx context.Context,
 	request platform.CommandRequest,
 ) (platform.CommandResult, error) {
+	runner.recordedPinned = request.PinnedExecutable
+	if (request.PinnedExecutable != nil) != runner.wantPinned {
+		return platform.CommandResult{ExitCode: -1}, errors.New("unexpected pinned executable mode")
+	}
 	if err := os.Remove(runner.alias); err != nil {
 		return platform.CommandResult{ExitCode: -1}, err
 	}
@@ -486,6 +554,62 @@ func (runner *swappingCommandRunner) Run(
 		return platform.CommandResult{ExitCode: -1}, err
 	}
 	return runner.delegate.Run(ctx, request)
+}
+
+type recordingCommandRunner struct {
+	delegate platform.CommandRunner
+	requests []platform.CommandRequest
+}
+
+func (runner *recordingCommandRunner) Run(
+	ctx context.Context,
+	request platform.CommandRequest,
+) (platform.CommandResult, error) {
+	runner.requests = append(runner.requests, request)
+	return runner.delegate.Run(ctx, request)
+}
+
+type duringExecutionSwappingRunner struct {
+	delegate    platform.CommandRunner
+	alias       string
+	replacement string
+	marker      string
+}
+
+func (runner *duringExecutionSwappingRunner) Run(
+	ctx context.Context,
+	request platform.CommandRequest,
+) (platform.CommandResult, error) {
+	if request.PinnedExecutable != nil {
+		return platform.CommandResult{ExitCode: -1}, errors.New("script unexpectedly pinned")
+	}
+	mutationErr := make(chan error, 1)
+	go func() {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if _, err := os.Stat(runner.marker); err == nil {
+				break
+			} else if !errors.Is(err, os.ErrNotExist) {
+				mutationErr <- err
+				return
+			}
+			if time.Now().After(deadline) {
+				mutationErr <- errors.New("timed out waiting for script marker")
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if err := os.Remove(runner.alias); err != nil {
+			mutationErr <- err
+			return
+		}
+		mutationErr <- os.Symlink(runner.replacement, runner.alias)
+	}()
+	result, err := runner.delegate.Run(ctx, request)
+	if mutationErr := <-mutationErr; mutationErr != nil {
+		return platform.CommandResult{ExitCode: -1}, mutationErr
+	}
+	return result, err
 }
 
 type steppedCancelContext struct {
@@ -539,6 +663,20 @@ func writeExecutable(t *testing.T, directory, name string, mode os.FileMode) str
 	return path
 }
 
+func writeVersionScript(t *testing.T, directory, name, version, marker string) string {
+	t.Helper()
+	markerCommand := ""
+	if marker != "" {
+		markerCommand = "printf started > " + marker + "\nsleep 0.1\n"
+	}
+	path := filepath.Join(directory, name)
+	contents := "#!/bin/sh\n" + markerCommand + "printf 'test-cli " + version + "'\n"
+	if err := os.WriteFile(path, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write version script %q: %v", path, err)
+	}
+	return path
+}
+
 func makeSymlink(t *testing.T, target, alias string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(alias), 0o755); err != nil {
@@ -561,6 +699,20 @@ func assertComponentIdentity(t *testing.T, component domain.Component) {
 		component.MinimumOS != testCommandSpec.MinimumOS {
 		t.Fatalf("component identity = %#v, want ID %q, name %q, minimum OS %q",
 			component, testCommandSpec.ID, testCommandSpec.Name, testCommandSpec.MinimumOS)
+	}
+}
+
+func assertBrokenWithoutStaleInstallation(t *testing.T, component domain.Component) {
+	t.Helper()
+	if component.Status != domain.StatusBroken {
+		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusBroken)
+	}
+	if len(component.Installations) != 1 {
+		t.Fatalf("Installations = %#v, want one broken candidate", component.Installations)
+	}
+	installation := component.Installations[0]
+	if installation.Version != "" || installation.ResolvedPath != "" || installation.Managed || installation.Source != "unknown" {
+		t.Fatalf("broken installation exposes stale evidence: %#v", installation)
 	}
 }
 

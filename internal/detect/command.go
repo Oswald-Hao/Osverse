@@ -2,7 +2,10 @@
 package detect
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,13 +100,29 @@ func (d CommandDetector) Detect(ctx context.Context, spec CommandSpec, paths []s
 			installations = append(installations, installation)
 			continue
 		}
+		if !candidate.elf && !directCandidateUnchanged(candidate) {
+			broken = true
+			invalidateInstallation(&installation)
+			installations = append(installations, installation)
+			continue
+		}
+		var pinnedExecutable *os.File
+		if candidate.elf {
+			pinnedExecutable = candidate.file
+		}
 		result, err := d.Runner.Run(ctx, platform.CommandRequest{
 			Path:             candidate.path,
-			PinnedExecutable: candidate.file,
+			PinnedExecutable: pinnedExecutable,
 			Args:             append([]string(nil), spec.VersionArgs...),
 			Timeout:          versionTimeout,
 			OutputLimit:      versionOutputLimit,
 		})
+		if !candidate.elf && !directCandidateUnchanged(candidate) {
+			broken = true
+			invalidateInstallation(&installation)
+			installations = append(installations, installation)
+			continue
+		}
 		version, parsed := parseCommandVersion(spec.VersionPattern, result)
 		if err != nil || result.TimedOut || result.Truncated || result.ExitCode != 0 || !parsed || ctx.Err() != nil {
 			broken = true
@@ -132,6 +151,9 @@ type commandCandidate struct {
 	resolvedPath string
 	info         os.FileInfo
 	file         *os.File
+	aliasStat    unix.Stat_t
+	targetStat   unix.Stat_t
+	elf          bool
 }
 
 func commandCandidates(ctx context.Context, executableNames, paths []string) ([]commandCandidate, bool) {
@@ -216,10 +238,79 @@ func inspectCommandCandidate(path string) (commandCandidate, bool) {
 	if err != nil || !filepath.IsAbs(resolvedPath) {
 		return commandCandidate{}, false
 	}
+	var aliasStat, targetStat unix.Stat_t
+	if err := unix.Lstat(path, &aliasStat); err != nil {
+		return commandCandidate{}, false
+	}
+	if err := unix.Fstat(fd, &targetStat); err != nil {
+		return commandCandidate{}, false
+	}
+	elf, err := pinnedExecutableIsELF(fdPath)
+	if err != nil {
+		return commandCandidate{}, false
+	}
 	closeOnFailure = false
 	return commandCandidate{
 		path: path, resolvedPath: filepath.Clean(resolvedPath), info: info, file: file,
+		aliasStat: aliasStat, targetStat: targetStat, elf: elf,
 	}, true
+}
+
+func pinnedExecutableIsELF(fdPath string) (bool, error) {
+	reader, err := os.Open(fdPath)
+	if err != nil {
+		return false, err
+	}
+	defer reader.Close()
+	magic := make([]byte, 4)
+	count, err := io.ReadFull(reader, magic)
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return count == len(magic) && bytes.Equal(magic, []byte{0x7f, 'E', 'L', 'F'}), nil
+}
+
+func directCandidateUnchanged(candidate commandCandidate) bool {
+	var aliasStat unix.Stat_t
+	if err := unix.Lstat(candidate.path, &aliasStat); err != nil || !sameCommandMetadata(aliasStat, candidate.aliasStat) {
+		return false
+	}
+	fd, err := unix.Open(candidate.path, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false
+	}
+	defer unix.Close(fd)
+	var targetStat unix.Stat_t
+	if err := unix.Fstat(fd, &targetStat); err != nil ||
+		targetStat.Mode&unix.S_IFMT != unix.S_IFREG ||
+		!sameCommandMetadata(targetStat, candidate.targetStat) {
+		return false
+	}
+	fdPath := filepath.Join("/proc/self/fd", strconv.Itoa(fd))
+	if err := unix.Faccessat(unix.AT_FDCWD, fdPath, unix.X_OK, unix.AT_EACCESS); err != nil {
+		return false
+	}
+	resolvedPath, err := os.Readlink(fdPath)
+	return err == nil && filepath.Clean(resolvedPath) == candidate.resolvedPath
+}
+
+func sameCommandMetadata(left, right unix.Stat_t) bool {
+	return left.Dev == right.Dev &&
+		left.Ino == right.Ino &&
+		left.Mode == right.Mode &&
+		left.Size == right.Size &&
+		left.Mtim == right.Mtim &&
+		left.Ctim == right.Ctim
+}
+
+func invalidateInstallation(installation *domain.Installation) {
+	installation.ResolvedPath = ""
+	installation.Version = ""
+	installation.Source = "unknown"
+	installation.Managed = false
 }
 
 func closeCommandCandidates(candidates []commandCandidate) {
