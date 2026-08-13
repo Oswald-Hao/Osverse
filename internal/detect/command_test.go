@@ -16,6 +16,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
+	"golang.org/x/sys/unix"
 )
 
 var testCommandSpec = CommandSpec{
@@ -293,6 +294,72 @@ func TestCommandDetectorExecutesPinnedObjectWhenAliasChanges(t *testing.T) {
 		t.Fatal("ELF runner did not receive a pinned executable")
 	} else if _, err := runner.recordedPinned.Stat(); err == nil {
 		t.Error("pinned ELF executable remains open after Detect returned")
+	}
+}
+
+func TestCommandDetectorExecuteOnlyELFIsInstalledThroughPinnedDescriptor(t *testing.T) {
+	directory := t.TempDir()
+	candidate := filepath.Join(directory, "test-cli")
+	binary, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatalf("read test executable: %v", err)
+	}
+	if err := os.WriteFile(candidate, binary, 0o700); err != nil {
+		t.Fatalf("write executable fixture: %v", err)
+	}
+	if err := os.Chmod(candidate, 0o111); err != nil {
+		t.Fatalf("make fixture execute-only: %v", err)
+	}
+
+	spec := testCommandSpec
+	spec.VersionArgs = []string{"-test.run=^TestCommandDetectorPinnedExecutableHelper$", "--", "detector-version"}
+	runner := &recordingCommandRunner{delegate: platformlinux.NewExecRunner()}
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), spec, []string{directory})
+
+	if component.Status != domain.StatusInstalled || len(component.Installations) != 1 ||
+		component.Installations[0].Version != "1.2.3" {
+		t.Fatalf("component = %#v, want installed execute-only ELF version 1.2.3", component)
+	}
+	if len(runner.requests) != 1 || runner.requests[0].PinnedExecutable == nil {
+		t.Fatalf("requests = %#v, want execute-only ELF run through pinned descriptor", runner.requests)
+	}
+}
+
+func TestCommandDetectorHeaderClassificationDistinguishesUnreadableFromNonELF(t *testing.T) {
+	directory := t.TempDir()
+	nonELF := writeExecutable(t, directory, "script", 0o700)
+	tests := []struct {
+		name       string
+		openHeader func() (*os.File, error)
+		wantFormat commandExecutableFormat
+		wantPinned bool
+	}{
+		{
+			name: "permission denied is unknown and pinned",
+			openHeader: func() (*os.File, error) {
+				return nil, unix.EACCES
+			},
+			wantFormat: commandExecutableUnknown,
+			wantPinned: true,
+		},
+		{
+			name: "readable non-ELF is direct",
+			openHeader: func() (*os.File, error) {
+				return os.Open(nonELF)
+			},
+			wantFormat: commandExecutableNonELF,
+			wantPinned: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			format := classifyCommandExecutableHeader(tt.openHeader)
+			if format != tt.wantFormat || format.requiresPinnedExecution() != tt.wantPinned {
+				t.Fatalf("classification = %v (pinned %t), want %v (pinned %t)",
+					format, format.requiresPinnedExecution(), tt.wantFormat, tt.wantPinned)
+			}
+		})
 	}
 }
 

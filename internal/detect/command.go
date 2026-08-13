@@ -85,6 +85,7 @@ func (d CommandDetector) Detect(ctx context.Context, spec CommandSpec, paths []s
 	valid := 0
 	broken := false
 	for _, candidate := range candidates {
+		pinnedExecution := candidate.format.requiresPinnedExecution()
 		installation := domain.Installation{
 			Path:         candidate.path,
 			ResolvedPath: candidate.resolvedPath,
@@ -100,14 +101,14 @@ func (d CommandDetector) Detect(ctx context.Context, spec CommandSpec, paths []s
 			installations = append(installations, installation)
 			continue
 		}
-		if !candidate.elf && !directCandidateUnchanged(candidate) {
+		if !pinnedExecution && !directCandidateUnchanged(candidate) {
 			broken = true
 			invalidateInstallation(&installation)
 			installations = append(installations, installation)
 			continue
 		}
 		var pinnedExecutable *os.File
-		if candidate.elf {
+		if pinnedExecution {
 			pinnedExecutable = candidate.file
 		}
 		result, err := d.Runner.Run(ctx, platform.CommandRequest{
@@ -117,7 +118,7 @@ func (d CommandDetector) Detect(ctx context.Context, spec CommandSpec, paths []s
 			Timeout:          versionTimeout,
 			OutputLimit:      versionOutputLimit,
 		})
-		if !candidate.elf && !directCandidateUnchanged(candidate) {
+		if !pinnedExecution && !directCandidateUnchanged(candidate) {
 			broken = true
 			invalidateInstallation(&installation)
 			installations = append(installations, installation)
@@ -153,7 +154,19 @@ type commandCandidate struct {
 	file         *os.File
 	aliasStat    unix.Stat_t
 	targetStat   unix.Stat_t
-	elf          bool
+	format       commandExecutableFormat
+}
+
+type commandExecutableFormat uint8
+
+const (
+	commandExecutableUnknown commandExecutableFormat = iota
+	commandExecutableNonELF
+	commandExecutableELF
+)
+
+func (format commandExecutableFormat) requiresPinnedExecution() bool {
+	return format != commandExecutableNonELF
 }
 
 func commandCandidates(ctx context.Context, executableNames, paths []string) ([]commandCandidate, bool) {
@@ -245,32 +258,40 @@ func inspectCommandCandidate(path string) (commandCandidate, bool) {
 	if err := unix.Fstat(fd, &targetStat); err != nil {
 		return commandCandidate{}, false
 	}
-	elf, err := pinnedExecutableIsELF(fdPath)
-	if err != nil {
-		return commandCandidate{}, false
-	}
+	format := classifyCommandExecutableHeader(func() (*os.File, error) {
+		return os.Open(fdPath)
+	})
 	closeOnFailure = false
 	return commandCandidate{
 		path: path, resolvedPath: filepath.Clean(resolvedPath), info: info, file: file,
-		aliasStat: aliasStat, targetStat: targetStat, elf: elf,
+		aliasStat: aliasStat, targetStat: targetStat, format: format,
 	}, true
 }
 
-func pinnedExecutableIsELF(fdPath string) (bool, error) {
-	reader, err := os.Open(fdPath)
-	if err != nil {
-		return false, err
+func classifyCommandExecutableHeader(openHeader func() (*os.File, error)) commandExecutableFormat {
+	if openHeader == nil {
+		return commandExecutableUnknown
+	}
+	reader, err := openHeader()
+	if err != nil || reader == nil {
+		if reader != nil {
+			_ = reader.Close()
+		}
+		return commandExecutableUnknown
 	}
 	defer reader.Close()
 	magic := make([]byte, 4)
 	count, err := io.ReadFull(reader, magic)
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-		return false, nil
+		return commandExecutableNonELF
 	}
 	if err != nil {
-		return false, err
+		return commandExecutableUnknown
 	}
-	return count == len(magic) && bytes.Equal(magic, []byte{0x7f, 'E', 'L', 'F'}), nil
+	if count == len(magic) && bytes.Equal(magic, []byte{0x7f, 'E', 'L', 'F'}) {
+		return commandExecutableELF
+	}
+	return commandExecutableNonELF
 }
 
 func directCandidateUnchanged(candidate commandCandidate) bool {
