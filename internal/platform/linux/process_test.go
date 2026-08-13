@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +73,54 @@ func TestExecRunnerTimeoutKillsProcess(t *testing.T) {
 		t.Fatalf("output exceeded limit: stdout=%d stderr=%d", len(result.Stdout), len(result.Stderr))
 	}
 	assertPublicError(t, err, domain.ErrCommandTimeout, "10s")
+}
+
+func TestExecRunnerCallerCancellationKillsDescendantHoldingPipes(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "descendant.pid")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := helperRequest("spawn-descendant", marker)
+	req.Timeout = 30 * time.Second
+
+	type outcome struct {
+		result platform.CommandResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := NewExecRunner().Run(ctx, req)
+		done <- outcome{result: result, err: err}
+	}()
+
+	descendantPID := waitForPIDFile(t, marker)
+	t.Cleanup(func() {
+		if process, err := os.FindProcess(descendantPID); err == nil {
+			_ = process.Kill()
+		}
+	})
+	cancel()
+
+	select {
+	case got := <-done:
+		if !got.result.TimedOut {
+			t.Error("TimedOut = false after caller cancellation terminated the process")
+		}
+		assertPublicError(t, got.err, domain.ErrCommandTimeout, marker)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after caller cancellation; descendant retained output pipes")
+	}
+}
+
+func TestExecRunnerExpiredContextWithoutStartedProcessIsCommandFailure(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0))
+	defer cancel()
+
+	result, err := NewExecRunner().Run(ctx, helperRequest("stderr-exit", "not-started", "17"))
+
+	if result.TimedOut {
+		t.Error("TimedOut = true although cancellation did not terminate a started process")
+	}
+	assertPublicError(t, err, domain.ErrCommandFailed, "not-started")
 }
 
 func TestExecRunnerTruncatesStdoutAndStderrSeparately(t *testing.T) {
@@ -158,6 +209,20 @@ func TestHelperProcess(t *testing.T) {
 	case "sleep":
 		duration, _ := time.ParseDuration(args[1])
 		time.Sleep(duration)
+	case "spawn-descendant":
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "hold-pipes")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			os.Exit(3)
+		}
+		if err := os.WriteFile(args[1], []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+			_ = cmd.Process.Kill()
+			os.Exit(4)
+		}
+		time.Sleep(30 * time.Second)
+	case "hold-pipes":
+		time.Sleep(30 * time.Second)
 	case "both":
 		_, _ = os.Stdout.WriteString(args[1])
 		_, _ = os.Stderr.WriteString(args[2])
@@ -169,6 +234,28 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+func waitForPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			pid, err := strconv.Atoi(string(data))
+			if err != nil {
+				t.Fatalf("parse descendant PID %q: %v", data, err)
+			}
+			return pid
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read descendant PID marker: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for descendant PID marker")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func helperRequest(mode string, args ...string) platform.CommandRequest {

@@ -2,9 +2,12 @@ package linux
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
@@ -14,6 +17,7 @@ import (
 const (
 	defaultCommandTimeout = 3 * time.Second
 	defaultOutputLimit    = 64 * 1024
+	commandWaitDelay      = 250 * time.Millisecond
 )
 
 var inheritedEnvironment = []string{"HOME", "PATH", "LANG", "LC_ALL", "TERM"}
@@ -49,6 +53,20 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 	cmd.Env = commandEnvironment(req.Env)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = commandWaitDelay
+	var terminationInitiated atomic.Bool
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if err == nil {
+			terminationInitiated.Store(true)
+			return nil
+		}
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 
 	err := cmd.Run()
 	result.Stdout = stdout.String()
@@ -61,7 +79,7 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 	if err == nil {
 		return result, nil
 	}
-	if runCtx.Err() == context.DeadlineExceeded {
+	if terminationInitiated.Load() {
 		result.TimedOut = true
 		return result, domain.NewPublicError(domain.ErrCommandTimeout, "command timed out", err)
 	}
