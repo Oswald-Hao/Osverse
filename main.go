@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 
+	"github.com/Oswald-Hao/Osverse/internal/bootstrap"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -12,7 +13,7 @@ import (
 var assets embed.FS
 
 func main() {
-	app := NewApp()
+	app := NewApp(bootstrap.NewLinuxScanner())
 
 	err := wails.Run(&options.App{
 		Title:  "Osverse",
