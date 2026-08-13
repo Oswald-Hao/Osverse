@@ -16,6 +16,7 @@ import (
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	"golang.org/x/sys/unix"
 )
 
 func TestExecRunnerSuccess(t *testing.T) {
@@ -93,21 +94,85 @@ func TestExecRunnerCallerCancellationKillsDescendantHoldingPipes(t *testing.T) {
 	}()
 
 	descendantPID := waitForPIDFile(t, marker)
+	descendantPIDFD, err := unix.PidfdOpen(descendantPID, 0)
+	if err != nil {
+		t.Fatalf("open descendant pidfd: %v", err)
+	}
+	defer unix.Close(descendantPIDFD)
+	descendantExited := false
 	t.Cleanup(func() {
-		if process, err := os.FindProcess(descendantPID); err == nil {
-			_ = process.Kill()
+		if !descendantExited {
+			_ = unix.PidfdSendSignal(descendantPIDFD, unix.SIGKILL, nil, 0)
 		}
 	})
 	cancel()
 
 	select {
 	case got := <-done:
-		if !got.result.TimedOut {
-			t.Error("TimedOut = false after caller cancellation terminated the process")
+		if got.result.TimedOut {
+			t.Error("TimedOut = true for caller cancellation")
 		}
-		assertPublicError(t, got.err, domain.ErrCommandTimeout, marker)
+		assertPublicErrorMessage(t, got.err, domain.ErrCommandFailed, "command canceled", marker)
+		waitForPIDFDReady(t, descendantPIDFD)
+		descendantExited = true
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after caller cancellation; descendant retained output pipes")
+	}
+}
+
+func TestExecRunnerIndependentNonzeroExitWinsCancellationRace(t *testing.T) {
+	dir := t.TempDir()
+	parentMarker := filepath.Join(dir, "parent.pid")
+	descendantMarker := filepath.Join(dir, "descendant.pid")
+	release := filepath.Join(dir, "release")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := helperRequest("exit-after-release", parentMarker, descendantMarker, release)
+	req.Timeout = 30 * time.Second
+
+	type outcome struct {
+		result platform.CommandResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := NewExecRunner().Run(ctx, req)
+		done <- outcome{result: result, err: err}
+	}()
+
+	parentPID := waitForPIDFile(t, parentMarker)
+	parentPIDFD, err := unix.PidfdOpen(parentPID, 0)
+	if err != nil {
+		t.Fatalf("open parent pidfd: %v", err)
+	}
+	defer unix.Close(parentPIDFD)
+	descendantPID := waitForPIDFile(t, descendantMarker)
+	descendantPIDFD, err := unix.PidfdOpen(descendantPID, 0)
+	if err != nil {
+		t.Fatalf("open descendant pidfd: %v", err)
+	}
+	defer unix.Close(descendantPIDFD)
+	t.Cleanup(func() {
+		_ = unix.PidfdSendSignal(descendantPIDFD, unix.SIGKILL, nil, 0)
+	})
+
+	if err := os.WriteFile(release, []byte("release"), 0o600); err != nil {
+		t.Fatalf("release helper process: %v", err)
+	}
+	waitForPIDFDReady(t, parentPIDFD)
+	cancel()
+
+	select {
+	case got := <-done:
+		if got.result.ExitCode != 17 {
+			t.Errorf("ExitCode = %d, want 17", got.result.ExitCode)
+		}
+		if got.result.TimedOut {
+			t.Error("TimedOut = true for independently completed nonzero exit")
+		}
+		assertPublicError(t, got.err, domain.ErrCommandFailed, release)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after independently completed process")
 	}
 }
 
@@ -210,17 +275,17 @@ func TestHelperProcess(t *testing.T) {
 		duration, _ := time.ParseDuration(args[1])
 		time.Sleep(duration)
 	case "spawn-descendant":
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "hold-pipes")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			os.Exit(3)
-		}
-		if err := os.WriteFile(args[1], []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
-			_ = cmd.Process.Kill()
-			os.Exit(4)
-		}
+		cmd := startPipeHoldingDescendant(args[1])
+		_ = cmd
 		time.Sleep(30 * time.Second)
+	case "exit-after-release":
+		cmd := startPipeHoldingDescendant(args[2])
+		if err := os.WriteFile(args[1], []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			_ = cmd.Process.Kill()
+			os.Exit(5)
+		}
+		waitForHelperFile(args[3])
+		os.Exit(17)
 	case "hold-pipes":
 		time.Sleep(30 * time.Second)
 	case "both":
@@ -234,6 +299,33 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+func startPipeHoldingDescendant(marker string) *exec.Cmd {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "hold-pipes")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		os.Exit(3)
+	}
+	if err := os.WriteFile(marker, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+		_ = cmd.Process.Kill()
+		os.Exit(4)
+	}
+	return cmd
+}
+
+func waitForHelperFile(path string) {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			os.Exit(6)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func waitForPIDFile(t *testing.T, path string) int {
@@ -255,6 +347,18 @@ func waitForPIDFile(t *testing.T, path string) int {
 			t.Fatal("timed out waiting for descendant PID marker")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForPIDFDReady(t *testing.T, pidfd int) {
+	t.Helper()
+	fds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	n, err := unix.Poll(fds, 5000)
+	if err != nil {
+		t.Fatalf("poll pidfd: %v", err)
+	}
+	if n != 1 || fds[0].Revents&unix.POLLIN == 0 {
+		t.Fatalf("pidfd did not report process exit: n=%d revents=%#x", n, fds[0].Revents)
 	}
 }
 
@@ -281,5 +385,14 @@ func assertPublicError(t *testing.T, err error, wantCode domain.ErrorCode, forbi
 	}
 	if strings.Contains(err.Error(), forbidden) {
 		t.Errorf("public error leaked %q: %q", forbidden, err)
+	}
+}
+
+func assertPublicErrorMessage(t *testing.T, err error, wantCode domain.ErrorCode, wantMessage, forbidden string) {
+	t.Helper()
+	assertPublicError(t, err, wantCode, forbidden)
+	var public *domain.PublicError
+	if errors.As(err, &public) && public.Message != wantMessage {
+		t.Errorf("error message = %q, want %q", public.Message, wantMessage)
 	}
 }

@@ -6,12 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -46,48 +46,134 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if err := runCtx.Err(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return result, commandCanceledError(err)
+		}
+		return result, commandFailedError(err)
+	}
 
 	stdout := newCappedBuffer(outputLimit)
 	stderr := newCappedBuffer(outputLimit)
-	cmd := exec.CommandContext(runCtx, req.Path, req.Args...)
+	// Coordinate cancellation here instead of allowing os/exec to reap the
+	// leader concurrently. Until cmd.Wait starts, its PID (and therefore the
+	// process-group ID we created) cannot be recycled for an unrelated group.
+	cmd := exec.CommandContext(context.WithoutCancel(runCtx), req.Path, req.Args...)
 	cmd.Env = commandEnvironment(req.Env)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	pidfd := -1
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, PidFD: &pidfd}
 	cmd.WaitDelay = commandWaitDelay
-	var terminationInitiated atomic.Bool
-	cmd.Cancel = func() error {
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if err == nil {
-			terminationInitiated.Store(true)
-			return nil
-		}
-		if errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+	cmd.Cancel = nil
+
+	if err := cmd.Start(); err != nil {
+		return result, commandFailedError(err)
+	}
+	if pidfd < 0 {
+		terminationErr := terminateOwnedProcessGroup(cmd.Process)
+		waitErr := cmd.Wait()
+		setCommandResult(&result, cmd, stdout, stderr)
+		return result, commandFailedError(errors.Join(errors.New("pidfd unavailable"), terminationErr, waitErr))
 	}
 
-	err := cmd.Run()
+	exitReady := make(chan error, 1)
+	go func() {
+		// Pidfd readiness observes exit without reaping, preserving the PID/PGID
+		// ownership invariant until the cancellation decision is complete.
+		exitReady <- waitForPIDFD(pidfd)
+	}()
+
+	contextTriggered := false
+	exitObserved := false
+	var observationErr error
+	select {
+	case observationErr = <-exitReady:
+		exitObserved = true
+	case <-runCtx.Done():
+		contextTriggered = true
+		select {
+		case observationErr = <-exitReady:
+			exitObserved = true
+		default:
+		}
+	}
+
+	terminationErr := terminateOwnedProcessGroup(cmd.Process)
+	err := cmd.Wait()
+	if !exitObserved {
+		observationErr = <-exitReady
+	}
+	_ = unix.Close(pidfd)
+	setCommandResult(&result, cmd, stdout, stderr)
+
+	if observationErr != nil {
+		return result, commandFailedError(errors.Join(observationErr, terminationErr, err))
+	}
+	if err == nil {
+		return result, nil
+	}
+	if contextTriggered && processWasKilled(cmd.ProcessState) {
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			result.TimedOut = true
+			return result, domain.NewPublicError(domain.ErrCommandTimeout, "command timed out", err)
+		}
+		if errors.Is(runCtx.Err(), context.Canceled) {
+			return result, commandCanceledError(err)
+		}
+	}
+	return result, commandFailedError(errors.Join(terminationErr, err))
+}
+
+func setCommandResult(result *platform.CommandResult, cmd *exec.Cmd, stdout, stderr *cappedBuffer) {
 	result.Stdout = stdout.String()
 	result.Stderr = stderr.String()
 	result.Truncated = stdout.truncated || stderr.truncated
 	if cmd.ProcessState != nil {
 		result.ExitCode = cmd.ProcessState.ExitCode()
 	}
+}
 
+func waitForPIDFD(pidfd int) error {
+	fds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	for {
+		_, err := unix.Poll(fds, -1)
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		return err
+	}
+}
+
+func terminateOwnedProcessGroup(process *os.Process) error {
+	// The caller must not begin Process.Wait or Cmd.Wait before this call. That
+	// keeps process.Pid allocated and prevents the negative PID from naming a
+	// recycled, unrelated process group.
+	err := syscall.Kill(-process.Pid, syscall.SIGKILL)
 	if err == nil {
-		return result, nil
+		return nil
 	}
-	if terminationInitiated.Load() {
-		result.TimedOut = true
-		return result, domain.NewPublicError(domain.ErrCommandTimeout, "command timed out", err)
+	leaderErr := process.Kill()
+	if errors.Is(leaderErr, os.ErrProcessDone) {
+		leaderErr = nil
 	}
-	return result, commandFailedError(err)
+	return errors.Join(err, leaderErr)
+}
+
+func processWasKilled(state *os.ProcessState) bool {
+	if state == nil {
+		return false
+	}
+	status, ok := state.Sys().(syscall.WaitStatus)
+	return ok && status.Signaled() && status.Signal() == syscall.SIGKILL
 }
 
 func commandFailedError(cause error) error {
 	return domain.NewPublicError(domain.ErrCommandFailed, "command failed", cause)
+}
+
+func commandCanceledError(cause error) error {
+	return domain.NewPublicError(domain.ErrCommandFailed, "command canceled", cause)
 }
 
 func commandEnvironment(overrides []string) []string {
