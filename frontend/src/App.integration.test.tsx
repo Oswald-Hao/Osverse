@@ -60,7 +60,7 @@ describe('App scan integration', () => {
     render(<App />)
 
     expect(screen.getByRole('status')).toHaveTextContent('正在扫描环境')
-    expect(await screen.findByText('Ubuntu Initial 24.04')).toBeVisible()
+    expect(await screen.findByText('Ubuntu Initial')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Codex CLI' })).toBeVisible()
   })
 
@@ -74,17 +74,17 @@ describe('App scan integration', () => {
       .mockImplementationOnce(() => pendingRefresh.promise)
     setScanEnvironmentForTests(scan)
     render(<App />)
-    expect(await screen.findByText('Ubuntu Before 24.04')).toBeVisible()
+    expect(await screen.findByText('Ubuntu Before')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: '刷新环境状态' }))
 
     expect(screen.getByRole('status')).toHaveTextContent('正在刷新环境状态')
-    expect(screen.getByText('Ubuntu Before 24.04')).toBeVisible()
+    expect(screen.getByText('Ubuntu Before')).toBeVisible()
 
     await act(async () => pendingRefresh.resolve(second))
 
-    expect(await screen.findByText('Ubuntu After 24.04')).toBeVisible()
-    expect(screen.queryByText('Ubuntu Before 24.04')).not.toBeInTheDocument()
+    expect(await screen.findByText('Ubuntu After')).toBeVisible()
+    expect(screen.queryByText('Ubuntu Before')).not.toBeInTheDocument()
     expect(scan).toHaveBeenCalledTimes(2)
   })
 })

@@ -146,19 +146,61 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('environment status dashboard', () => {
-  it('renders system facts, deterministic scan time, and summary counts', () => {
+  it('renders system facts, local scan-time semantics, and summary counts', () => {
+    const dateTimeFormat = vi.spyOn(Intl, 'DateTimeFormat')
+
+    try {
+      render(<App />)
+
+      expect(screen.getByRole('heading', { name: '环境状态' })).toBeVisible()
+      expect(screen.getByText('Ubuntu')).toBeVisible()
+      expect(screen.getByText('x86_64')).toBeVisible()
+      expect(screen.getByText('/bin/bash')).toBeVisible()
+      expect(screen.getByText('支持')).toBeVisible()
+
+      const scanTime = document.querySelector(
+        'time[datetime="2026-08-13T08:05:06Z"]',
+      )
+      expect(scanTime).toBeVisible()
+      expect(scanTime).not.toHaveTextContent(/^\s*$/)
+      expect(scanTime?.nextElementSibling).toBeVisible()
+      expect(scanTime?.nextElementSibling).not.toHaveTextContent(/^\s*$/)
+
+      expect(dateTimeFormat).toHaveBeenCalledTimes(2)
+      for (const [, options] of dateTimeFormat.mock.calls) {
+        expect(options).not.toHaveProperty('timeZone')
+      }
+
+      expect(screen.getByRole('article', { name: '已就绪 1' })).toBeVisible()
+      expect(screen.getByRole('article', { name: '工具总数 8' })).toBeVisible()
+      expect(screen.getByRole('article', { name: '需要关注 5' })).toBeVisible()
+    } finally {
+      dateTimeFormat.mockRestore()
+    }
+  })
+
+  it('renders PRETTY_NAME without duplicating its version', () => {
+    mockUseEnvironmentScan.mockReturnValue(
+      scanState({
+        snapshot: {
+          ...snapshot,
+          system: {
+            ...snapshot.system,
+            distribution: 'Ubuntu 22.04.5 LTS',
+            version: '22.04',
+          },
+        },
+      }),
+    )
+
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: '环境状态' })).toBeVisible()
-    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
-    expect(screen.getByText('x86_64')).toBeVisible()
-    expect(screen.getByText('/bin/bash')).toBeVisible()
-    expect(screen.getByText('支持')).toBeVisible()
-    expect(screen.getByText('2026年8月13日')).toBeVisible()
-    expect(screen.getByText('16:05:06')).toBeVisible()
-    expect(screen.getByRole('article', { name: '已就绪 1' })).toBeVisible()
-    expect(screen.getByRole('article', { name: '工具总数 8' })).toBeVisible()
-    expect(screen.getByRole('article', { name: '需要关注 5' })).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Ubuntu 22.04.5 LTS' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByText('Ubuntu 22.04.5 LTS 22.04'),
+    ).not.toBeInTheDocument()
   })
 
   it('separates the exact backend categories into labelled sections', () => {
@@ -344,7 +386,7 @@ describe('environment status dashboard', () => {
     render(<App />)
 
     expect(screen.getByRole('status')).toHaveTextContent('正在刷新环境状态')
-    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
+    expect(screen.getByText('Ubuntu')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Codex CLI' })).toBeVisible()
     expect(screen.getByRole('button', { name: '刷新环境状态' })).toBeDisabled()
   })
@@ -357,7 +399,7 @@ describe('environment status dashboard', () => {
     render(<App />)
 
     expect(screen.getByRole('alert')).toHaveTextContent('SCAN_FAILED: 刷新失败')
-    expect(screen.getByText('Ubuntu 24.04')).toBeVisible()
+    expect(screen.getByText('Ubuntu')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Codex CLI' })).toBeVisible()
   })
 

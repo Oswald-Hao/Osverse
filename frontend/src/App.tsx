@@ -72,13 +72,11 @@ function formatScanTime(scannedAt: string) {
 
   return {
     date: new Intl.DateTimeFormat('zh-CN', {
-      timeZone: 'Asia/Shanghai',
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     }).format(instant),
     time: new Intl.DateTimeFormat('zh-CN', {
-      timeZone: 'Asia/Shanghai',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -123,7 +121,7 @@ function App() {
       <main className="dashboard-main">
         <header className="dashboard-header">
           <div>
-            <p className="eyebrow">SYSTEM OVERVIEW</p>
+            <p className="eyebrow" lang="en">SYSTEM OVERVIEW</p>
             <h2>环境状态</h2>
             <p>掌握本机 AI 开发工具的就绪情况。</p>
           </div>
@@ -154,9 +152,7 @@ function App() {
             </span>
             <div>
               <p className="card-kicker">当前系统</p>
-              <h3 id="system-title">
-                {snapshot.system.distribution} {snapshot.system.version}
-              </h3>
+              <h3 id="system-title">{snapshot.system.distribution}</h3>
               <p className="scan-time">
                 上次扫描：
                 <time dateTime={scanned.dateTime}>{scanned.date}</time>
@@ -170,7 +166,7 @@ function App() {
               <dd>{snapshot.system.architecture}</dd>
             </div>
             <div>
-              <dt>Shell</dt>
+              <dt lang="en">Shell</dt>
               <dd>{snapshot.system.shell}</dd>
             </div>
             <div>
