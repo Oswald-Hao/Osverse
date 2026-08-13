@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { domain as generated } from '../../wailsjs/go/models'
 import type { EnvironmentSnapshot } from '../domain'
 import {
   resetScanEnvironmentForTests,
@@ -82,6 +83,95 @@ describe('useEnvironmentScan', () => {
     expect(Object.getPrototypeOf(result.current.snapshot?.components[0])).toBe(
       Object.prototype,
     )
+    expect(result.current.error).toBeNull()
+  })
+
+  it('maps generated null installation slices and makes the whole scan ready', async () => {
+    const wireSnapshot = new generated.EnvironmentSnapshot({
+      scannedAt: '2026-08-13T08:00:00Z',
+      system: {
+        distribution: 'Ubuntu',
+        version: '22.04',
+        architecture: 'x86_64',
+        shell: '/bin/bash',
+        supported: true,
+        unsupportedReason: '',
+      },
+      components: [
+        {
+          id: 'codex-cli',
+          name: 'Codex CLI',
+          category: 'developer-tool',
+          status: 'installed',
+          installations: [
+            {
+              path: '/usr/bin/codex',
+              resolvedPath: '/usr/bin/codex',
+              version: '1.2.3',
+              source: 'path',
+              managed: false,
+            },
+          ],
+          message: '已安装',
+          minimumOS: 'Ubuntu 20.04',
+        },
+        {
+          id: 'claude-cli',
+          name: 'Claude Code',
+          category: 'developer-tool',
+          status: 'missing',
+          installations: null,
+          message: '未安装',
+          minimumOS: 'Ubuntu 20.04',
+        },
+        {
+          id: 'gemini-cli',
+          name: 'Gemini CLI',
+          category: 'developer-tool',
+          status: 'failed',
+          installations: null,
+          message: '检测失败',
+          minimumOS: 'Ubuntu 20.04',
+        },
+      ],
+      ready: 1,
+      total: 3,
+      needsAttention: 2,
+    })
+    setScanEnvironmentForTests(() => Promise.resolve(wireSnapshot))
+
+    const { result } = renderHook(() => useEnvironmentScan())
+
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(result.current.error).toBeNull()
+    expect(result.current.snapshot?.components).toHaveLength(3)
+    expect(result.current.snapshot?.components[0].installations).toHaveLength(1)
+    expect(result.current.snapshot?.components[1].installations).toEqual([])
+    expect(result.current.snapshot?.components[2].installations).toEqual([])
+  })
+
+  it('maps a generated null top-level component slice to an empty list', async () => {
+    const wireSnapshot = new generated.EnvironmentSnapshot({
+      scannedAt: '2026-08-13T08:00:00Z',
+      system: {
+        distribution: 'Ubuntu',
+        version: '22.04',
+        architecture: 'x86_64',
+        shell: '/bin/bash',
+        supported: true,
+        unsupportedReason: '',
+      },
+      components: null,
+      ready: 0,
+      total: 0,
+      needsAttention: 0,
+    })
+    setScanEnvironmentForTests(() => Promise.resolve(wireSnapshot))
+
+    const { result } = renderHook(() => useEnvironmentScan())
+
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(result.current.snapshot?.components).toEqual([])
     expect(result.current.error).toBeNull()
   })
 

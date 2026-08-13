@@ -47,12 +47,12 @@ export async function scanEnvironment(): Promise<EnvironmentSnapshot> {
       supported: result.system.supported,
       unsupportedReason: result.system.unsupportedReason,
     },
-    components: result.components.map((component) => ({
+    components: (result.components ?? []).map((component) => ({
       id: component.id,
       name: component.name,
       category: component.category,
       status: componentStatus(component.status),
-      installations: component.installations.map((installation) => ({
+      installations: (component.installations ?? []).map((installation) => ({
         path: installation.path,
         resolvedPath: installation.resolvedPath,
         version: installation.version,
