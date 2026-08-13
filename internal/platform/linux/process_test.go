@@ -49,7 +49,7 @@ func TestExecRunnerPinnedExecutableIgnoresReplacedPath(t *testing.T) {
 	if err := os.WriteFile(replacement, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
 		t.Fatalf("write replacement executable: %v", err)
 	}
-	req := helperRequest("stdout", "pinned-original")
+	req := helperRequest("argv0")
 	req.Path = replacement
 	req.PinnedExecutable = pinned
 
@@ -57,15 +57,20 @@ func TestExecRunnerPinnedExecutableIgnoresReplacedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if result.Stdout != "pinned-original" {
-		t.Fatalf("Stdout = %q, want pinned original output", result.Stdout)
+	if result.Stdout != replacement {
+		t.Fatalf("Stdout = %q, want requested invocation identity %q", result.Stdout, replacement)
 	}
 }
 
 func TestExecRunnerPinnedScriptIgnoresReplacedPath(t *testing.T) {
 	directory := t.TempDir()
 	commandPath := filepath.Join(directory, "command")
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf pinned-script"), 0o700); err != nil {
+	resourcePath := filepath.Join(directory, "version")
+	if err := os.WriteFile(resourcePath, []byte("pinned-script 1.2.3"), 0o600); err != nil {
+		t.Fatalf("write sibling resource: %v", err)
+	}
+	contents := "#!/bin/sh\nresource=${0%/*}/version\nIFS= read -r version < \"$resource\"\nprintf '%s %s' \"$version\" \"$1\"\n"
+	if err := os.WriteFile(commandPath, []byte(contents), 0o700); err != nil {
 		t.Fatalf("write pinned script: %v", err)
 	}
 	fd, err := unix.Open(commandPath, unix.O_PATH|unix.O_CLOEXEC, 0)
@@ -89,12 +94,63 @@ func TestExecRunnerPinnedScriptIgnoresReplacedPath(t *testing.T) {
 	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
 		Path:             commandPath,
 		PinnedExecutable: pinned,
+		Args:             []string{"--version"},
 	})
 	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf("Run() error = %v; result = %#v", err, result)
 	}
-	if result.Stdout != "pinned-script" {
-		t.Fatalf("Stdout = %q, want pinned script output", result.Stdout)
+	if result.Stdout != "pinned-script 1.2.3 --version" {
+		t.Fatalf("Stdout = %q, want pinned sibling resource and fixed argument", result.Stdout)
+	}
+}
+
+func TestExecRunnerPinnedNodeScriptResolvesSiblingAfterPathReplacement(t *testing.T) {
+	const nodePath = "/usr/bin/node"
+	if _, err := os.Stat(nodePath); err != nil {
+		t.Skipf("Node interpreter unavailable at %s: %v", nodePath, err)
+	}
+	directory := t.TempDir()
+	commandPath := filepath.Join(directory, "command")
+	resourcePath := filepath.Join(directory, "version")
+	if err := os.WriteFile(resourcePath, []byte("node-script 2.3.4"), 0o600); err != nil {
+		t.Fatalf("write sibling resource: %v", err)
+	}
+	contents := `#!/usr/bin/node
+const fs = require("fs");
+const path = require("path");
+process.stdout.write(fs.readFileSync(path.join(__dirname, "version"), "utf8") + " " + process.argv[2]);
+`
+	if err := os.WriteFile(commandPath, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write pinned Node script: %v", err)
+	}
+	fd, err := unix.Open(commandPath, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("pin Node script: %v", err)
+	}
+	pinned := os.NewFile(uintptr(fd), commandPath)
+	if pinned == nil {
+		_ = unix.Close(fd)
+		t.Fatal("construct pinned Node script file")
+	}
+	defer pinned.Close()
+
+	if err := os.Rename(commandPath, filepath.Join(directory, "original")); err != nil {
+		t.Fatalf("move pinned Node script: %v", err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
+		t.Fatalf("write replacement: %v", err)
+	}
+
+	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
+		Path:             commandPath,
+		PinnedExecutable: pinned,
+		Args:             []string{"--version"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v; result = %#v", err, result)
+	}
+	if result.Stdout != "node-script 2.3.4 --version" {
+		t.Fatalf("Stdout = %q, want pinned Node sibling resource and fixed argument", result.Stdout)
 	}
 }
 
@@ -307,6 +363,8 @@ func TestHelperProcess(t *testing.T) {
 	switch args[0] {
 	case "stdout":
 		_, _ = os.Stdout.WriteString(args[1])
+	case "argv0":
+		_, _ = os.Stdout.WriteString(os.Args[0])
 	case "stderr-exit":
 		_, _ = os.Stderr.WriteString(args[1])
 		exitCode := 1

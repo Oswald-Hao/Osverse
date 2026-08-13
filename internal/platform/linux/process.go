@@ -1,8 +1,11 @@
 package linux
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,9 +22,19 @@ const (
 	defaultOutputLimit    = 64 * 1024
 	commandWaitDelay      = 250 * time.Millisecond
 	pinnedExecutablePath  = "/proc/self/fd/3"
+	maxShebangBytes       = 256
 )
 
 var inheritedEnvironment = []string{"HOME", "PATH", "LANG", "LC_ALL", "TERM"}
+
+var pinnedShellInterpreters = map[string]struct{}{
+	"/bin/bash":     {},
+	"/bin/dash":     {},
+	"/bin/sh":       {},
+	"/usr/bin/bash": {},
+	"/usr/bin/dash": {},
+	"/usr/bin/sh":   {},
+}
 
 type execRunner struct{}
 
@@ -64,10 +77,25 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 		commandPath = pinnedExecutablePath
 	}
 	cmd := exec.CommandContext(context.WithoutCancel(runCtx), commandPath, req.Args...)
+	var pinnedScript *os.File
 	if req.PinnedExecutable != nil {
-		// ExtraFiles maps the already-open executable to child FD 3. Executing
-		// through procfs binds execve to that file object even if req.Path moves.
-		cmd.ExtraFiles = []*os.File{req.PinnedExecutable}
+		cmd.Args[0] = req.Path
+		interpreter, script, ok := openPinnedShellScript(req.PinnedExecutable)
+		if ok {
+			pinnedScript = script
+			defer pinnedScript.Close()
+			// Reading the pinned script on stdin lets the fixed interpreter retain
+			// the requested alias as $0. The runner has no caller-stdin contract;
+			// -s reads the pinned stdin script, and -- keeps fixed version arguments
+			// out of interpreter option parsing while retaining them as "$@".
+			cmd = exec.CommandContext(context.WithoutCancel(runCtx), interpreter)
+			cmd.Args = append([]string{req.Path, "-s", "--"}, req.Args...)
+			cmd.Stdin = pinnedScript
+		} else {
+			// ExtraFiles maps the already-open executable to child FD 3. Executing
+			// through procfs binds execve to that file object even if req.Path moves.
+			cmd.ExtraFiles = []*os.File{req.PinnedExecutable}
+		}
 	}
 	cmd.Env = commandEnvironment(req.Env)
 	cmd.Stdout = stdout
@@ -126,6 +154,41 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 		terminationErr:   terminationErr,
 		waitErr:          err,
 	})
+}
+
+func openPinnedShellScript(executable *os.File) (string, *os.File, bool) {
+	fdPath := fmt.Sprintf("/proc/self/fd/%d", executable.Fd())
+	script, err := os.Open(fdPath)
+	if err != nil {
+		return "", nil, false
+	}
+	header := make([]byte, maxShebangBytes)
+	count, err := script.ReadAt(header, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		_ = script.Close()
+		return "", nil, false
+	}
+	header = header[:count]
+	newline := bytes.IndexByte(header, '\n')
+	if newline < 0 {
+		_ = script.Close()
+		return "", nil, false
+	}
+	line := string(header[:newline])
+	if !strings.HasPrefix(line, "#!") {
+		_ = script.Close()
+		return "", nil, false
+	}
+	interpreter := strings.TrimSpace(strings.TrimPrefix(line, "#!"))
+	if strings.ContainsAny(interpreter, " \t") {
+		_ = script.Close()
+		return "", nil, false
+	}
+	if _, allowed := pinnedShellInterpreters[interpreter]; !allowed {
+		_ = script.Close()
+		return "", nil, false
+	}
+	return interpreter, script, true
 }
 
 type commandCompletion struct {
