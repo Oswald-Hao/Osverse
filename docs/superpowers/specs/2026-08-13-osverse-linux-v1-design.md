@@ -23,7 +23,7 @@ Osverse 是管理工具，不是 CLI 的常驻运行依赖。由 Osverse 安装�
 
 | 项目 | Linux v1 承诺 |
 | --- | --- |
-| 发行版 | Ubuntu Desktop 20.04 LTS、22.04 LTS |
+| 发行版 | Ubuntu 20.04 LTS、22.04 LTS（Desktop/Server 不影响系统支持；GUI 会话可用性单独判断） |
 | CPU | x86_64 / amd64 |
 | 安装包 | `.deb`、AppImage |
 | Shell | Bash、Zsh；其他 Shell 只检测并给出手动说明 |

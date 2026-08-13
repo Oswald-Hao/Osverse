@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Supported systems are Ubuntu Desktop 20.04 LTS and 22.04 LTS on x86_64/amd64.
+- Supported systems are Ubuntu 20.04 LTS and 22.04 LTS on x86_64/amd64. Desktop/Server flavor does not change OS support; GUI-session availability is checked separately.
 - Build against WebKitGTK ABI 4.0 using `-tags webkit2_40`; do not require WebKitGTK 4.1 at runtime.
 - Support Bash and Zsh PATH discovery; other shells are reported without mutating configuration.
 - Phase 1 performs no installation, package-manager mutation, shell-profile mutation, API configuration write, or credential storage.
