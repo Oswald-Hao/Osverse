@@ -286,6 +286,17 @@ describe('environment status dashboard', () => {
     }
   })
 
+  it('keeps desktop-width sidebar labels in normal layout', () => {
+    render(<App />)
+
+    for (const label of ['环境概览', '工具状态', '系统信息']) {
+      const item = screen.getByRole('listitem', { name: label })
+      const visibleLabel = within(item).getByText(label)
+      expect(visibleLabel).toBeVisible()
+      expect(visibleLabel).toHaveStyle({ position: '' })
+    }
+  })
+
   it('shows every conflict path and its resolved target', () => {
     render(<App />)
 

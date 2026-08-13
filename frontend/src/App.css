@@ -581,7 +581,18 @@ button:focus-visible {
   margin: 20px 0;
 }
 
-@media (max-width: 1060px) {
+@media (min-width: 901px) and (max-width: 1060px) {
+  .app-shell {
+    grid-template-columns: clamp(190px, 22vw, 220px) minmax(0, 1fr);
+    gap: clamp(20px, 2.5vw, 28px);
+  }
+
+  .system-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 76px minmax(0, 1fr);
     gap: 20px;
