@@ -14,6 +14,7 @@ import (
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -24,8 +25,7 @@ const (
 	desktopInstalledWarning = "Installed, but unsupported on this system"
 )
 
-var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
-var debianVersion = regexp.MustCompile(`^(?:[0-9]+:)?[0-9][A-Za-z0-9.+:~-]*$`)
+var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?$`)
 
 // PackageQuery reports the installed version of one fixed package name.
 type PackageQuery interface {
@@ -172,8 +172,10 @@ func (query DpkgQuery) InstalledVersion(ctx context.Context, packageName string)
 		return "", false, invalidDesktopResult(errors.New("invalid package query"))
 	}
 	result, err := query.Runner.Run(ctx, platform.CommandRequest{
-		Path:        "/usr/bin/dpkg-query",
-		Args:        []string{"-W", "-f=${binary:Package}\t${db:Status-Abbrev}\t${Version}", packageName},
+		Path: "/usr/bin/dpkg-query",
+		// Package is the unqualified binary control-field name; unlike
+		// binary:Package, it cannot acquire an architecture suffix.
+		Args:        []string{"-W", "-f=${Package}\t${db:Status-Abbrev}\t${Version}", packageName},
 		Env:         []string{"LC_ALL=C"},
 		Timeout:     desktopQueryTimeout,
 		OutputLimit: desktopQueryOutputLimit,
@@ -205,11 +207,12 @@ func (query DpkgQuery) InstalledVersion(ctx context.Context, packageName string)
 		return "", false, invalidDesktopResult(errors.New("malformed package query output"))
 	}
 	fields := strings.Split(line, "\t")
-	if len(fields) != 3 || fields[0] != packageName || !validDpkgStatus(fields[1]) ||
-		(fields[2] != "" && !validDpkgVersion(fields[2])) || fields[1] == "ii " && fields[2] == "" {
+	installed := len(fields) == 3 && len(fields[1]) == 3 && fields[1][1] == 'i'
+	if len(fields) != 3 || fields[0] != dpkgPackageBase(packageName) || !validDpkgStatus(fields[1]) ||
+		(fields[2] != "" && !validDpkgVersion(fields[2])) || installed && fields[2] == "" {
 		return "", false, invalidDesktopResult(errors.New("malformed package query result"))
 	}
-	return fields[2], fields[1] == "ii ", nil
+	return fields[2], installed, nil
 }
 
 // DesktopComponentProbe adapts desktop detection to the scan component API.
@@ -253,9 +256,10 @@ func validDesktopFileName(name string) bool {
 }
 
 type desktopEvidence struct {
-	path string
-	file fs.File
-	info fs.FileInfo
+	path     string
+	file     fs.File
+	info     fs.FileInfo
+	sameFile func(fs.FileInfo, fs.FileInfo) bool
 }
 
 func fixedDesktopEvidence(ctx context.Context, fsys fs.FS, home, name string) ([]desktopEvidence, error) {
@@ -271,6 +275,7 @@ func fixedDesktopEvidence(ctx context.Context, fsys fs.FS, home, name string) ([
 		}
 		path, ok := containedDesktopPath(directory, name)
 		if !ok {
+			closeDesktopEvidence(found)
 			return nil, invalidDesktopResult(errors.New("desktop path escaped application directory"))
 		}
 		evidence, present, err := openDesktopEvidence(fsys, filepath.ToSlash(strings.TrimPrefix(directory, "/")), name, path)
@@ -303,79 +308,93 @@ func containedDesktopPath(directory, name string) (string, bool) {
 }
 
 func openDesktopEvidence(fsys fs.FS, directory, name, displayPath string) (desktopEvidence, bool, error) {
-	directoryOK, err := containedFSDirectory(fsys, directory)
-	if err != nil || !directoryOK {
-		return desktopEvidence{}, false, err
+	if !fs.ValidPath(directory) || directory == "." || !validDesktopFileName(name) {
+		return desktopEvidence{}, false, invalidDesktopResult(errors.New("invalid desktop evidence path"))
 	}
-	entries, err := fs.ReadDir(fsys, directory)
+	root, rootErr := fsys.Open(".")
+	if rootErr == nil {
+		if rootFile, ok := root.(*os.File); ok {
+			evidence, present, err := openOSDesktopEvidence(rootFile, directory, name, displayPath)
+			_ = root.Close()
+			return evidence, present, err
+		}
+		_ = root.Close()
+	} else if !errors.Is(rootErr, fs.ErrNotExist) {
+		return desktopEvidence{}, false, rootErr
+	}
+
+	fullPath := filepath.ToSlash(filepath.Join(directory, name))
+	file, err := fsys.Open(fullPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return desktopEvidence{}, false, nil
 	}
 	if err != nil {
 		return desktopEvidence{}, false, err
 	}
-	for _, entry := range entries {
-		if entry.Name() != name {
-			continue
-		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return desktopEvidence{}, false, nil
-		}
-		entryInfo, err := entry.Info()
-		if err != nil {
-			return desktopEvidence{}, false, err
-		}
-		if !entryInfo.Mode().IsRegular() {
-			return desktopEvidence{}, false, nil
-		}
-		file, err := fsys.Open(filepath.ToSlash(filepath.Join(directory, name)))
-		if errors.Is(err, fs.ErrNotExist) {
-			return desktopEvidence{}, false, nil
-		}
-		if err != nil {
-			return desktopEvidence{}, false, err
-		}
-		openedInfo, err := file.Stat()
-		if err != nil || !openedInfo.Mode().IsRegular() ||
-			(entryInfo.Sys() != nil && openedInfo.Sys() != nil && !os.SameFile(entryInfo, openedInfo)) {
-			_ = file.Close()
-			if err != nil {
-				return desktopEvidence{}, false, err
-			}
-			return desktopEvidence{}, false, nil
-		}
-		evidence := desktopEvidence{path: displayPath, file: file, info: openedInfo}
-		if osFile, ok := file.(*os.File); ok {
-			resolved, ok := resolvedOpenFile(osFile)
-			if !ok {
-				_ = file.Close()
-				return desktopEvidence{}, false, nil
-			}
-			root, err := fsys.Open(".")
-			if err != nil {
-				_ = file.Close()
-				return desktopEvidence{}, false, err
-			}
-			rootFile, rootOK := root.(*os.File)
-			rootResolved, rootResolvedOK := resolvedOpenFile(rootFile)
-			_ = root.Close()
-			expectedDirectory := filepath.Join(rootResolved, filepath.FromSlash(directory))
-			if !rootOK || !rootResolvedOK || filepath.Dir(resolved) != expectedDirectory {
-				_ = file.Close()
-				return desktopEvidence{}, false, nil
-			}
-		}
-		return evidence, true, nil
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return desktopEvidence{}, false, err
 	}
-	return desktopEvidence{}, false, nil
+	if !openedInfo.Mode().IsRegular() {
+		_ = file.Close()
+		return desktopEvidence{}, false, nil
+	}
+	// A generic fs.FS has no portable no-follow operation. Treat the single
+	// opened handle as the evidence snapshot only when its FileInfo exposes an
+	// identity that os.SameFile can revalidate without reopening the pathname.
+	if openedInfo.Sys() == nil || !os.SameFile(openedInfo, openedInfo) {
+		_ = file.Close()
+		return desktopEvidence{}, false, invalidDesktopResult(errors.New("filesystem cannot prove desktop identity"))
+	}
+	return desktopEvidence{
+		path: displayPath, file: file, info: openedInfo, sameFile: os.SameFile,
+	}, true, nil
 }
 
-func resolvedOpenFile(file *os.File) (string, bool) {
-	if file == nil {
-		return "", false
+func openOSDesktopEvidence(root *os.File, directory, name, displayPath string) (desktopEvidence, bool, error) {
+	current, err := unix.Dup(int(root.Fd()))
+	if err != nil {
+		return desktopEvidence{}, false, err
 	}
-	resolved, err := os.Readlink(filepath.Join("/proc/self/fd", strconv.FormatUint(uint64(file.Fd()), 10)))
-	return filepath.Clean(resolved), err == nil && filepath.IsAbs(resolved)
+	defer func() {
+		if current >= 0 {
+			_ = unix.Close(current)
+		}
+	}()
+	for _, component := range strings.Split(directory, "/") {
+		next, openErr := unix.Openat(current, component,
+			unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if errors.Is(openErr, unix.ENOENT) || errors.Is(openErr, unix.ENOTDIR) || errors.Is(openErr, unix.ELOOP) {
+			return desktopEvidence{}, false, nil
+		}
+		if openErr != nil {
+			return desktopEvidence{}, false, openErr
+		}
+		_ = unix.Close(current)
+		current = next
+	}
+	fd, err := unix.Openat(current, name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ELOOP) {
+		return desktopEvidence{}, false, nil
+	}
+	if err != nil {
+		return desktopEvidence{}, false, err
+	}
+	file := os.NewFile(uintptr(fd), displayPath)
+	if file == nil {
+		_ = unix.Close(fd)
+		return desktopEvidence{}, false, errors.New("open desktop evidence")
+	}
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = file.Close()
+		if err != nil {
+			return desktopEvidence{}, false, err
+		}
+		return desktopEvidence{}, false, nil
+	}
+	return desktopEvidence{path: displayPath, file: file, info: info, sameFile: os.SameFile}, true, nil
 }
 
 func desktopEvidenceUnchanged(evidence []desktopEvidence) bool {
@@ -384,7 +403,7 @@ func desktopEvidenceUnchanged(evidence []desktopEvidence) bool {
 		if err != nil || !info.Mode().IsRegular() {
 			return false
 		}
-		if item.info.Sys() != nil && info.Sys() != nil && !os.SameFile(item.info, info) {
+		if item.sameFile == nil || !item.sameFile(item.info, info) {
 			return false
 		}
 	}
@@ -404,45 +423,6 @@ func desktopCandidatesUnchanged(candidates []commandCandidate) bool {
 		}
 	}
 	return true
-}
-
-func containedFSDirectory(fsys fs.FS, directory string) (bool, error) {
-	if !fs.ValidPath(directory) || directory == "." {
-		return false, invalidDesktopResult(errors.New("invalid application directory"))
-	}
-	parent := "."
-	for _, name := range strings.Split(directory, "/") {
-		entries, err := fs.ReadDir(fsys, parent)
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		found := false
-		for _, entry := range entries {
-			if entry.Name() != name {
-				continue
-			}
-			found = true
-			if entry.Type()&fs.ModeSymlink != 0 {
-				return false, nil
-			}
-			info, err := entry.Info()
-			if err != nil {
-				return false, err
-			}
-			if !info.IsDir() {
-				return false, nil
-			}
-			break
-		}
-		if !found {
-			return false, nil
-		}
-		parent = filepath.ToSlash(filepath.Join(parent, name))
-	}
-	return true, nil
 }
 
 func desktopAllowed(system domain.SystemInfo, minimum string) bool {
@@ -476,15 +456,52 @@ func singleDpkgLine(output string) (string, bool) {
 }
 
 func validDpkgVersion(version string) bool {
-	return debianVersion.MatchString(version) && !strings.HasSuffix(version, "-")
+	if version == "" || strings.IndexFunc(version, func(r rune) bool {
+		return r > 127 || r <= ' '
+	}) >= 0 {
+		return false
+	}
+	remainder := version
+	if colon := strings.IndexByte(version, ':'); colon >= 0 {
+		epoch := version[:colon]
+		if epoch == "" || !allASCII(epoch, "0123456789") {
+			return false
+		}
+		remainder = version[colon+1:]
+	}
+	upstream := remainder
+	revision := ""
+	if hyphen := strings.LastIndexByte(remainder, '-'); hyphen >= 0 {
+		upstream = remainder[:hyphen]
+		revision = remainder[hyphen+1:]
+		if revision == "" || !allASCII(revision, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.+~") {
+			return false
+		}
+	}
+	return upstream != "" && upstream[0] >= '0' && upstream[0] <= '9' &&
+		allASCII(upstream, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.+:~-")
 }
 
 func validDpkgStatus(status string) bool {
 	if len(status) != 3 || !strings.ContainsRune("uihrp", rune(status[0])) ||
-		!strings.ContainsRune("ncUFhWti", rune(status[1])) {
+		!strings.ContainsRune("ncHUFWti", rune(status[1])) {
 		return false
 	}
 	return status[2] == ' ' || status[2] == 'R'
+}
+
+func allASCII(value, allowed string) bool {
+	for _, char := range value {
+		if !strings.ContainsRune(allowed, char) {
+			return false
+		}
+	}
+	return true
+}
+
+func dpkgPackageBase(packageName string) string {
+	base, _, _ := strings.Cut(packageName, ":")
+	return base
 }
 
 func exactDpkgNotFound(result platform.CommandResult, packageName string) bool {

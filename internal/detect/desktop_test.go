@@ -109,11 +109,8 @@ func TestDetectDesktopExternalDesktopAndExecutableIsInstalled(t *testing.T) {
 	spec := desktopSpecsByID(DesktopSpecs())["cc-switch"]
 	directory := t.TempDir()
 	executable := writeExecutable(t, directory, spec.ExecutableName, 0o700)
-	root := fstest.MapFS{
-		"home/tester/.local/share/applications/" + spec.DesktopFileName: &fstest.MapFile{
-			Data: []byte("[Desktop Entry]\nExec=/definitely/not/executed --dangerous\n"), Mode: 0o600,
-		},
-	}
+	root := desktopTestFS(t, "home/tester/.local/share/applications/"+spec.DesktopFileName,
+		[]byte("[Desktop Entry]\nExec=/definitely/not/executed --dangerous\n"))
 
 	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{directory},
 		fakePackageQuery{}, root, "/home/tester")
@@ -132,9 +129,7 @@ func TestDetectDesktopConflictingExecutablesAreStable(t *testing.T) {
 	secondDir := t.TempDir()
 	first := writeExecutable(t, firstDir, spec.ExecutableName, 0o700)
 	second := writeExecutable(t, secondDir, spec.ExecutableName, 0o700)
-	root := fstest.MapFS{
-		"usr/share/applications/" + spec.DesktopFileName: &fstest.MapFile{Data: []byte("ignored"), Mode: 0o644},
-	}
+	root := desktopTestFS(t, "usr/share/applications/"+spec.DesktopFileName, []byte("ignored"))
 
 	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{secondDir, firstDir, secondDir},
 		fakePackageQuery{}, root, "/home/tester")
@@ -237,11 +232,58 @@ func TestDpkgQueryFixedRequestAndInstalledResult(t *testing.T) {
 	}
 	want := platform.CommandRequest{
 		Path: "/usr/bin/dpkg-query",
-		Args: []string{"-W", "-f=${binary:Package}\t${db:Status-Abbrev}\t${Version}", "claude-desktop"},
+		Args: []string{"-W", "-f=${Package}\t${db:Status-Abbrev}\t${Version}", "claude-desktop"},
 		Env:  []string{"LC_ALL=C"}, Timeout: 3 * time.Second, OutputLimit: 64 * 1024,
 	}
 	if !reflect.DeepEqual(runner.requests, []platform.CommandRequest{want}) {
 		t.Fatalf("requests = %#v, want fixed request %#v", runner.requests, []platform.CommandRequest{want})
+	}
+}
+
+func TestDpkgQueryInstalledUsesCurrentStatusAndAcceptsReinstreq(t *testing.T) {
+	for _, status := range []string{
+		"ui ", "ii ", "hi ", "ri ", "pi ",
+		"uiR", "iiR", "hiR", "riR", "piR",
+	} {
+		t.Run(strings.ReplaceAll(status, " ", "space"), func(t *testing.T) {
+			version, installed, err := (DpkgQuery{Runner: &desktopRecordingRunner{result: platform.CommandResult{
+				ExitCode: 0, Stdout: "claude-desktop\t" + status + "\t1.2.3",
+			}}}).InstalledVersion(context.Background(), "claude-desktop")
+			if err != nil || !installed || version != "1.2.3" {
+				t.Fatalf("status %q = (%q, %t, %v), want installed", status, version, installed, err)
+			}
+		})
+	}
+}
+
+func TestDpkgQueryMultiarchPackageIdentity(t *testing.T) {
+	runner := &desktopRecordingRunner{result: platform.CommandResult{
+		ExitCode: 0, Stdout: "libc6\tii \t2.35-0ubuntu3.14",
+	}}
+	version, installed, err := (DpkgQuery{Runner: runner}).InstalledVersion(context.Background(), "libc6:amd64")
+	if err != nil || !installed || version != "2.35-0ubuntu3.14" {
+		t.Fatalf("multiarch query = (%q, %t, %v), want installed", version, installed, err)
+	}
+	wantArgs := []string{"-W", "-f=${Package}\t${db:Status-Abbrev}\t${Version}", "libc6:amd64"}
+	if len(runner.requests) != 1 || !reflect.DeepEqual(runner.requests[0].Args, wantArgs) {
+		t.Fatalf("request args = %#v, want %#v", runner.requests, wantArgs)
+	}
+
+	for _, invalid := range []string{
+		"libc6:amd64:evil", "libc6:", ":amd64", "libc6:amd64/evil",
+		"libc6:AMD64", "libc6:-amd64", "libc6:amd64-", "libc6:amd.64",
+	} {
+		if _, _, err := (DpkgQuery{Runner: &desktopRecordingRunner{}}).InstalledVersion(context.Background(), invalid); !hasPublicCode(err, domain.ErrInvalidResult) {
+			t.Fatalf("package %q error = %v, want INVALID_RESULT", invalid, err)
+		}
+	}
+	for _, outputName := range []string{"libc", "libc60", "xlibc6", "libc6-extra", "libc6:amd64"} {
+		_, _, err := (DpkgQuery{Runner: &desktopRecordingRunner{result: platform.CommandResult{
+			ExitCode: 0, Stdout: outputName + "\tii \t2.35-0ubuntu3.14",
+		}}}).InstalledVersion(context.Background(), "libc6:amd64")
+		if !hasPublicCode(err, domain.ErrInvalidResult) {
+			t.Fatalf("output package %q error = %v, want INVALID_RESULT", outputName, err)
+		}
 	}
 }
 
@@ -293,7 +335,11 @@ func TestDpkgQueryValidNoninstalledStates(t *testing.T) {
 	}{
 		{name: "config files remain", status: "rc ", version: "1.2.3-1"},
 		{name: "not installed", status: "un ", version: ""},
+		{name: "half installed and reinstreq", status: "iHR", version: "1.2.3"},
+		{name: "unpacked", status: "iU ", version: "1.2.3"},
 		{name: "half configured", status: "iF ", version: "2:1.0:vendor-3"},
+		{name: "triggers awaiting", status: "iW ", version: "1.2.3"},
+		{name: "triggers pending", status: "it ", version: "1.2.3"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -315,7 +361,8 @@ func TestDpkgQueryRejectsInvalidResultsWithoutOutputLeak(t *testing.T) {
 	}{
 		{name: "malformed status", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tzz \t1.2.3"}},
 		{name: "undocumented desired state", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\twh \t1.2.3"}},
-		{name: "wrong status case", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tiH \t1.2.3"}},
+		{name: "wrong status case", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tih \t1.2.3"}},
+		{name: "unknown error flag", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tiiX\t1.2.3"}},
 		{name: "short status", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii\t1.2.3"}},
 		{name: "wrong package", result: platform.CommandResult{ExitCode: 0, Stdout: "other-package\tii \t1.2.3"}},
 		{name: "missing installed version", result: platform.CommandResult{ExitCode: 0, Stdout: "claude-desktop\tii \t"}},
@@ -335,6 +382,26 @@ func TestDpkgQueryRejectsInvalidResultsWithoutOutputLeak(t *testing.T) {
 				t.Fatalf("error leaks stdout: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidDpkgVersionStructuralGrammar(t *testing.T) {
+	valid := []string{
+		"1", "1.2.3-1ubuntu1", "2:1.0~rc.1+git:vendor-3+deb12u1", "1:1-2-3", "2:1.0:vendor",
+	}
+	for _, version := range valid {
+		if !validDpkgVersion(version) {
+			t.Errorf("validDpkgVersion(%q) = false, want true", version)
+		}
+	}
+	invalid := []string{
+		"", ":1.0", "x:1.0", "1:", "1.0:vendor", "1-", "-1", "1-1:bad", "1.0-1-bad:revision",
+		"1.0 bad", "1.0\n1", "1.0\x00bad",
+	}
+	for _, version := range invalid {
+		if validDpkgVersion(version) {
+			t.Errorf("validDpkgVersion(%q) = true, want false", version)
+		}
 	}
 }
 
@@ -386,6 +453,24 @@ type failingFS struct{ err error }
 
 func (f failingFS) Open(string) (fs.File, error) { return nil, f.err }
 
+func desktopTestFS(t *testing.T, path string, data []byte) fs.FS {
+	t.Helper()
+	return os.DirFS(writeDesktopTestRoot(t, path, data))
+}
+
+func writeDesktopTestRoot(t *testing.T, path string, data []byte) string {
+	t.Helper()
+	root := t.TempDir()
+	fullPath := filepath.Join(root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func supportedUbuntu(version string) domain.SystemInfo {
 	return domain.SystemInfo{Distribution: "Ubuntu", Version: version, Architecture: "x86_64", Supported: true}
 }
@@ -409,9 +494,7 @@ func TestDetectDesktopPathBoundaryDoesNotUseSiblingPrefix(t *testing.T) {
 	allowed := filepath.Join(base, "bin")
 	sibling := filepath.Join(base, "binary")
 	writeExecutable(t, sibling, spec.ExecutableName, 0o700)
-	root := fstest.MapFS{
-		"usr/share/applications/" + spec.DesktopFileName: &fstest.MapFile{Data: []byte("ignored"), Mode: 0o644},
-	}
+	root := desktopTestFS(t, "usr/share/applications/"+spec.DesktopFileName, []byte("ignored"))
 	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{allowed},
 		fakePackageQuery{}, root, "/home/tester")
 	if err != nil {
@@ -469,6 +552,28 @@ func TestDetectDesktopRejectsSymlinkedApplicationDirectoryEscape(t *testing.T) {
 	}
 }
 
+func TestDetectDesktopRejectsProductionFinalDesktopSymlink(t *testing.T) {
+	spec := desktopSpecsByID(DesktopSpecs())["cc-switch"]
+	directory := t.TempDir()
+	writeExecutable(t, directory, spec.ExecutableName, 0o700)
+	rootDir := t.TempDir()
+	desktopDir := filepath.Join(rootDir, "usr", "share", "applications")
+	if err := os.MkdirAll(desktopDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(desktopDir, spec.DesktopFileName)); err != nil {
+		t.Fatal(err)
+	}
+	component, err := DetectDesktop(context.Background(), spec, supportedUbuntu("22.04"), []string{directory},
+		fakePackageQuery{}, os.DirFS(rootDir), "/home/tester")
+	if err != nil {
+		t.Fatalf("DetectDesktop() error = %v", err)
+	}
+	if component.Status != domain.StatusMissing {
+		t.Fatalf("final desktop symlink produced %#v, want missing", component)
+	}
+}
+
 func TestFixedDesktopEvidencePinsOpenedRegularFile(t *testing.T) {
 	rootDir := t.TempDir()
 	directory := filepath.Join(rootDir, "usr", "share", "applications")
@@ -500,10 +605,10 @@ func TestDetectDesktopExecutableAliasSwapFailsEvidence(t *testing.T) {
 	directory := t.TempDir()
 	executable := writeExecutable(t, directory, spec.ExecutableName, 0o700)
 	replacement := writeExecutable(t, t.TempDir(), spec.ExecutableName, 0o700)
+	desktopPath := "usr/share/applications/" + spec.DesktopFileName
+	rootDir := writeDesktopTestRoot(t, desktopPath, []byte("ignored"))
 	root := &statActionFS{
-		FS: fstest.MapFS{
-			"usr/share/applications/" + spec.DesktopFileName: &fstest.MapFile{Data: []byte("ignored"), Mode: 0o644},
-		},
+		FS:       &genericDirFS{root: rootDir, target: desktopPath},
 		actionAt: 2,
 		action: func() {
 			if err := os.Remove(executable); err != nil {
@@ -523,6 +628,122 @@ func TestDetectDesktopExecutableAliasSwapFailsEvidence(t *testing.T) {
 	if component.Status != domain.StatusBroken || len(component.Installations) != 0 {
 		t.Fatalf("swapped executable produced %#v, want broken without stale evidence", component)
 	}
+}
+
+func TestFixedDesktopEvidenceFailsClosedWhenGenericIdentityIsUnavailable(t *testing.T) {
+	root := fstest.MapFS{
+		"usr/share/applications/cc-switch.desktop": &fstest.MapFile{Data: []byte("ignored"), Mode: 0o644},
+	}
+	evidence, err := fixedDesktopEvidence(context.Background(), root, "/home/tester", "cc-switch.desktop")
+	closeDesktopEvidence(evidence)
+	if !hasPublicCode(err, domain.ErrInvalidResult) {
+		t.Fatalf("fixedDesktopEvidence() error = %v, want fail-closed INVALID_RESULT", err)
+	}
+}
+
+func TestFixedDesktopEvidenceUsesOnePinnedOpenOnGenericFS(t *testing.T) {
+	rootDir := t.TempDir()
+	path := "usr/share/applications/cc-switch.desktop"
+	desktopPath := filepath.Join(rootDir, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(desktopPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(desktopPath, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := &genericDirFS{root: rootDir, target: path}
+	evidence, err := fixedDesktopEvidence(context.Background(), root, "/home/tester", "cc-switch.desktop")
+	if err != nil || len(evidence) != 1 {
+		closeDesktopEvidence(evidence)
+		t.Fatalf("fixedDesktopEvidence() = (%#v, %v), want one pinned generic file", evidence, err)
+	}
+	defer closeDesktopEvidence(evidence)
+	if root.targetOpens != 1 {
+		t.Fatalf("target opens = %d, want exactly one", root.targetOpens)
+	}
+	if err := os.Remove(desktopPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", desktopPath); err != nil {
+		t.Fatal(err)
+	}
+	if !desktopEvidenceUnchanged(evidence) {
+		t.Fatal("generic pinned evidence became invalid after pathname replacement")
+	}
+}
+
+func TestFixedDesktopEvidenceFailsClosedOnMutableGenericSysNilFile(t *testing.T) {
+	path := "usr/share/applications/cc-switch.desktop"
+	root := &mutableGenericFS{MapFS: fstest.MapFS{
+		path: &fstest.MapFile{Data: []byte("original"), Mode: 0o644},
+	}, path: path}
+	evidence, err := fixedDesktopEvidence(context.Background(), root, "/home/tester", "cc-switch.desktop")
+	closeDesktopEvidence(evidence)
+	if !root.swapped {
+		t.Fatal("mutable generic filesystem did not exercise the swap")
+	}
+	if !root.rootClosed || !root.targetClosed {
+		t.Fatalf("closed handles = (root %t, target %t), want both true", root.rootClosed, root.targetClosed)
+	}
+	if !hasPublicCode(err, domain.ErrInvalidResult) {
+		t.Fatalf("fixedDesktopEvidence() error = %v, want fail-closed INVALID_RESULT", err)
+	}
+}
+
+type genericDirFS struct {
+	root        string
+	target      string
+	targetOpens int
+}
+
+func (fsys *genericDirFS) Open(name string) (fs.File, error) {
+	file, err := os.DirFS(fsys.root).Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if name == fsys.target {
+		fsys.targetOpens++
+	}
+	if name == "." {
+		return genericFile{File: file}, nil
+	}
+	return file, nil
+}
+
+type genericFile struct{ fs.File }
+
+type mutableGenericFS struct {
+	fstest.MapFS
+	path         string
+	swapped      bool
+	rootClosed   bool
+	targetClosed bool
+}
+
+func (fsys *mutableGenericFS) Open(name string) (fs.File, error) {
+	file, err := fsys.MapFS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if name == fsys.path {
+		fsys.MapFS[name] = &fstest.MapFile{Data: []byte("replacement"), Mode: 0o644}
+		fsys.swapped = true
+		return &closeTrackingFile{File: file, closed: &fsys.targetClosed}, nil
+	}
+	if name == "." {
+		return &closeTrackingFile{File: file, closed: &fsys.rootClosed}, nil
+	}
+	return file, nil
+}
+
+type closeTrackingFile struct {
+	fs.File
+	closed *bool
+}
+
+func (file *closeTrackingFile) Close() error {
+	*file.closed = true
+	return file.File.Close()
 }
 
 type statActionFS struct {
