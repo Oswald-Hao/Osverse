@@ -3,6 +3,8 @@ package detect
 import (
 	"reflect"
 	"testing"
+
+	"github.com/Oswald-Hao/Osverse/internal/platform"
 )
 
 func TestCoreCLISpecsProvidesOrderedFixedCLICommands(t *testing.T) {
@@ -58,12 +60,15 @@ func TestCoreCLISpecsVersionPatternsParseUpstreamShapedOutput(t *testing.T) {
 		// Claude Code prints its version followed by this product suffix.
 		{id: "claude-code", output: "2.1.28 (Claude Code)", version: "2.1.28"},
 		{id: "claude-code", output: "claude v2.1.28 (Claude Code)", version: "2.1.28"},
+		{id: "claude-code", output: "claude v2.1.28-rc.1+build.7 (Claude Code)", version: "2.1.28-rc.1+build.7"},
 		// Codex CLI identifies itself with the codex-cli product name.
 		{id: "codex-cli", output: "codex-cli 0.91.0", version: "0.91.0"},
 		{id: "codex-cli", output: "codex v0.91.0", version: "0.91.0"},
+		{id: "codex-cli", output: "codex-cli 0.91.0-rc.1+build.7", version: "0.91.0-rc.1+build.7"},
 		// OpenCode has emitted both a bare version and a product-prefixed version.
 		{id: "opencode-cli", output: "1.0.159", version: "1.0.159"},
 		{id: "opencode-cli", output: "opencode v1.0.159", version: "1.0.159"},
+		{id: "opencode-cli", output: "opencode v1.0.159-rc.1+build.7", version: "1.0.159-rc.1+build.7"},
 	}
 
 	specs := specsByID(CoreCLISpecs())
@@ -89,6 +94,38 @@ func TestCoreCLISpecsVersionPatternsParseUpstreamShapedOutput(t *testing.T) {
 			}
 			if spec.VersionPattern.MatchString(tt.output + " unrelated trailing junk") {
 				t.Errorf("pattern %q accepted unrelated trailing output", pattern)
+			}
+		})
+	}
+}
+
+func TestCoreCLISpecsVersionPatternsRequireNonEmptySemVerSuffixIdentifiers(t *testing.T) {
+	invalidOutputs := []string{
+		"codex 1.2.3-",
+		"codex 1.2.3+",
+		"codex 1.2.3-rc.1+",
+		"codex 1.2.3-rc..1",
+		"codex 1.2.3+build..7",
+		"codex 1.2.3-rc.1+build 7",
+	}
+	pattern := specsByID(CoreCLISpecs())["codex-cli"].VersionPattern
+	for _, output := range invalidOutputs {
+		t.Run(output, func(t *testing.T) {
+			if pattern.MatchString(output) {
+				t.Errorf("pattern %q accepted malformed version output %q", pattern, output)
+			}
+		})
+	}
+}
+
+func TestCoreCLISpecsVersionPatternsParseCRLFTrimmedByDetector(t *testing.T) {
+	for _, spec := range CoreCLISpecs() {
+		t.Run(spec.ID, func(t *testing.T) {
+			version, ok := parseCommandVersion(spec.VersionPattern, platform.CommandResult{
+				Stdout: "v1.2.3-rc.1+build.7\r\n",
+			})
+			if !ok || version != "1.2.3-rc.1+build.7" {
+				t.Fatalf("parseCommandVersion() = (%q, %t), want (%q, true)", version, ok, "1.2.3-rc.1+build.7")
 			}
 		})
 	}
