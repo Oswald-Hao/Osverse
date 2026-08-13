@@ -6,7 +6,7 @@
 
 **Architecture:** React never performs OS access. A Go scan service composes small Linux probes and component detectors behind interfaces, returns a stable frontend-safe snapshot, and exposes only `ScanEnvironment()` through the Wails bridge. Phase 1 is deliberately read-only: action buttons explain that installation and configuration arrive in later phases.
 
-**Tech Stack:** Go 1.23, Wails v2.13.0, React 19, TypeScript 5.8, Vite 7, Vitest, Testing Library, CSS Modules/plain CSS, GitHub Actions.
+**Tech Stack:** Go 1.25, Wails v2.13.0, React 19, TypeScript 5.8, Vite 7, Vitest, Testing Library, CSS Modules/plain CSS, GitHub Actions.
 
 ## Global Constraints
 
@@ -795,7 +795,7 @@ Document exact manual cases for Ubuntu 20.04 and 22.04 x86_64: no CLI installed,
 
 - [ ] **Step 2: Add least-privilege CI**
 
-Set workflow permissions to `contents: read`. Because [GitHub retired its hosted `ubuntu-20.04` runner on 2025-04-15](https://github.blog/changelog/2025-01-15-github-actions-ubuntu-20-runner-image-brownout-dates-and-other-breaking-changes/), run the compatibility build as a container job with `runs-on: ubuntu-24.04` and `container: ubuntu:20.04`; install `git ca-certificates build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev`. Pin the verified current action releases (`actions/checkout@v7.0.1`, `actions/setup-go@v7.0.0`, `actions/setup-node@v7.0.0`) and pin Go `1.23.x` plus Node `22.x`. Run:
+Set workflow permissions to `contents: read`. Because [GitHub retired its hosted `ubuntu-20.04` runner on 2025-04-15](https://github.blog/changelog/2025-01-15-github-actions-ubuntu-20-runner-image-brownout-dates-and-other-breaking-changes/), run the compatibility build as a container job with `runs-on: ubuntu-24.04` and `container: ubuntu:20.04`; install `git ca-certificates build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev`. Pin the verified current action releases (`actions/checkout@v7.0.1`, `actions/setup-go@v7.0.0`, `actions/setup-node@v7.0.0`) and pin Go `1.25.x` plus Node `22.x`. Run:
 
 ```bash
 npm --prefix frontend ci
