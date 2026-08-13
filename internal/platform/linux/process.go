@@ -18,6 +18,7 @@ const (
 	defaultCommandTimeout = 3 * time.Second
 	defaultOutputLimit    = 64 * 1024
 	commandWaitDelay      = 250 * time.Millisecond
+	pinnedExecutablePath  = "/proc/self/fd/3"
 )
 
 var inheritedEnvironment = []string{"HOME", "PATH", "LANG", "LC_ALL", "TERM"}
@@ -58,7 +59,16 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 	// Coordinate cancellation here instead of allowing os/exec to reap the
 	// leader concurrently. Until cmd.Wait starts, its PID (and therefore the
 	// process-group ID we created) cannot be recycled for an unrelated group.
-	cmd := exec.CommandContext(context.WithoutCancel(runCtx), req.Path, req.Args...)
+	commandPath := req.Path
+	if req.PinnedExecutable != nil {
+		commandPath = pinnedExecutablePath
+	}
+	cmd := exec.CommandContext(context.WithoutCancel(runCtx), commandPath, req.Args...)
+	if req.PinnedExecutable != nil {
+		// ExtraFiles maps the already-open executable to child FD 3. Executing
+		// through procfs binds execve to that file object even if req.Path moves.
+		cmd.ExtraFiles = []*os.File{req.PinnedExecutable}
+	}
 	cmd.Env = commandEnvironment(req.Env)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

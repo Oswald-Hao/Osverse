@@ -38,6 +38,66 @@ func TestExecRunnerSuccess(t *testing.T) {
 	}
 }
 
+func TestExecRunnerPinnedExecutableIgnoresReplacedPath(t *testing.T) {
+	pinned, err := os.Open(os.Args[0])
+	if err != nil {
+		t.Fatalf("open test executable: %v", err)
+	}
+	defer pinned.Close()
+
+	replacement := filepath.Join(t.TempDir(), "replaced-command")
+	if err := os.WriteFile(replacement, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
+		t.Fatalf("write replacement executable: %v", err)
+	}
+	req := helperRequest("stdout", "pinned-original")
+	req.Path = replacement
+	req.PinnedExecutable = pinned
+
+	result, err := NewExecRunner().Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Stdout != "pinned-original" {
+		t.Fatalf("Stdout = %q, want pinned original output", result.Stdout)
+	}
+}
+
+func TestExecRunnerPinnedScriptIgnoresReplacedPath(t *testing.T) {
+	directory := t.TempDir()
+	commandPath := filepath.Join(directory, "command")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf pinned-script"), 0o700); err != nil {
+		t.Fatalf("write pinned script: %v", err)
+	}
+	fd, err := unix.Open(commandPath, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("pin script: %v", err)
+	}
+	pinned := os.NewFile(uintptr(fd), commandPath)
+	if pinned == nil {
+		_ = unix.Close(fd)
+		t.Fatal("construct pinned script file")
+	}
+	defer pinned.Close()
+
+	if err := os.Rename(commandPath, filepath.Join(directory, "original")); err != nil {
+		t.Fatalf("move pinned script: %v", err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf replacement"), 0o700); err != nil {
+		t.Fatalf("write replacement script: %v", err)
+	}
+
+	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
+		Path:             commandPath,
+		PinnedExecutable: pinned,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Stdout != "pinned-script" {
+		t.Fatalf("Stdout = %q, want pinned script output", result.Stdout)
+	}
+}
+
 func TestExecRunnerNonZeroExitReturnsBoundedRedactedError(t *testing.T) {
 	req := helperRequest("stderr-exit", "credential-in-output", "17")
 	req.OutputLimit = 8

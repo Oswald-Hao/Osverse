@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
@@ -19,11 +20,12 @@ type PathProbe interface {
 
 // CommandRequest describes one direct process invocation.
 type CommandRequest struct {
-	Path        string
-	Args        []string
-	Env         []string
-	Timeout     time.Duration
-	OutputLimit int
+	Path             string
+	PinnedExecutable *os.File
+	Args             []string
+	Env              []string
+	Timeout          time.Duration
+	OutputLimit      int
 }
 
 // CommandResult contains bounded process output and termination details.

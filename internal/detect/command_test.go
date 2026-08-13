@@ -8,10 +8,14 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
 )
 
 var testCommandSpec = CommandSpec{
@@ -71,14 +75,19 @@ func TestCommandDetectorInstalledUsesExplicitPathFixedArgsAndBounds(t *testing.T
 	if !reflect.DeepEqual(request.Args, []string{"--version"}) {
 		t.Errorf("request Args = %#v, want fixed version args", request.Args)
 	}
-	if request.Timeout <= 0 || request.OutputLimit <= 0 {
-		t.Errorf("request bounds = timeout %v, output %d; want positive", request.Timeout, request.OutputLimit)
+	if request.Timeout != 3*time.Second || request.OutputLimit != 64*1024 {
+		t.Errorf("request bounds = timeout %v, output %d; want 3s and 65536", request.Timeout, request.OutputLimit)
+	}
+	if request.PinnedExecutable == nil {
+		t.Error("request has no pinned executable")
+	} else if _, err := request.PinnedExecutable.Stat(); err == nil {
+		t.Error("pinned executable remains open after Detect returned")
 	}
 }
 
 func TestCommandDetectorIgnoresFilesNotExecutableByCurrentUser(t *testing.T) {
 	directory := t.TempDir()
-	writeExecutable(t, directory, "test-cli", 0o010)
+	writeExecutable(t, directory, "test-cli", 0o600)
 	runner := &fakeCommandRunner{}
 
 	component := (CommandDetector{Runner: runner}).Detect(
@@ -145,6 +154,12 @@ func TestCommandDetectorBrokenVersionResults(t *testing.T) {
 				err:    errors.New("command failed"),
 			},
 		},
+		{
+			name: "truncated parsable output",
+			outcome: fakeCommandOutcome{result: platform.CommandResult{
+				ExitCode: 0, Stdout: "test-cli 9.9.9", Truncated: true,
+			}},
+		},
 	}
 
 	for _, tt := range tests {
@@ -167,6 +182,141 @@ func TestCommandDetectorBrokenVersionResults(t *testing.T) {
 				t.Fatalf("Version = %q for failed verification, want empty", component.Installations[0].Version)
 			}
 		})
+	}
+}
+
+func TestCommandDetectorMixedValidAndBrokenIsBroken(t *testing.T) {
+	directories := []string{t.TempDir(), t.TempDir(), t.TempDir()}
+	runner := &fakeCommandRunner{outcomes: make(map[string]fakeCommandOutcome)}
+	for index, directory := range directories {
+		candidate := writeExecutable(t, directory, "test-cli", 0o700)
+		output := "test-cli 1.2.3"
+		if index == len(directories)-1 {
+			output = "unparsable"
+		}
+		runner.outcomes[candidate] = fakeCommandOutcome{result: platform.CommandResult{ExitCode: 0, Stdout: output}}
+	}
+
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), testCommandSpec, directories)
+
+	if component.Status != domain.StatusBroken {
+		t.Fatalf("Status = %q, want %q for verified and broken candidates", component.Status, domain.StatusBroken)
+	}
+	if len(component.Installations) != 3 {
+		t.Fatalf("Installations = %#v, want all candidates preserved", component.Installations)
+	}
+}
+
+func TestCommandDetectorVersionOutputUsesStdoutThenStderrAndFirstCapture(t *testing.T) {
+	tests := []struct {
+		name   string
+		result platform.CommandResult
+		want   string
+	}{
+		{
+			name: "stdout wins",
+			result: platform.CommandResult{ExitCode: 0,
+				Stdout: "test-cli 1.2.3 build-a", Stderr: "test-cli 9.9.9 build-z"},
+			want: "1.2.3",
+		},
+		{
+			name:   "stderr fallback",
+			result: platform.CommandResult{ExitCode: 0, Stderr: "test-cli 4.5.6 build-z"},
+			want:   "4.5.6",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			candidate := writeExecutable(t, directory, "test-cli", 0o700)
+			spec := testCommandSpec
+			spec.VersionPattern = regexp.MustCompile(`^test-cli ([0-9]+\.[0-9]+\.[0-9]+) (build-[a-z])$`)
+			component := (CommandDetector{Runner: &fakeCommandRunner{
+				outcomes: map[string]fakeCommandOutcome{candidate: {result: tt.result}},
+			}}).Detect(context.Background(), spec, []string{directory})
+
+			if component.Status != domain.StatusInstalled || component.Installations[0].Version != tt.want {
+				t.Fatalf("component = %#v, want installed version %q", component, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommandDetectorMissingVersionCaptureIsBroken(t *testing.T) {
+	patterns := []*regexp.Regexp{nil, regexp.MustCompile(`^test-cli [0-9]+\.[0-9]+\.[0-9]+$`)}
+	for _, pattern := range patterns {
+		directory := t.TempDir()
+		candidate := writeExecutable(t, directory, "test-cli", 0o700)
+		spec := testCommandSpec
+		spec.VersionPattern = pattern
+		component := (CommandDetector{Runner: &fakeCommandRunner{
+			outcomes: map[string]fakeCommandOutcome{candidate: {
+				result: platform.CommandResult{ExitCode: 0, Stdout: "test-cli 1.2.3"},
+			}},
+		}}).Detect(context.Background(), spec, []string{directory})
+
+		if component.Status != domain.StatusBroken {
+			t.Fatalf("pattern %v produced Status %q, want %q", pattern, component.Status, domain.StatusBroken)
+		}
+	}
+}
+
+func TestCommandDetectorExecutesPinnedObjectWhenAliasChanges(t *testing.T) {
+	directory := t.TempDir()
+	alias := filepath.Join(directory, "test-cli")
+	original, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatalf("absolute test executable path: %v", err)
+	}
+	makeSymlink(t, original, alias)
+	replacement := filepath.Join(directory, "replacement")
+	if err := os.WriteFile(replacement, []byte("#!/bin/sh\nprintf 'test-cli 9.9.9'"), 0o700); err != nil {
+		t.Fatalf("write replacement: %v", err)
+	}
+	spec := testCommandSpec
+	spec.VersionArgs = []string{"-test.run=^TestCommandDetectorPinnedExecutableHelper$", "--", "detector-version"}
+	runner := &swappingCommandRunner{
+		delegate:    platformlinux.NewExecRunner(),
+		alias:       alias,
+		replacement: replacement,
+	}
+
+	component := (CommandDetector{Runner: runner}).Detect(context.Background(), spec, []string{directory})
+
+	if component.Status != domain.StatusInstalled || component.Installations[0].Version != "1.2.3" {
+		t.Fatalf("component = %#v, want version from pinned original object", component)
+	}
+	if component.Installations[0].ResolvedPath != original {
+		t.Fatalf("ResolvedPath = %q, want pinned original %q", component.Installations[0].ResolvedPath, original)
+	}
+}
+
+func TestCommandDetectorMidEnumerationCancellationDoesNotRunOrReturnMissing(t *testing.T) {
+	directory := t.TempDir()
+	writeExecutable(t, directory, "first", 0o700)
+	writeExecutable(t, directory, "second", 0o700)
+	spec := testCommandSpec
+	spec.ExecutableNames = []string{"first", "second"}
+	runner := &fakeCommandRunner{}
+	ctx := newSteppedCancelContext(4)
+
+	component := (CommandDetector{Runner: runner}).Detect(ctx, spec, []string{directory})
+
+	if component.Status != domain.StatusBroken {
+		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusBroken)
+	}
+	if len(runner.requests) != 0 {
+		t.Fatalf("runner calls = %d after enumeration cancellation, want 0", len(runner.requests))
+	}
+}
+
+func TestCommandDetectorPostEnumerationCancellationDoesNotReturnMissing(t *testing.T) {
+	ctx := newSteppedCancelContext(2)
+	component := (CommandDetector{Runner: &fakeCommandRunner{}}).Detect(ctx, testCommandSpec, nil)
+
+	if component.Status != domain.StatusBroken {
+		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusBroken)
 	}
 }
 
@@ -296,6 +446,9 @@ func TestCommandComponentProbeDescriptorAndDetect(t *testing.T) {
 	if descriptor.Status != domain.StatusDetecting || len(descriptor.Installations) != 0 {
 		t.Fatalf("Descriptor() = %#v, want detecting descriptor without installations", descriptor)
 	}
+	if descriptor.Category != "Core CLI" {
+		t.Fatalf("Descriptor().Category = %q, want %q", descriptor.Category, "Core CLI")
+	}
 	component, err := probe.Detect(context.Background(), domain.SystemInfo{Supported: false}, []string{directory})
 	if err != nil {
 		t.Fatalf("Detect() error = %v, want nil", err)
@@ -314,6 +467,56 @@ type fakeCommandRunner struct {
 	outcomes       map[string]fakeCommandOutcome
 	defaultOutcome fakeCommandOutcome
 	requests       []platform.CommandRequest
+}
+
+type swappingCommandRunner struct {
+	delegate    platform.CommandRunner
+	alias       string
+	replacement string
+}
+
+func (runner *swappingCommandRunner) Run(
+	ctx context.Context,
+	request platform.CommandRequest,
+) (platform.CommandResult, error) {
+	if err := os.Remove(runner.alias); err != nil {
+		return platform.CommandResult{ExitCode: -1}, err
+	}
+	if err := os.Symlink(runner.replacement, runner.alias); err != nil {
+		return platform.CommandResult{ExitCode: -1}, err
+	}
+	return runner.delegate.Run(ctx, request)
+}
+
+type steppedCancelContext struct {
+	context.Context
+	cancelAt int32
+	calls    atomic.Int32
+	done     chan struct{}
+	once     sync.Once
+}
+
+func newSteppedCancelContext(cancelAt int32) *steppedCancelContext {
+	return &steppedCancelContext{
+		Context:  context.Background(),
+		cancelAt: cancelAt,
+		done:     make(chan struct{}),
+	}
+}
+
+func (ctx *steppedCancelContext) Done() <-chan struct{} { return ctx.done }
+
+func (ctx *steppedCancelContext) Err() error {
+	if ctx.calls.Add(1) >= ctx.cancelAt {
+		ctx.once.Do(func() { close(ctx.done) })
+		return context.Canceled
+	}
+	select {
+	case <-ctx.done:
+		return context.Canceled
+	default:
+		return nil
+	}
 }
 
 func (runner *fakeCommandRunner) Run(_ context.Context, request platform.CommandRequest) (platform.CommandResult, error) {
@@ -358,5 +561,14 @@ func assertComponentIdentity(t *testing.T, component domain.Component) {
 		component.MinimumOS != testCommandSpec.MinimumOS {
 		t.Fatalf("component identity = %#v, want ID %q, name %q, minimum OS %q",
 			component, testCommandSpec.ID, testCommandSpec.Name, testCommandSpec.MinimumOS)
+	}
+}
+
+func TestCommandDetectorPinnedExecutableHelper(t *testing.T) {
+	for index, arg := range os.Args {
+		if arg == "--" && index+1 < len(os.Args) && os.Args[index+1] == "detector-version" {
+			_, _ = os.Stdout.WriteString("test-cli 1.2.3")
+			os.Exit(0)
+		}
 	}
 }
