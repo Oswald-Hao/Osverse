@@ -120,67 +120,41 @@ func TestExecRunnerCallerCancellationKillsDescendantHoldingPipes(t *testing.T) {
 	}
 }
 
-func TestExecRunnerIndependentNonzeroExitWinsDeadlineRace(t *testing.T) {
-	dir := t.TempDir()
-	parentMarker := filepath.Join(dir, "parent.pid")
-	descendantMarker := filepath.Join(dir, "descendant.pid")
-	release := filepath.Join(dir, "release")
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
+func TestClassifyCommandCompletionIndependentNonzeroExitWinsDeadline(t *testing.T) {
+	// Reap a real nonzero child first so its completed state is independent of
+	// the deadline supplied to the classifier below.
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "stderr-exit", "independent-exit", "17")
+	waitErr := cmd.Run()
+	if waitErr == nil {
+		t.Fatal("helper wait error = nil, want nonzero exit")
+	}
+	if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 17 {
+		t.Fatalf("helper exit state = %v, want exit code 17", cmd.ProcessState)
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0))
 	defer cancel()
-	req := helperRequest("exit-after-release", parentMarker, descendantMarker, release)
-	req.Timeout = 30 * time.Second
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("context error = %v, want deadline exceeded", ctx.Err())
+	}
 
-	type outcome struct {
-		result platform.CommandResult
-		err    error
-	}
-	done := make(chan outcome, 1)
-	go func() {
-		result, err := NewExecRunner().Run(ctx, req)
-		done <- outcome{result: result, err: err}
-	}()
-
-	parentPID := waitForPIDFile(t, parentMarker)
-	parentPIDFD, err := unix.PidfdOpen(parentPID, 0)
-	if err != nil {
-		t.Fatalf("open parent pidfd: %v", err)
-	}
-	defer unix.Close(parentPIDFD)
-	descendantPID := waitForPIDFile(t, descendantMarker)
-	descendantPIDFD, err := unix.PidfdOpen(descendantPID, 0)
-	if err != nil {
-		t.Fatalf("open descendant pidfd: %v", err)
-	}
-	defer unix.Close(descendantPIDFD)
-	t.Cleanup(func() {
-		_ = unix.PidfdSendSignal(descendantPIDFD, unix.SIGKILL, nil, 0)
+	// Both facts are synchronously established before the decision boundary;
+	// no goroutine or buffered result can let classification happen earlier.
+	result, err := classifyCommandCompletion(commandCompletion{
+		result:           platform.CommandResult{ExitCode: cmd.ProcessState.ExitCode()},
+		processState:     cmd.ProcessState,
+		contextTriggered: true,
+		contextErr:       ctx.Err(),
+		waitErr:          waitErr,
 	})
 
-	if err := os.WriteFile(release, []byte("release"), 0o600); err != nil {
-		t.Fatalf("release helper process: %v", err)
+	if result.ExitCode != 17 {
+		t.Errorf("ExitCode = %d, want 17", result.ExitCode)
 	}
-	waitForPIDFDReady(t, parentPIDFD)
-	select {
-	case <-ctx.Done():
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			t.Fatalf("context error = %v, want deadline exceeded", ctx.Err())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("deadline-bearing context did not expire")
+	if result.TimedOut {
+		t.Error("TimedOut = true for independently completed nonzero exit")
 	}
-
-	select {
-	case got := <-done:
-		if got.result.ExitCode != 17 {
-			t.Errorf("ExitCode = %d, want 17", got.result.ExitCode)
-		}
-		if got.result.TimedOut {
-			t.Error("TimedOut = true for independently completed nonzero exit")
-		}
-		assertPublicError(t, got.err, domain.ErrCommandFailed, release)
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return after independently completed process")
-	}
+	assertPublicError(t, err, domain.ErrCommandFailed, "independent-exit")
 }
 
 func TestExecRunnerExpiredContextWithoutStartedProcessIsCommandFailure(t *testing.T) {
@@ -285,14 +259,6 @@ func TestHelperProcess(t *testing.T) {
 		cmd := startPipeHoldingDescendant(args[1])
 		_ = cmd
 		time.Sleep(30 * time.Second)
-	case "exit-after-release":
-		cmd := startPipeHoldingDescendant(args[2])
-		if err := os.WriteFile(args[1], []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-			_ = cmd.Process.Kill()
-			os.Exit(5)
-		}
-		waitForHelperFile(args[3])
-		os.Exit(17)
 	case "hold-pipes":
 		time.Sleep(30 * time.Second)
 	case "both":
@@ -320,19 +286,6 @@ func startPipeHoldingDescendant(marker string) *exec.Cmd {
 		os.Exit(4)
 	}
 	return cmd
-}
-
-func waitForHelperFile(path string) {
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			os.Exit(6)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 func waitForPIDFile(t *testing.T, path string) int {

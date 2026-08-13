@@ -107,22 +107,45 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 	_ = unix.Close(pidfd)
 	setCommandResult(&result, cmd, stdout, stderr)
 
-	if observationErr != nil {
-		return result, commandFailedError(errors.Join(observationErr, terminationErr, err))
+	return classifyCommandCompletion(commandCompletion{
+		result:           result,
+		processState:     cmd.ProcessState,
+		contextTriggered: contextTriggered,
+		contextErr:       runCtx.Err(),
+		observationErr:   observationErr,
+		terminationErr:   terminationErr,
+		waitErr:          err,
+	})
+}
+
+type commandCompletion struct {
+	result           platform.CommandResult
+	processState     *os.ProcessState
+	contextTriggered bool
+	contextErr       error
+	observationErr   error
+	terminationErr   error
+	waitErr          error
+}
+
+func classifyCommandCompletion(completion commandCompletion) (platform.CommandResult, error) {
+	result := completion.result
+	if completion.observationErr != nil {
+		return result, commandFailedError(errors.Join(completion.observationErr, completion.terminationErr, completion.waitErr))
 	}
-	if err == nil {
+	if completion.waitErr == nil {
 		return result, nil
 	}
-	if contextTriggered && processWasKilled(cmd.ProcessState) {
-		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+	if completion.contextTriggered && processWasKilled(completion.processState) {
+		if errors.Is(completion.contextErr, context.DeadlineExceeded) {
 			result.TimedOut = true
-			return result, domain.NewPublicError(domain.ErrCommandTimeout, "command timed out", err)
+			return result, domain.NewPublicError(domain.ErrCommandTimeout, "command timed out", completion.waitErr)
 		}
-		if errors.Is(runCtx.Err(), context.Canceled) {
-			return result, commandCanceledError(err)
+		if errors.Is(completion.contextErr, context.Canceled) {
+			return result, commandCanceledError(completion.waitErr)
 		}
 	}
-	return result, commandFailedError(errors.Join(terminationErr, err))
+	return result, commandFailedError(errors.Join(completion.terminationErr, completion.waitErr))
 }
 
 func setCommandResult(result *platform.CommandResult, cmd *exec.Cmd, stdout, stderr *cappedBuffer) {
