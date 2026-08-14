@@ -115,4 +115,45 @@ describe('APIProfilesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith(profile.id))
   })
+
+  it('edits public fields without revealing the stored key and preserves the profile identity', async () => {
+    const updated = {
+      ...profile,
+      name: '生产网关',
+      model: 'deepseek/deepseek-v4-flash',
+      updatedAt: '2026-08-14T02:00:00Z',
+    }
+    const list = vi.fn().mockResolvedValueOnce([profile]).mockResolvedValueOnce([updated])
+    const api = operations({ list, save: vi.fn().mockResolvedValue(updated) })
+    setProfileOperationsForTests(api)
+    render(<APIProfilesPage />)
+    const profileHeading = await screen.findByRole('heading', { name: '工作网关' })
+    const card = profileHeading.closest('article')
+    expect(card).not.toBeNull()
+
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '编辑' }))
+
+    expect(screen.getByRole('heading', { name: '编辑加密档案' })).toBeVisible()
+    expect(screen.getByLabelText('档案名称')).toHaveValue(profile.name)
+    expect(screen.getByLabelText('模型名')).toHaveValue(profile.model)
+    expect(screen.getByLabelText('Base URL')).toHaveValue(profile.baseUrl)
+    expect(screen.getByLabelText('API Key')).toHaveValue('')
+    expect(screen.queryByDisplayValue(/1234/)).not.toBeInTheDocument()
+    expect(screen.getByText(/不会回显已保存的 Key/)).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('档案名称'), { target: { value: updated.name } })
+    fireEvent.change(screen.getByLabelText('模型名'), { target: { value: updated.model } })
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'replacement-secret-5678' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
+
+    await waitFor(() => expect(api.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: profile.id,
+      name: updated.name,
+      apiKey: 'replacement-secret-5678',
+      model: updated.model,
+    })))
+    expect(await screen.findByRole('heading', { name: updated.name })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '创建加密档案' })).toBeVisible()
+    expect(screen.getByLabelText('API Key')).toHaveValue('')
+  })
 })
