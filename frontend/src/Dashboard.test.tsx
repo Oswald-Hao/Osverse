@@ -38,7 +38,7 @@ const snapshot: EnvironmentSnapshot = {
           managed: false,
         },
       ],
-      message: 'Installed',
+      message: '已安装',
       minimumOS: 'Ubuntu 20.04',
     },
     {
@@ -62,7 +62,7 @@ const snapshot: EnvironmentSnapshot = {
           managed: false,
         },
       ],
-      message: 'Multiple installations detected',
+      message: '检测到多个安装位置',
       minimumOS: 'Ubuntu 20.04',
     },
     {
@@ -71,7 +71,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Core CLI',
       status: 'missing',
       installations: [],
-      message: 'Not detected',
+      message: '未检测到安装',
       minimumOS: 'Ubuntu 20.04',
     },
     {
@@ -80,7 +80,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Desktop Applications',
       status: 'unsupported',
       installations: [],
-      message: 'Unsupported on this system',
+      message: '当前系统不支持',
       minimumOS: 'Ubuntu 22.04',
     },
     {
@@ -89,7 +89,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Desktop Applications',
       status: 'broken',
       installations: [],
-      message: 'Installation evidence found without an executable',
+      message: '发现安装记录，但未找到可执行文件',
       minimumOS: 'Ubuntu 24.04',
     },
     {
@@ -98,7 +98,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Desktop Applications',
       status: 'failed',
       installations: [],
-      message: 'Scan failed',
+      message: '组件检测失败',
       minimumOS: 'Ubuntu 20.04',
     },
     {
@@ -107,7 +107,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Management Tools',
       status: 'update_available',
       installations: [],
-      message: 'Update available',
+      message: '有可用更新',
       minimumOS: 'Ubuntu 20.04',
     },
     {
@@ -116,7 +116,7 @@ const snapshot: EnvironmentSnapshot = {
       category: 'Management Tools',
       status: 'detecting',
       installations: [],
-      message: 'Detecting',
+      message: '正在检测',
       minimumOS: 'Ubuntu 20.04',
     },
   ],
@@ -246,7 +246,7 @@ describe('environment status dashboard', () => {
       '可更新',
       '检测中',
     ]) {
-      expect(screen.getByText(label)).toBeVisible()
+      expect(screen.getByText(label, { selector: '.status-badge' })).toBeVisible()
     }
   })
 

@@ -107,6 +107,13 @@ type fakeScanner struct {
 	scan func(context.Context) (domain.EnvironmentSnapshot, error)
 }
 
+func TestDefaultWindowMatchesCockpitTools(t *testing.T) {
+	if defaultWindowWidth != 1280 || defaultWindowHeight != 800 {
+		t.Fatalf("default window = %dx%d, want Cockpit Tools 1280x800",
+			defaultWindowWidth, defaultWindowHeight)
+	}
+}
+
 func (scanner fakeScanner) Scan(ctx context.Context) (domain.EnvironmentSnapshot, error) {
 	return scanner.scan(ctx)
 }

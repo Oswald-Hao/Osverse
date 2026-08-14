@@ -97,7 +97,7 @@ function scanSnapshot() {
             managed: false,
           },
         ],
-        message: 'Multiple installations detected',
+        message: '检测到多个安装位置',
         minimumOS: 'Ubuntu 20.04',
       },
       {
@@ -106,7 +106,7 @@ function scanSnapshot() {
         category: 'Desktop Applications',
         status: 'missing',
         installations: [],
-        message: 'Not detected',
+        message: '未检测到安装',
         minimumOS: 'Ubuntu 22.04',
       },
       {
@@ -115,7 +115,7 @@ function scanSnapshot() {
         category: 'Management Tools',
         status: 'installed',
         installations: [],
-        message: 'Installed',
+        message: '已安装',
         minimumOS: 'Ubuntu 20.04',
       },
     ],

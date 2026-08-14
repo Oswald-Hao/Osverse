@@ -37,7 +37,7 @@ function snapshot(
         category: 'Core CLI',
         status: 'installed',
         installations: [],
-        message: 'Installed',
+        message: '已安装',
         minimumOS: 'Ubuntu 20.04',
       },
     ],

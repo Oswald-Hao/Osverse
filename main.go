@@ -12,13 +12,18 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+const (
+	defaultWindowWidth  = 1280
+	defaultWindowHeight = 800
+)
+
 func main() {
 	app := NewApp(bootstrap.NewLinuxScanner())
 
 	err := wails.Run(&options.App{
 		Title:  "Osverse",
-		Width:  1024,
-		Height: 768,
+		Width:  defaultWindowWidth,
+		Height: defaultWindowHeight,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

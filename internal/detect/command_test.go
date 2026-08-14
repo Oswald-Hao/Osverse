@@ -101,7 +101,7 @@ func TestCommandDetectorIgnoresFilesNotExecutableByCurrentUser(t *testing.T) {
 	}
 }
 
-func TestCommandDetectorConflictsForTwoDistinctValidInstallations(t *testing.T) {
+func TestCommandDetectorTreatsTwoDistinctValidInstallationsAsInstalled(t *testing.T) {
 	directoryB := t.TempDir()
 	directoryA := t.TempDir()
 	candidateB := writeExecutable(t, directoryB, "test-cli", 0o700)
@@ -115,8 +115,11 @@ func TestCommandDetectorConflictsForTwoDistinctValidInstallations(t *testing.T) 
 		context.Background(), testCommandSpec, []string{directoryB, directoryA},
 	)
 
-	if component.Status != domain.StatusConflict {
-		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusConflict)
+	if component.Status != domain.StatusInstalled {
+		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusInstalled)
+	}
+	if component.Message != multipleInstalledMessage {
+		t.Fatalf("Message = %q, want %q", component.Message, multipleInstalledMessage)
 	}
 	if len(component.Installations) != 2 {
 		t.Fatalf("Installations = %#v, want both valid installations", component.Installations)
@@ -184,7 +187,7 @@ func TestCommandDetectorBrokenVersionResults(t *testing.T) {
 	}
 }
 
-func TestCommandDetectorMixedValidAndBrokenIsBroken(t *testing.T) {
+func TestCommandDetectorMixedValidAndBrokenIsInstalled(t *testing.T) {
 	directories := []string{t.TempDir(), t.TempDir(), t.TempDir()}
 	runner := &fakeCommandRunner{outcomes: make(map[string]fakeCommandOutcome)}
 	for index, directory := range directories {
@@ -198,8 +201,11 @@ func TestCommandDetectorMixedValidAndBrokenIsBroken(t *testing.T) {
 
 	component := (CommandDetector{Runner: runner}).Detect(context.Background(), testCommandSpec, directories)
 
-	if component.Status != domain.StatusBroken {
-		t.Fatalf("Status = %q, want %q for verified and broken candidates", component.Status, domain.StatusBroken)
+	if component.Status != domain.StatusInstalled {
+		t.Fatalf("Status = %q, want %q when at least one candidate is verified", component.Status, domain.StatusInstalled)
+	}
+	if component.Message != partiallyVerifiedInstalledMessage {
+		t.Fatalf("Message = %q, want %q", component.Message, partiallyVerifiedInstalledMessage)
 	}
 	if len(component.Installations) != 3 {
 		t.Fatalf("Installations = %#v, want all candidates preserved", component.Installations)
@@ -472,8 +478,8 @@ func TestCommandDetectorManagedUsesResolvedTargetAndSafeContainment(t *testing.T
 		prefixTrapDirectory,
 	})
 
-	if component.Status != domain.StatusConflict {
-		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusConflict)
+	if component.Status != domain.StatusInstalled {
+		t.Fatalf("Status = %q, want %q", component.Status, domain.StatusInstalled)
 	}
 	managedByResolvedPath := make(map[string]bool)
 	sourceByResolvedPath := make(map[string]string)

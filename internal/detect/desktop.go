@@ -20,9 +20,9 @@ import (
 const (
 	desktopQueryTimeout     = 3 * time.Second
 	desktopQueryOutputLimit = 64 * 1024
-	desktopBrokenMessage    = "Installation evidence found without an executable"
-	desktopUnsupported      = "Unsupported on this system"
-	desktopInstalledWarning = "Installed, but unsupported on this system"
+	desktopBrokenMessage    = "发现安装记录，但未找到可执行文件"
+	desktopUnsupported      = "当前系统不支持"
+	desktopInstalledWarning = "已安装，但当前系统不受支持"
 )
 
 var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?$`)

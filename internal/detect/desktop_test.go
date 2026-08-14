@@ -85,7 +85,7 @@ func TestDetectDesktopInstalledPackageRequiresExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DetectDesktop() error = %v", err)
 	}
-	if component.Status != domain.StatusInstalled || !strings.Contains(strings.ToLower(component.Message), "unsupported") {
+	if component.Status != domain.StatusInstalled || component.Message != desktopInstalledWarning {
 		t.Fatalf("component = %#v, want installed with compatibility warning", component)
 	}
 	wantInstallation := domain.Installation{
@@ -162,7 +162,7 @@ func TestDetectDesktopBelowFloorMultipleExecutablesRemainInstalled(t *testing.T)
 		t.Fatalf("DetectDesktop() error = %v", err)
 	}
 	if component.Status != domain.StatusInstalled || len(component.Installations) != 2 ||
-		!strings.Contains(strings.ToLower(component.Message), "unsupported") {
+		component.Message != desktopInstalledWarning {
 		t.Fatalf("component = %#v, want installed with two paths and unsupported warning", component)
 	}
 }

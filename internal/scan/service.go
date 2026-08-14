@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scanFailedMessage        = "environment scan failed"
-	componentDetectionFailed = "Detection failed"
+	scanFailedMessage        = "环境扫描失败"
+	componentDetectionFailed = "组件检测失败"
 )
 
 // ComponentProbe detects one bounded catalog component.

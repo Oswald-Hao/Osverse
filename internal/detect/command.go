@@ -20,13 +20,15 @@ import (
 )
 
 const (
-	commandCategory      = "Core CLI"
-	versionTimeout       = 3 * time.Second
-	versionOutputLimit   = 64 * 1024
-	missingMessage       = "Not detected"
-	installedMessage     = "Installed"
-	conflictMessage      = "Multiple installations detected"
-	brokenVersionMessage = "Version detection failed"
+	commandCategory                   = "Core CLI"
+	versionTimeout                    = 3 * time.Second
+	versionOutputLimit                = 64 * 1024
+	missingMessage                    = "未检测到安装"
+	installedMessage                  = "已安装"
+	multipleInstalledMessage          = "已安装，检测到多个安装位置"
+	partiallyVerifiedInstalledMessage = "已安装，另有安装位置无法验证"
+	conflictMessage                   = "检测到多个安装位置"
+	brokenVersionMessage              = "版本检测失败"
 )
 
 // CommandSpec defines the fixed executable names and version parser for a CLI.
@@ -138,12 +140,14 @@ func (d CommandDetector) Detect(ctx context.Context, spec CommandSpec, paths []s
 		return installations[i].Path < installations[j].Path
 	})
 	switch {
-	case broken:
-		return commandComponent(spec, domain.StatusBroken, installations, brokenVersionMessage)
+	case valid > 0 && broken:
+		return commandComponent(spec, domain.StatusInstalled, installations, partiallyVerifiedInstalledMessage)
 	case valid >= 2:
-		return commandComponent(spec, domain.StatusConflict, installations, conflictMessage)
-	default:
+		return commandComponent(spec, domain.StatusInstalled, installations, multipleInstalledMessage)
+	case valid == 1:
 		return commandComponent(spec, domain.StatusInstalled, installations, installedMessage)
+	default:
+		return commandComponent(spec, domain.StatusBroken, installations, brokenVersionMessage)
 	}
 }
 
