@@ -97,7 +97,7 @@ let removeComponentOperation: RemovalOperation = RemoveComponent as unknown as R
 
 const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
-  'queued', 'downloading', 'verifying', 'committing', 'completed', 'failed', 'canceled',
+  'queued', 'downloading', 'verifying', 'installing', 'committing', 'completed', 'failed', 'canceled',
 ])
 
 function testSeamEnabled(): boolean {
