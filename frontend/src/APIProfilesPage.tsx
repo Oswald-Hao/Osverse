@@ -58,6 +58,8 @@ export default function APIProfilesPage() {
   const [deleteCandidate, setDeleteCandidate] = useState<string | null>(null)
   const mounted = useRef(false)
   const generation = useRef(0)
+  const nameInput = useRef<HTMLInputElement>(null)
+  const editing = input.id !== ''
 
   const load = async () => {
     const request = ++generation.current
@@ -77,6 +79,10 @@ export default function APIProfilesPage() {
     return () => { mounted.current = false; ++generation.current }
   }, [])
 
+  useEffect(() => {
+    if (editing) nameInput.current?.focus()
+  }, [editing])
+
   const save = async () => {
     if (!input.name.trim() || !input.apiKey.trim() || !input.baseUrl.trim() || !input.model.trim()) {
       setError('请完整填写档案名称、API Key、Base URL 和模型名')
@@ -90,6 +96,24 @@ export default function APIProfilesPage() {
     } catch (reason) {
       setError(publicMessage(reason))
     } finally { if (mounted.current) setBusy(false) }
+  }
+
+  const edit = (profile: APIProfile) => {
+    setInput({
+      id: profile.id,
+      name: profile.name,
+      apiKey: '',
+      baseUrl: profile.baseUrl,
+      model: profile.model,
+      allowPrivateNetwork: profile.allowPrivateNetwork,
+    })
+    setDeleteCandidate(null); setError(null); setProbe(null); setMatrix([])
+    setSelected([]); setPlan(null); setApplied(null)
+  }
+
+  const cancelEdit = () => {
+    setInput(emptyInput)
+    setError(null)
   }
 
   const inspect = async (profile: APIProfile) => {
@@ -125,6 +149,7 @@ export default function APIProfilesPage() {
     try {
       await deleteAPIProfile(id)
       setDeleteCandidate(null); setProbe(null); setMatrix([]); setSelected([])
+      if (input.id === id) setInput(emptyInput)
       await load()
     } catch (reason) { setError(publicMessage(reason)) }
     finally { if (mounted.current) setBusy(false) }
@@ -143,20 +168,24 @@ export default function APIProfilesPage() {
         </div>
       )}
 
-      <section className="api-form-card" aria-labelledby="new-profile-title">
+      <section className="api-form-card" aria-labelledby="profile-form-title">
         <div className="api-form-card__heading">
-          <div><p className="card-kicker">NEW PROFILE</p><h3 id="new-profile-title">创建加密档案</h3></div>
+          <div><p className="card-kicker">{editing ? 'EDIT PROFILE' : 'NEW PROFILE'}</p><h3 id="profile-form-title">{editing ? '编辑加密档案' : '创建加密档案'}</h3></div>
           <span>本地 AES-256-GCM</span>
         </div>
         <div className="api-form-grid">
-          <label>档案名称<input value={input.name} onChange={(event) => setInput({ ...input, name: event.target.value })} autoComplete="off" /></label>
+          <label>档案名称<input ref={nameInput} value={input.name} onChange={(event) => setInput({ ...input, name: event.target.value })} autoComplete="off" /></label>
           <label>模型名<input value={input.model} onChange={(event) => setInput({ ...input, model: event.target.value })} autoComplete="off" placeholder="例如 gpt-5.2-codex" /></label>
           <label className="api-form-grid__wide">API Key<input type="password" value={input.apiKey} onChange={(event) => setInput({ ...input, apiKey: event.target.value })} autoComplete="new-password" /></label>
           <label className="api-form-grid__wide">Base URL<input value={input.baseUrl} onChange={(event) => setInput({ ...input, baseUrl: event.target.value })} autoComplete="url" placeholder="https://api.example.com/v1" /></label>
         </div>
+        {editing && <p className="base-url-help"><strong>保护凭据：</strong> Osverse 不会回显已保存的 Key。请输入当前 Key 或新 Key 后保存修改。</p>}
         <p className="base-url-help"><strong>在哪里获取？</strong> 从服务商控制台的 API 文档或“接入信息”复制，不要填写普通聊天网页地址。常见格式以 <code>/v1</code> 结尾。</p>
         <label className="private-network-confirm"><input type="checkbox" checked={input.allowPrivateNetwork} onChange={(event) => setInput({ ...input, allowPrivateNetwork: event.target.checked })} /> 我确认该地址是自己信任的本机或私有网络服务</label>
-        <button className="primary-button" type="button" onClick={() => void save()} disabled={busy}>保存并加密</button>
+        <div className="profile-card__actions">
+          <button className="primary-button" type="button" onClick={() => void save()} disabled={busy}>{editing ? '保存修改' : '保存并加密'}</button>
+          {editing && <button className="secondary-button" type="button" onClick={cancelEdit} disabled={busy}>取消编辑</button>}
+        </div>
       </section>
 
       <section className="profile-list" aria-labelledby="profile-list-title">
@@ -169,6 +198,7 @@ export default function APIProfilesPage() {
                 <dl><div><dt>Base URL</dt><dd><code>{profile.baseUrl}</code></dd></div><div><dt>模型</dt><dd>{profile.model}</dd></div></dl>
                 <div className="profile-card__actions">
                   <button type="button" className="primary-button" onClick={() => void inspect(profile)} disabled={busy}>探测兼容性</button>
+                  <button type="button" className="secondary-button" onClick={() => edit(profile)} disabled={busy}>编辑</button>
                   {deleteCandidate === profile.id ? (
                     <><button type="button" className="danger-button" onClick={() => void remove(profile.id)} disabled={busy}>确认删除</button><button type="button" className="secondary-button" onClick={() => setDeleteCandidate(null)}>取消</button></>
                   ) : <button type="button" className="secondary-button" onClick={() => setDeleteCandidate(profile.id)}>删除</button>}

@@ -651,6 +651,13 @@ button:focus-visible {
   font-size: 0.7rem;
 }
 
+.tool-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .tool-card button {
   flex: none;
   padding: 7px 10px;
@@ -673,6 +680,13 @@ button:focus-visible {
 
 .tool-card button:not(:disabled):hover {
   transform: translateY(-1px);
+}
+
+.tool-card button.tool-card__remove:not(:disabled) {
+  color: #a83b42;
+  background: #fff5f5;
+  border-color: #f0c9cc;
+  box-shadow: none;
 }
 
 .tool-card button > span {

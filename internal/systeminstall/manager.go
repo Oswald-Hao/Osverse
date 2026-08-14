@@ -228,3 +228,29 @@ func (manager *Manager) Cancel(id string) error {
 	}
 	return nil
 }
+
+// Remove delegates one fixed desktop package to the private privileged helper.
+// It never accepts a package name from the frontend.
+func (manager *Manager) Remove(ctx context.Context, componentID string) error {
+	if manager == nil || manager.runner == nil || manager.executable == "" {
+		return ErrPlanUnavailable
+	}
+	if _, ok := removableSystemPackages[componentID]; !ok {
+		return ErrUnknownComponent
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result, err := manager.runner.Run(ctx, platform.CommandRequest{
+		Path:    "/usr/bin/pkexec",
+		Args:    []string{manager.executable, privilegedFlag, privilegedRemoveAction, componentID},
+		Timeout: 30 * time.Minute, OutputLimit: 128 * 1024,
+	})
+	if err != nil || result.ExitCode != 0 || result.TimedOut || result.Truncated {
+		return errors.New("system package removal failed")
+	}
+	return nil
+}

@@ -99,6 +99,48 @@ func TestSystemTaskInvokesOnlyExactPrivilegedHelper(t *testing.T) {
 	}
 }
 
+func TestSystemRemoveInvokesOnlyExactPrivilegedPackageHelper(t *testing.T) {
+	manager := testSystemManager()
+	runner := &fakeRunner{result: platform.CommandResult{ExitCode: 0}}
+	manager.runner = runner
+	if err := manager.Remove(context.Background(), "claude-desktop"); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.requests) != 1 {
+		t.Fatalf("requests = %d", len(runner.requests))
+	}
+	want := []string{manager.executable, privilegedFlag, privilegedRemoveAction, "claude-desktop"}
+	if request := runner.requests[0]; request.Path != "/usr/bin/pkexec" || !reflect.DeepEqual(request.Args, want) {
+		t.Fatalf("remove request = %#v", request)
+	}
+	if err := manager.Remove(context.Background(), "unknown"); !errors.Is(err, ErrUnknownComponent) {
+		t.Fatalf("unknown removal error = %v", err)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatal("unknown component reached privileged runner")
+	}
+}
+
+func TestPrivilegedPackageRemovalUsesFixedAptPackage(t *testing.T) {
+	var path string
+	var args []string
+	deps := privilegedDeps{root: "/", run: func(_ context.Context, command string, commandArgs []string, _ []byte) ([]byte, error) {
+		path, args = command, append([]string(nil), commandArgs...)
+		return nil, nil
+	}}
+	if err := removeSystemPackage(context.Background(), deps, "cockpit-tools"); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/usr/bin/apt-get" || !reflect.DeepEqual(args, []string{"remove", "-y", "cockpit-tools"}) {
+		t.Fatalf("apt removal = %q %#v", path, args)
+	}
+	if err := removeSystemPackage(context.Background(), deps, "unknown"); !errors.Is(err, ErrUnknownComponent) {
+		t.Fatalf("unknown package error = %v", err)
+	}
+}
+
 func TestAPTProxyOptionsAreLoopbackOnly(t *testing.T) {
 	if got := aptProxyOptions("", 0); got != nil {
 		t.Fatalf("direct options = %#v", got)
