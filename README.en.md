@@ -192,7 +192,7 @@ build/linux/package.sh 0.1.0 build/bin/osverse ubuntu22.04 build/release/ubuntu2
 
 ## Project workflow
 
-Changes move in one direction: `feature branch` → `dev` → `beta` → `main`. The full CI suite runs once for each pull request and is not duplicated by a post-merge push run. `main` receives only promoted candidates, and release tags must point to `main` history.
+Changes move in one direction: `feature branch` → `dev` → `beta` → `main`. Feature pull requests run the complete CI suite before entering `dev`; promotion pull requests from `dev` to `beta` and from `beta` to `main` reuse that verified result and run only the promotion-path gate. CI never rebuilds solely for promotion and never pushes or synchronizes branches. `main` receives only gated candidates, and release tags must point to `main` history.
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), open a focused issue, and keep platform expansion consistent with the safety boundaries above.
 

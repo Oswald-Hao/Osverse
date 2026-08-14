@@ -184,7 +184,7 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/am
 
 ## 分支与贡献
 
-代码只按 `功能分支 → dev → beta → main` 单向晋级：每个 PR 运行一次完整 CI，合并后不会再重复运行同一套 push 流程；`main` 只接收通过门禁的候选版，发版标签必须属于 `main` 历史。
+代码只按 `功能分支 → dev → beta → main` 单向晋级：功能 PR 在进入 `dev` 前运行一次完整 CI；`dev → beta` 与 `beta → main` 的晋级 PR 复用已验证结果，只检查晋级路径，不重复编译，也不会由 CI 自动推送或同步分支。`main` 只接收通过门禁的候选版，发版标签必须属于 `main` 历史。
 
 欢迎贡献。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，提交聚焦的问题或 PR，并保持现有安全边界。
 
