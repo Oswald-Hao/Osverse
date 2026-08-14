@@ -30,7 +30,7 @@ func builtInCatalog() (map[string]artifact, error) {
 			URL:    "https://downloads.claude.ai/releases/win32/x64/1.30096.1/Claude-194d93c2558cfbfcd2b8b7a90e02774c489d1875.exe",
 			SHA256: "a25593c94242a789e8f97dbc467f3be562c64845d52fa8d2b2ac91126e547fe3", DownloadBytes: 237_459_104,
 			SilentArgs: []string{"--silent"}, ExpectedPaths: []string{`AppData\Local\Programs\Claude\Claude.exe`, `AppData\Local\AnthropicClaude\Claude.exe`}},
-		{ID: "chatgpt-desktop", Name: "ChatGPT Desktop", Version: "Store latest", Kind: "store", StoreID: "9PLM9XGG6VKS"},
+		{ID: "chatgpt-desktop", Name: "ChatGPT Desktop", Version: "Store latest", Kind: "store", StoreID: "9NT1R1C2HH7J"},
 		{ID: "codex-desktop", Name: "Codex Desktop", Version: "Store latest", Kind: "store", StoreID: "9PLM9XGG6VKS"},
 		{ID: "opencode-desktop", Name: "OpenCode Desktop", Version: "1.18.18", Kind: "exe",
 			URL:    "https://github.com/anomalyco/opencode/releases/download/v1.18.18/opencode-desktop-win-x64.exe",

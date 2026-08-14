@@ -44,6 +44,8 @@ func DiscoverPaths(inputs PathInputs) []string {
 	if validAbsolute(inputs.Home) {
 		add(filepath.Join(inputs.Home, ".local", "bin"))
 		add(filepath.Join(inputs.Home, ".bun", "bin"))
+		add(filepath.Join(inputs.Home, ".opencode", "bin"))
+		add(filepath.Join(inputs.Home, "bin"))
 	}
 	if validAbsolute(inputs.AppData) {
 		add(filepath.Join(inputs.AppData, "npm"))

@@ -49,7 +49,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 | Area | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
 | Core CLI | Claude Code, Codex CLI, OpenCode CLI detection and transactional install/update | Detection and pinned-source install/update for the same three CLIs |
-| Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, and ChatGPT (including Codex) |
+| Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, ChatGPT Desktop, and Codex Desktop (detected separately) |
 | API tools | CC Switch, Cockpit Tools | CC Switch, Cockpit Tools |
 | API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
 | Component controls | Launch verified installations, resolve location conflicts, preview and safely remove | Same; managed CLIs move to an Osverse recovery directory |

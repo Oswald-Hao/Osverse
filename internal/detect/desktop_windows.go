@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
@@ -34,11 +35,11 @@ func WindowsDesktopSpecs() []WindowsDesktopSpec {
 			RelativeExecutables: []string{`AppData\Local\Programs\Claude\Claude.exe`, `AppData\Local\AnthropicClaude\Claude.exe`, `AppData\Local\Microsoft\WindowsApps\Claude.exe`},
 			MinimumOS:           "Windows 10 1903"},
 		{ID: "chatgpt-desktop", Name: "ChatGPT Desktop", Category: "Desktop Applications",
-			ExecutableNames: []string{"ChatGPT.exe", "Codex.exe"}, RegistryNames: []string{"ChatGPT", "Codex"}, AppModelPrefixes: []string{"OpenAI.ChatGPT", "OpenAI.Codex"},
-			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\ChatGPT.exe`, `AppData\Local\Microsoft\WindowsApps\Codex.exe`}, MinimumOS: "Windows 10 1809"},
+			ExecutableNames: []string{"ChatGPT.exe"}, RegistryNames: []string{"ChatGPT"}, AppModelPrefixes: []string{"OpenAI.ChatGPT"},
+			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\ChatGPT.exe`}, MinimumOS: "Windows 10 1809"},
 		{ID: "codex-desktop", Name: "Codex Desktop", Category: "Desktop Applications",
-			ExecutableNames: []string{"Codex.exe", "ChatGPT.exe"}, RegistryNames: []string{"Codex", "ChatGPT"}, AppModelPrefixes: []string{"OpenAI.Codex", "OpenAI.ChatGPT"},
-			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\Codex.exe`, `AppData\Local\Microsoft\WindowsApps\ChatGPT.exe`}, MinimumOS: "Windows 10 1809"},
+			ExecutableNames: []string{"Codex.exe"}, RegistryNames: []string{"Codex"}, AppModelPrefixes: []string{"OpenAI.Codex"},
+			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\Codex.exe`}, MinimumOS: "Windows 10 1809"},
 		{ID: "opencode-desktop", Name: "OpenCode Desktop", Category: "Desktop Applications",
 			ExecutableNames: []string{"OpenCode.exe", "opencode-desktop.exe"}, RegistryNames: []string{"OpenCode", "opencode", "@opencode/aidesktop", "@opencode-aidesktop"},
 			RelativeExecutables: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
@@ -95,7 +96,7 @@ func (RegistryPackageQuery) Evidence(ctx context.Context, spec WindowsDesktopSpe
 				continue
 			}
 			display, _, displayErr := entry.GetStringValue("DisplayName")
-			if displayErr == nil && containsFold(spec.RegistryNames, strings.TrimSpace(display)) {
+			if displayErr == nil && matchesRegistryDisplayName(spec.RegistryNames, strings.TrimSpace(display)) {
 				version, _, _ := entry.GetStringValue("DisplayVersion")
 				installLocation, _, _ := entry.GetStringValue("InstallLocation")
 				displayIcon, _, _ := entry.GetStringValue("DisplayIcon")
@@ -231,6 +232,27 @@ func containsFold(values []string, candidate string) bool {
 	return false
 }
 
+func matchesRegistryDisplayName(values []string, candidate string) bool {
+	if containsFold(values, candidate) {
+		return true
+	}
+	lower := strings.ToLower(candidate)
+	for _, value := range values {
+		prefix := strings.ToLower(value) + " "
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		suffix := strings.TrimSpace(candidate[len(prefix):])
+		if strings.HasPrefix(strings.ToLower(suffix), "v") {
+			suffix = suffix[1:]
+		}
+		if suffix != "" && suffix[0] >= '0' && suffix[0] <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
 type WindowsDesktopComponentProbe struct {
 	Spec     WindowsDesktopSpec
 	Packages WindowsPackageQuery
@@ -265,6 +287,9 @@ func DetectWindowsDesktop(ctx context.Context, spec WindowsDesktopSpec, system d
 	}
 	if len(installations) == 0 {
 		if evidence.Installed {
+			if evidence.Source == "msix" {
+				return windowsDesktopComponent(spec, domain.StatusInstalled, nil, "已安装（应用执行别名未启用）"), nil
+			}
 			return windowsDesktopComponent(spec, domain.StatusBroken, nil, "发现安装记录，但未找到可执行文件"), nil
 		}
 		return windowsDesktopComponent(spec, domain.StatusMissing, nil, "未检测到安装"), nil
@@ -272,10 +297,55 @@ func DetectWindowsDesktop(ctx context.Context, spec WindowsDesktopSpec, system d
 	status, message := domain.StatusInstalled, "已安装"
 	if len(installations) > 1 {
 		status, message = domain.StatusConflict, "检测到多个安装位置"
-	} else if spec.LatestVersion != "" && installations[0].Version != "unknown" && installations[0].Version != spec.LatestVersion {
+	} else if knownVersionIsNewer(spec.LatestVersion, installations[0].Version) {
 		status, message = domain.StatusUpdateAvailable, "有可用更新"
 	}
 	return windowsDesktopComponent(spec, status, installations, message), nil
+}
+
+func knownVersionIsNewer(known, installed string) bool {
+	parse := func(value string) ([]int, bool) {
+		value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+		value, _, _ = strings.Cut(value, "-")
+		parts := strings.Split(value, ".")
+		if len(parts) < 2 || len(parts) > 4 {
+			return nil, false
+		}
+		result := make([]int, len(parts))
+		for index, part := range parts {
+			if part == "" {
+				return nil, false
+			}
+			number, err := strconv.Atoi(part)
+			if err != nil || number < 0 {
+				return nil, false
+			}
+			result[index] = number
+		}
+		return result, true
+	}
+	left, leftOK := parse(known)
+	right, rightOK := parse(installed)
+	if !leftOK || !rightOK {
+		return false
+	}
+	limit := len(left)
+	if len(right) > limit {
+		limit = len(right)
+	}
+	for index := 0; index < limit; index++ {
+		leftValue, rightValue := 0, 0
+		if index < len(left) {
+			leftValue = left[index]
+		}
+		if index < len(right) {
+			rightValue = right[index]
+		}
+		if leftValue != rightValue {
+			return leftValue > rightValue
+		}
+	}
+	return false
 }
 
 func windowsDesktopExecutables(ctx context.Context, spec WindowsDesktopSpec, paths []string, home string, packageEvidence WindowsPackageEvidence) []domain.Installation {

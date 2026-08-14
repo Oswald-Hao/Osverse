@@ -49,7 +49,7 @@
 | 范围 | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
 | 核心 CLI | Claude Code、Codex CLI、OpenCode CLI 的检测与事务式安装/更新 | Claude Code、Codex CLI、OpenCode CLI 的检测与固定来源安装/更新 |
-| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT（含 Codex） |
+| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT Desktop、Codex Desktop（分别识别） |
 | API 管理工具 | CC Switch、Cockpit Tools | CC Switch、Cockpit Tools |
 | API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key | 同左；主密钥由当前 Windows 用户的 DPAPI 保护 |
 | 组件控制 | 启动所有已验证安装、按位置处理冲突、预览并安全移除 | 同左；受管 CLI 移入 Osverse 恢复区 |

@@ -34,6 +34,24 @@ func TestWindowsCommandDetectorTreatsExistingClaudeAsInstalledWhenVersionIsUnava
 	}
 }
 
+func TestWindowsCommandDetectorExcludesKnownDesktopAliases(t *testing.T) {
+	tests := []struct{ id, path string }{
+		{"claude-code", `C:\Users\Alice\AppData\Local\Microsoft\WindowsApps\Claude.exe`},
+		{"claude-code", `C:\Users\Alice\AppData\Local\Programs\Claude\Claude.exe`},
+		{"codex-cli", `C:\Users\Alice\AppData\Local\Microsoft\WindowsApps\Codex.exe`},
+		{"opencode-cli", `C:\Users\Alice\AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
+		{"opencode-cli", `C:\Program Files\OpenCode\OpenCode.exe`},
+	}
+	for _, test := range tests {
+		if !excludedWindowsCLICandidate(test.id, test.path) {
+			t.Errorf("desktop alias accepted as CLI: %s", test.path)
+		}
+	}
+	if excludedWindowsCLICandidate("codex-cli", `C:\Users\Alice\AppData\Local\OpenAI\Codex\bin\codex.exe`) {
+		t.Fatal("bundled Codex CLI excluded")
+	}
+}
+
 func TestManagedWindowsShimRequiresExactMarkerAndContainedTarget(t *testing.T) {
 	home := t.TempDir()
 	managedRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools")
