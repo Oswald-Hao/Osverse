@@ -91,6 +91,24 @@ describe('useInstallFlow', () => {
     expect(result.current.error).toContain('安装')
   })
 
+  it('accepts the Windows desktop installing task phase', async () => {
+    const installingTask = { ...task('queued', 0), phase: 'installing', progress: 85 }
+    setInstallOperationsForTests({
+      createPlan: vi.fn().mockResolvedValue(plan),
+      startInstall: vi.fn().mockResolvedValue(installingTask),
+      getTask: vi.fn().mockResolvedValue(task('completed', 100)),
+    })
+    const { result } = renderHook(() => useInstallFlow(vi.fn()))
+
+    act(() => result.current.prepare('codex-cli'))
+    await waitFor(() => expect(result.current.phase).toBe('review'))
+    act(() => result.current.confirm())
+
+    await waitFor(() => expect(result.current.task?.phase).toBe('installing'))
+    expect(result.current.phase).toBe('installing')
+    expect(result.current.error).toBeNull()
+  })
+
   it('ignores an older plan after a newer request completes', async () => {
     const older = deferred<InstallPlan>()
     const newer = { ...plan, id: 'new-plan', componentId: 'opencode-cli', name: 'OpenCode CLI' }
