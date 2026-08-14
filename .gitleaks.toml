@@ -1,0 +1,11 @@
+title = "Osverse Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact historical commit and path for the synthetic API profile edit fixture"
+condition = "AND"
+targetRules = ["generic-api-key"]
+commits = ["f144800f6751d6920f4810cfac3fec4b27664144"]
+paths = ['''^frontend/src/APIProfilesPage\.test\.tsx$''']
