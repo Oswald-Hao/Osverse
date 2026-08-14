@@ -17,7 +17,7 @@ Osverse 是面向 Ubuntu AI 开发环境的本地优先桌面管理器。它在�
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) 下载与你的 Ubuntu 版本匹配的 `.deb` 与 `SHA256SUMS`：
+从 [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) 下载与你的 Ubuntu 版本匹配的 `.deb` 或 `.AppImage` 与 `SHA256SUMS`：
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -26,6 +26,8 @@ osverse
 ```
 
 也可以解压对应的便携 tar 包后直接运行 `./osverse`。默认窗口为 1280×800，与 Cockpit Tools 的默认桌面尺寸一致。
+
+AppImage 不需要安装：校验后执行 `chmod +x osverse-*.AppImage`，再双击或从终端启动即可。
 
 ## 安全边界
 
@@ -68,7 +70,8 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
 打包脚本接受已构建二进制并生成可复现 tar、无 maintainer script 的 `.deb` 及 SHA-256 清单：
 
 ```bash
-build/linux/package.sh 0.1.0 build/bin/osverse ubuntu22.04 build/release/ubuntu22.04
+build/linux/fetch-appimage-tools.sh build/tools/appimage
+build/linux/package.sh 0.1.0 build/bin/osverse ubuntu22.04 build/release/ubuntu22.04 build/tools/appimage
 ```
 
 完整 Linux v1 验收矩阵见 [`docs/testing/linux-v1-acceptance.md`](docs/testing/linux-v1-acceptance.md)。
