@@ -201,6 +201,20 @@ describe('environment status dashboard', () => {
     expect(
       screen.queryByText('Ubuntu 22.04.5 LTS 22.04'),
     ).not.toBeInTheDocument()
+
+    const systemCard = screen
+      .getByRole('heading', { name: 'Ubuntu 22.04.5 LTS' })
+      .closest('section')
+    expect(systemCard).not.toBeNull()
+    const versionFact = within(systemCard as HTMLElement)
+      .getByText('版本', { selector: 'dt' })
+      .closest('div')
+    expect(versionFact).not.toBeNull()
+    expect(
+      within(versionFact as HTMLElement).getByText('22.04', {
+        selector: 'dd',
+      }),
+    ).toBeVisible()
   })
 
   it('separates the exact backend categories into labelled sections', () => {

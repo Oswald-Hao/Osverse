@@ -318,7 +318,7 @@ button:focus-visible {
 
 .system-facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
 }
@@ -654,8 +654,6 @@ button:focus-visible {
   .dashboard-header > div > p:last-child { display: none; }
   .system-card { padding: 19px; }
   .system-card__orb { display: none; }
-  .system-facts { grid-template-columns: 1fr 1fr; }
-  .system-facts div:last-child { grid-column: 1 / -1; }
   .summary-grid { grid-template-columns: 1fr; gap: 10px; }
   .summary-card { min-height: 82px; }
   .tool-grid { grid-template-columns: 1fr; }

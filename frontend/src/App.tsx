@@ -162,6 +162,10 @@ function App() {
           </div>
           <dl className="system-facts">
             <div>
+              <dt>版本</dt>
+              <dd>{snapshot.system.version}</dd>
+            </div>
+            <div>
               <dt>架构</dt>
               <dd>{snapshot.system.architecture}</dd>
             </div>
