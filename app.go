@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	"github.com/Oswald-Hao/Osverse/internal/install"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
@@ -18,6 +20,11 @@ type Scanner interface {
 // ProxyProber is the narrow loopback-only proxy operation used by the app.
 type ProxyProber interface {
 	Probe(context.Context, int) (proxyservice.Result, error)
+}
+
+// InstallPlanner accepts fixed component IDs and returns backend-owned plans.
+type InstallPlanner interface {
+	CreatePlan(context.Context, string) (install.Plan, error)
 }
 
 type proxySelection struct {
@@ -32,17 +39,56 @@ type App struct {
 	proxyProber     ProxyProber
 	proxySelection  proxySelection
 	proxyGeneration uint64
+	installPlanner  InstallPlanner
 }
 
 func NewApp(scanner Scanner) *App {
-	return newAppWithServices(scanner, proxyservice.NewService())
+	home, err := os.UserHomeDir()
+	var planner InstallPlanner
+	if err == nil {
+		planner, _ = install.NewManager(home)
+	}
+	return newAppWithAllServices(scanner, proxyservice.NewService(), planner)
 }
 
 func newAppWithServices(scanner Scanner, proxyProber ProxyProber) *App {
+	return newAppWithAllServices(scanner, proxyProber, nil)
+}
+
+func newAppWithAllServices(scanner Scanner, proxyProber ProxyProber, planner InstallPlanner) *App {
 	if scanner == nil || proxyProber == nil {
 		return nil
 	}
-	return &App{scanner: scanner, proxyProber: proxyProber}
+	return &App{scanner: scanner, proxyProber: proxyProber, installPlanner: planner}
+}
+
+// CreateInstallPlan previews an allowlisted CLI install without changing disk.
+func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
+	if app == nil {
+		return unavailableInstallPlan()
+	}
+	app.mu.RLock()
+	ctx := app.ctx
+	planner := app.installPlanner
+	app.mu.RUnlock()
+	if planner == nil {
+		return unavailableInstallPlan()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	plan, err := planner.CreatePlan(ctx, componentID)
+	if err == nil {
+		return plan, nil
+	}
+	if errors.Is(err, install.ErrUnknownComponent) || errors.Is(err, install.ErrUnsupportedTarget) {
+		return install.Plan{}, domain.NewPublicError(
+			domain.ErrInstallPlanFailed, "该工具暂不支持在当前系统安装", err,
+		)
+	}
+	return install.Plan{}, domain.NewPublicError(
+		domain.ErrInstallPlanFailed, "无法创建安装计划", err,
+	)
 }
 
 // ProbeProxy checks one loopback port using fixed protocol probes. A new probe
@@ -146,6 +192,14 @@ func unavailableProxy() (proxyservice.Result, error) {
 	return proxyservice.Result{}, domain.NewPublicError(
 		domain.ErrProxyProbeFailed,
 		"代理探测服务不可用",
+		nil,
+	)
+}
+
+func unavailableInstallPlan() (install.Plan, error) {
+	return install.Plan{}, domain.NewPublicError(
+		domain.ErrInstallUnavailable,
+		"安装服务不可用",
 		nil,
 	)
 }

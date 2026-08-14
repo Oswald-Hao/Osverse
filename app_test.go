@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	"github.com/Oswald-Hao/Osverse/internal/install"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
@@ -97,7 +98,7 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 
 func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
-	want := []string{"ProbeProxy", "ScanEnvironment", "UseDirectConnection"}
+	want := []string{"CreateInstallPlan", "ProbeProxy", "ScanEnvironment", "UseDirectConnection"}
 	if typeOfApp.NumMethod() != len(want) {
 		t.Fatalf("exported App methods = %d, want %d fixed operations", typeOfApp.NumMethod(), len(want))
 	}
@@ -105,6 +106,47 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 		if method := typeOfApp.Method(index); method.Name != name {
 			t.Fatalf("exported App method %d = %q, want %q", index, method.Name, name)
 		}
+	}
+}
+
+func TestCreateInstallPlanUsesStartupContextAndMapsFailures(t *testing.T) {
+	startup := context.WithValue(context.Background(), struct{}{}, "value")
+	want := install.Plan{ID: "plan", ComponentID: "codex-cli"}
+	planner := &fakeInstallPlanner{create: func(ctx context.Context, id string) (install.Plan, error) {
+		if ctx != startup || id != "codex-cli" {
+			t.Fatalf("CreatePlan(%p, %q), want startup context and codex-cli", ctx, id)
+		}
+		return want, nil
+	}}
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, planner)
+	app.startup(startup)
+
+	got, err := app.CreateInstallPlan("codex-cli")
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), want %#v", got, err, want)
+	}
+
+	planner.create = func(context.Context, string) (install.Plan, error) {
+		return install.Plan{}, install.ErrUnknownComponent
+	}
+	_, err = app.CreateInstallPlan("other")
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Code != domain.ErrInstallPlanFailed {
+		t.Fatalf("unknown plan error = %v", err)
+	}
+}
+
+func TestCreateInstallPlanUnavailableIsRedacted(t *testing.T) {
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{})
+
+	_, err := app.CreateInstallPlan("codex-cli")
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Code != domain.ErrInstallUnavailable {
+		t.Fatalf("unavailable plan error = %v", err)
 	}
 }
 
@@ -220,6 +262,14 @@ type fakeProxyProber struct {
 	result proxyservice.Result
 	err    error
 	probe  func(context.Context, int) (proxyservice.Result, error)
+}
+
+type fakeInstallPlanner struct {
+	create func(context.Context, string) (install.Plan, error)
+}
+
+func (planner *fakeInstallPlanner) CreatePlan(ctx context.Context, id string) (install.Plan, error) {
+	return planner.create(ctx, id)
 }
 
 func (prober *fakeProxyProber) Probe(ctx context.Context, port int) (proxyservice.Result, error) {
