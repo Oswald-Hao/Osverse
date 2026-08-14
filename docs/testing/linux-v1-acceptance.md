@@ -44,3 +44,19 @@
 ## 发布证据
 
 记录候选提交、CI URL、两个二进制及包的 SHA-256、运行系统版本、WebKitGTK 版本、截图和测试日期。预发布可用于收集额外反馈；只有所有阻断项关闭后才把同一候选提交晋级 `main` 并创建稳定标签。
+
+### 2026-08-14 候选提交 `57b9685`
+
+- CI：[31766216435](https://github.com/Oswald-Hao/Osverse/actions/runs/31766216435)，四个 job 全部成功。
+- Ubuntu 20.04 二进制 SHA-256：`0a2b7391478a687b6d2c7c2335080d941a0488d6a811ec8029bf5e921288e6c5`。
+- Ubuntu 22.04 二进制 SHA-256：`3a76b2f94da60bef15968f0f0335508ad75f74849fa13154236e62d8a8272237`。
+- Ubuntu 20.04 `.deb` SHA-256：`69617561543abdd55e97c7fbff6ef9493275671041d218559bd50f45fbc36e94`。
+- Ubuntu 22.04 `.deb` SHA-256：`a0a66824b7c82251241f0374339aedee781a9a5cf3993955a1996e4bd37e9b20`。
+- CI 使用 Go 1.25.12、Node.js 22.23.2；Ubuntu 20.04 原生构建使用 `webkit2_36`，Ubuntu 22.04 原生构建使用 `webkit2_40`。
+- 两个 tar 和两个 `.deb` 的内置清单均重新通过 `sha256sum --check`；两个 ELF 均为动态链接 x86-64，当前 Ubuntu 22.04 主机无缺失动态库。
+- `.deb` 内容检查通过：仅包含 `/usr/bin/osverse`、desktop entry、图标、README 和 control 元数据，无 maintainer script；desktop entry 权限为 0644。
+- 实机环境：Ubuntu 22.04.5 LTS、x86_64、GNOME/X11、Bash。两个系统构建均以 1280×800 打开并正常退出。
+- 总览扫描与直接命令一致：Claude Code 在两个 PATH 位置均为 2.1.114，界面状态为已安装；Codex CLI 为 0.147.0；OpenCode CLI 缺失。当前验证了“外部路径即有效安装”的产品要求。
+- 总览、API 配置、安装记录、设置四页均完成真实窗口渲染；API 表单不含预填凭据，设置页显示 AES-256-GCM、loopback 代理作用域、固定清单与无遥测策略。
+- Anthropic 官方密钥已从 `downloads.claude.ai` 只读下载并由 GnuPG 实测，指纹精确匹配 `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`。
+- 未在真实主机执行 CLI/AppImage/Claude Desktop 安装或写入真实 API 凭据；这些写路径由隔离临时目录、伪 HTTP 服务、失败注入、全量 race 测试和事务回滚测试覆盖，避免为验收改变用户现有环境。
