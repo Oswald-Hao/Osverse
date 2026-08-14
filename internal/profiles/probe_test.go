@@ -78,7 +78,7 @@ func TestProbeUsesFixedNoInferenceRoutesAndRedactsCredentials(t *testing.T) {
 		t.Fatalf("statuses = %#v, want %#v", gotStatuses, wantStatuses)
 	}
 	for _, request := range requests {
-		if request.Method != http.MethodGet && request.Method != http.MethodOptions {
+		if request.Method != http.MethodGet && request.Method != http.MethodOptions && request.Method != http.MethodPost {
 			t.Errorf("probe method = %s", request.Method)
 		}
 		if request.Header.Get("Authorization") != "Bearer "+secret || request.Header.Get("X-Api-Key") != secret {
@@ -88,6 +88,67 @@ func TestProbeUsesFixedNoInferenceRoutesAndRedactsCredentials(t *testing.T) {
 	formatted := strings.Join([]string{result.Message, result.Protocols[0].Message, result.Protocols[1].Message, result.Protocols[2].Message}, " ")
 	if strings.Contains(formatted, secret) {
 		t.Fatal("probe result leaked API key")
+	}
+}
+
+func TestProbeFallsBackToMalformedNoInferencePostWhenOptionsIsBlocked(t *testing.T) {
+	var methods []string
+	prober := testProber(doerFunc(func(request *http.Request) (*http.Response, error) {
+		methods = append(methods, request.Method+" "+request.URL.Path)
+		if request.URL.Path == "/v1/models" {
+			return response(request, http.StatusOK, []byte(`{"data":[]}`)), nil
+		}
+		if request.Method == http.MethodOptions {
+			return response(request, http.StatusNotFound, nil), nil
+		}
+		if request.Method != http.MethodPost {
+			t.Fatalf("fallback method = %s", request.Method)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatalf("read fallback body: %v", err)
+		}
+		if string(body) != "{" || request.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("fallback payload = %q, content type = %q", body, request.Header.Get("Content-Type"))
+		}
+		return response(request, http.StatusBadRequest, nil), nil
+	}))
+
+	result, err := prober.Probe(context.Background(), testInput())
+	if err != nil {
+		t.Fatalf("Probe() error = %v", err)
+	}
+	for _, protocol := range result.Protocols {
+		if protocol.Status != "compatible" || !strings.Contains(protocol.Message, "无推理") {
+			t.Fatalf("protocol result = %#v", protocol)
+		}
+	}
+	wantMethods := []string{
+		"GET /v1/models",
+		"OPTIONS /v1/responses", "POST /v1/responses",
+		"OPTIONS /v1/chat/completions", "POST /v1/chat/completions",
+		"OPTIONS /v1/messages", "POST /v1/messages",
+	}
+	if !reflect.DeepEqual(methods, wantMethods) {
+		t.Fatalf("methods = %#v, want %#v", methods, wantMethods)
+	}
+}
+
+func TestMalformedPostRequiresAResponseThatProvesAPostRoute(t *testing.T) {
+	for _, test := range []struct {
+		status int
+		want   string
+	}{
+		{status: http.StatusBadRequest, want: "compatible"},
+		{status: http.StatusUnauthorized, want: "compatible"},
+		{status: http.StatusNotFound, want: "unavailable"},
+		{status: http.StatusMethodNotAllowed, want: "unconfirmed"},
+		{status: http.StatusInternalServerError, want: "unconfirmed"},
+	} {
+		result := classifyMalformedPost("openai-responses", test.status)
+		if result.Status != test.want {
+			t.Errorf("status %d classified as %q, want %q", test.status, result.Status, test.want)
+		}
 	}
 }
 
