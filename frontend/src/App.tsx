@@ -11,9 +11,10 @@ import APIProfilesPage from './APIProfilesPage'
 import HistoryPage from './HistoryPage'
 import SettingsPage from './SettingsPage'
 import type { AppView } from './Sidebar'
+import type { RemovalPlan } from './domain'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 import { useInstallFlow } from './hooks/useInstallFlow'
-import { launchComponent } from './services/osverse'
+import { createRemovalPlan, launchComponent, removeComponent } from './services/osverse'
 
 const sections = [
   {
@@ -101,6 +102,8 @@ function App() {
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
   const install = useInstallFlow(refresh)
   const [launchNotice, setLaunchNotice] = useState<string | null>(null)
+  const [removalPlan, setRemovalPlan] = useState<RemovalPlan | null>(null)
+  const [removalBusy, setRemovalBusy] = useState(false)
   const isScanning = phase === 'scanning'
 
   if (view === 'api') {
@@ -237,17 +240,49 @@ function App() {
                 (component) => component.category === section.category,
               )}
               onInstall={install.prepare}
-              onLaunch={(id) => {
+              onLaunch={(id, installationPath) => {
                 setLaunchNotice(null)
-                void launchComponent(id).catch((reason: unknown) => {
+                void launchComponent(id, installationPath).catch((reason: unknown) => {
                   setLaunchNotice(reason instanceof Error ? reason.message : '无法启动应用')
                 })
+              }}
+              onRemove={(id) => {
+                setLaunchNotice(null)
+                setRemovalBusy(true)
+                void createRemovalPlan(id).then(setRemovalPlan).catch((reason: unknown) => {
+                  setLaunchNotice(reason instanceof Error ? reason.message : '无法创建移除计划')
+                }).finally(() => setRemovalBusy(false))
               }}
             />
           ))}
         </div>
       </main>
       <InstallDialog flow={install} />
+      {removalPlan && (
+        <div className="dialog-backdrop" role="presentation">
+          <section className="install-dialog" role="dialog" aria-modal="true" aria-labelledby="removal-plan-title">
+            <div className="install-dialog__header">
+              <div><p className="card-kicker">REMOVAL REVIEW</p><h2 id="removal-plan-title">确认移除 {removalPlan.name}</h2></div>
+            </div>
+            <div className="notice notice--error"><strong>请检查影响范围</strong><span>{removalPlan.warning}</span></div>
+            <ol className="install-changes">
+              {removalPlan.effects.map((effect, index) => <li key={`${effect.path}-${index}`}><strong>{effect.description}</strong><code>{effect.path}</code><span>{effect.recoverable ? '可从回收站恢复' : '由系统包管理器执行'}</span></li>)}
+            </ol>
+            <div className="install-dialog__actions">
+              <button className="secondary-button" type="button" onClick={() => setRemovalPlan(null)} disabled={removalBusy}>取消</button>
+              <button className="danger-button" type="button" disabled={removalBusy} onClick={() => {
+                setRemovalBusy(true); setLaunchNotice(null)
+                void removeComponent(removalPlan.id).then(() => {
+                  setRemovalPlan(null)
+                  refresh()
+                }).catch((reason: unknown) => {
+                  setLaunchNotice(reason instanceof Error ? reason.message : '移除未完成')
+                }).finally(() => setRemovalBusy(false))
+              }}>确认移除</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

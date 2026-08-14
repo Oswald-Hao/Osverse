@@ -682,6 +682,13 @@ button:focus-visible {
   transform: translateY(-1px);
 }
 
+.tool-card button.tool-card__remove:not(:disabled) {
+  color: #a83b42;
+  background: #fff5f5;
+  border-color: #f0c9cc;
+  box-shadow: none;
+}
+
 .tool-card button > span {
   display: block;
   margin-top: 1px;

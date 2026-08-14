@@ -47,7 +47,7 @@ var fixedComponents = map[string]componentKind{
 	"cockpit-tools":    {category: "Management Tools", managedDesktop: true},
 }
 
-func (manager *Manager) Launch(ctx context.Context, component domain.Component) error {
+func (manager *Manager) Launch(ctx context.Context, component domain.Component, selector string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -56,11 +56,25 @@ func (manager *Manager) Launch(ctx context.Context, component domain.Component) 
 	}
 	kind, known := fixedComponents[component.ID]
 	if manager == nil || manager.starter == nil || !known || component.Category != kind.category ||
-		(component.Status != domain.StatusInstalled && component.Status != domain.StatusUpdateAvailable) ||
-		len(component.Installations) != 1 {
+		(component.Status != domain.StatusInstalled && component.Status != domain.StatusUpdateAvailable && component.Status != domain.StatusConflict) ||
+		len(component.Installations) == 0 {
 		return ErrLaunchUnavailable
 	}
-	installation := component.Installations[0]
+	var installation domain.Installation
+	found := false
+	if selector == "" && len(component.Installations) == 1 {
+		installation, found = component.Installations[0], true
+	} else {
+		for _, candidate := range component.Installations {
+			if candidate.Path == selector {
+				installation, found = candidate, true
+				break
+			}
+		}
+	}
+	if !found {
+		return ErrLaunchUnavailable
+	}
 	if !safeAbsolutePath(installation.Path) || !safeAbsolutePath(installation.ResolvedPath) {
 		return ErrLaunchUnavailable
 	}

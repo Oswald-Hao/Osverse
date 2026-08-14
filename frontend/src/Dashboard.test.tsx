@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { EnvironmentSnapshot } from './domain'
@@ -7,8 +7,10 @@ import App from './App'
 import {
   resetHistoryOperationsForTests,
   resetLaunchOperationForTests,
+  resetRemovalOperationsForTests,
   setHistoryOperationsForTests,
   setLaunchOperationForTests,
+  setRemovalOperationsForTests,
 } from './services/osverse'
 
 const mockUseEnvironmentScan = vi.fn<() => EnvironmentScanState>()
@@ -153,6 +155,7 @@ afterEach(() => {
   cleanup()
   resetHistoryOperationsForTests()
   resetLaunchOperationForTests()
+  resetRemovalOperationsForTests()
 })
 
 describe('environment status dashboard', () => {
@@ -423,10 +426,40 @@ describe('environment status dashboard', () => {
     const openCode = screen.getByRole('heading', { name: 'OpenCode Desktop' }).closest('article')
     fireEvent.click(within(openCode as HTMLElement).getByRole('button', { name: /启动/ }))
 
-    expect(launch).toHaveBeenNthCalledWith(1, 'claude-code')
-    expect(launch).toHaveBeenNthCalledWith(2, 'opencode-desktop')
+    expect(launch).toHaveBeenNthCalledWith(1, 'claude-code', '/usr/bin/claude')
+    expect(launch).toHaveBeenNthCalledWith(2, 'opencode-desktop', '/opt/opencode/opencode-desktop')
     expect(within(claude as HTMLElement).getByText('在终端中启动')).toBeVisible()
     expect(within(openCode as HTMLElement).getByText('启动已检测应用')).toBeVisible()
+
+    const codex = screen.getByRole('heading', { name: 'Codex CLI' }).closest('article')
+    const locations = within(codex as HTMLElement).getAllByRole('button', { name: '启动此位置' })
+    expect(locations).toHaveLength(2)
+    fireEvent.click(locations[1])
+    expect(launch).toHaveBeenNthCalledWith(3, 'codex-cli', '/home/test/.local/bin/codex')
+  })
+
+  it('previews exact recoverable effects before removing a detected installation', async () => {
+    const create = vi.fn().mockResolvedValue({
+      id: 'remove-plan', componentId: 'claude-code', name: 'Claude Code',
+      effects: [{ action: 'trash', path: '/home/test/.local/bin/claude', description: '移至回收站', recoverable: true }],
+      warning: '配置、凭据和会话数据不会删除。', createdAt: '', expiresAt: '',
+    })
+    const remove = vi.fn().mockResolvedValue({
+      planId: 'remove-plan', componentId: 'claude-code', removed: true, message: '已移除',
+    })
+    setRemovalOperationsForTests(create, remove)
+    render(<App />)
+    const claude = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
+
+    fireEvent.click(within(claude as HTMLElement).getByRole('button', { name: /移除/ }))
+    const dialog = await screen.findByRole('dialog', { name: /确认移除 Claude Code/ })
+    expect(within(dialog).getByText('/home/test/.local/bin/claude')).toBeVisible()
+    expect(within(dialog).getByText(/配置、凭据和会话数据不会删除/)).toBeVisible()
+    expect(remove).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认移除' }))
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('remove-plan'))
+    expect(refresh).toHaveBeenCalled()
   })
 
   it('announces an initial scan without rendering a stale dashboard', () => {

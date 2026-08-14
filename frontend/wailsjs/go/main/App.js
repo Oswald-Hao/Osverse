@@ -22,6 +22,10 @@ export function CreateInstallPlan(arg1) {
   return window['go']['main']['App']['CreateInstallPlan'](arg1);
 }
 
+export function CreateRemovalPlan(arg1) {
+  return window['go']['main']['App']['CreateRemovalPlan'](arg1);
+}
+
 export function DeleteAPIProfile(arg1) {
   return window['go']['main']['App']['DeleteAPIProfile'](arg1);
 }
@@ -34,8 +38,8 @@ export function GetInstallTask(arg1) {
   return window['go']['main']['App']['GetInstallTask'](arg1);
 }
 
-export function LaunchComponent(arg1) {
-  return window['go']['main']['App']['LaunchComponent'](arg1);
+export function LaunchComponent(arg1, arg2) {
+  return window['go']['main']['App']['LaunchComponent'](arg1, arg2);
 }
 
 export function ListAPIProfiles() {
@@ -52,6 +56,10 @@ export function ProbeAPIProfile(arg1) {
 
 export function ProbeProxy(arg1) {
   return window['go']['main']['App']['ProbeProxy'](arg1);
+}
+
+export function RemoveComponent(arg1) {
+  return window['go']['main']['App']['RemoveComponent'](arg1);
 }
 
 export function SaveAPIProfile(arg1) {

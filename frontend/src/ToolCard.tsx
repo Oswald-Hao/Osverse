@@ -18,16 +18,20 @@ const installableComponents = new Set([
   'claude-desktop', 'opencode-desktop', 'cc-switch', 'cockpit-tools',
 ])
 
-function ToolCard({ component, onInstall, onLaunch }: {
+function ToolCard({ component, onInstall, onLaunch, onRemove }: {
   component: Component
   onInstall?: (id: string) => void
-  onLaunch?: (id: string) => void
+  onLaunch?: (id: string, installationPath: string) => void
+  onRemove?: (id: string) => void
 }) {
   const action = actionLabels[component.status]
   const canInstall = installableComponents.has(component.id) &&
     ['missing', 'broken', 'failed', 'update_available'].includes(component.status)
-  const canLaunch = ['installed', 'update_available'].includes(component.status) &&
+  const launchable = ['installed', 'update_available', 'conflict'].includes(component.status)
+  const canLaunch = launchable &&
     component.installations.length === 1
+  const canRemove = ['installed', 'update_available', 'conflict'].includes(component.status) &&
+    component.installations.length > 0
 
   return (
     <li>
@@ -66,6 +70,9 @@ function ToolCard({ component, onInstall, onLaunch }: {
                     </div>
                   )}
                 </dl>
+                {launchable && component.installations.length > 1 && (
+                  <button type="button" onClick={() => onLaunch?.(component.id, installation.path)}>启动此位置</button>
+                )}
               </li>
             ))}
           </ul>
@@ -75,8 +82,9 @@ function ToolCard({ component, onInstall, onLaunch }: {
           <span>最低要求：{component.minimumOS}</span>
           <div className="tool-card__actions">
             {canInstall && <button type="button" onClick={() => onInstall?.(component.id)}>{action}<span>官方校验安装</span></button>}
-            {canLaunch && <button type="button" onClick={() => onLaunch?.(component.id)}>启动<span>{component.category === 'Core CLI' ? '在终端中启动' : component.installations[0].managed ? '校验后启动' : '启动已检测应用'}</span></button>}
-            {!canInstall && !canLaunch && <button type="button" disabled>{action}<span>{component.status === 'installed' ? '存在多个安装位置' : '暂不可用'}</span></button>}
+            {canLaunch && <button type="button" onClick={() => onLaunch?.(component.id, component.installations[0].path)}>启动<span>{component.category === 'Core CLI' ? '在终端中启动' : component.installations[0].managed ? '校验后启动' : '启动已检测应用'}</span></button>}
+            {canRemove && <button className="tool-card__remove" type="button" onClick={() => onRemove?.(component.id)}>移除<span>先预览再确认</span></button>}
+            {!canInstall && !canLaunch && !canRemove && <button type="button" disabled>{action}<span>{component.status === 'installed' ? '存在多个安装位置' : '暂不可用'}</span></button>}
           </div>
         </div>
       </article>

@@ -15,6 +15,7 @@ import (
 	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"github.com/Oswald-Hao/Osverse/internal/removal"
 	"github.com/Oswald-Hao/Osverse/internal/systeminstall"
 )
 
@@ -44,7 +45,12 @@ type AppLauncher interface {
 }
 
 type ComponentLauncher interface {
-	Launch(context.Context, domain.Component) error
+	Launch(context.Context, domain.Component, string) error
+}
+
+type RemovalService interface {
+	CreatePlan(context.Context, domain.Component) (removal.Plan, error)
+	Execute(context.Context, string, domain.Component) (removal.Result, error)
 }
 
 type ProfileService interface {
@@ -81,6 +87,7 @@ type App struct {
 	appExecutor       InstallExecutor
 	appLauncher       AppLauncher
 	componentLauncher ComponentLauncher
+	removal           RemovalService
 	systemPlanner     InstallPlanner
 	systemExecutor    InstallExecutor
 	planOwners        map[string]string
@@ -88,6 +95,7 @@ type App struct {
 	profiles          ProfileService
 	history           HistoryService
 	recordedTasks     map[string]bool
+	removalPlans      map[string]string
 }
 
 func NewApp(scanner Scanner) *App {
@@ -113,12 +121,19 @@ func NewApp(scanner Scanner) *App {
 			app.appLauncher = appManager
 		}
 	}
+	var systemRemover interface {
+		Remove(context.Context, string) error
+	}
 	if app != nil {
 		if systemManager, managerErr := systeminstall.NewManager(); managerErr == nil {
 			app.systemPlanner = systemManager
 			app.systemExecutor = systemManager
+			systemRemover = systemManager
 		}
 		app.componentLauncher = launchservice.NewManager(platformlinux.NewDetachedStarter(), app.appLauncher)
+	}
+	if err == nil && app != nil {
+		app.removal, _ = removal.NewManager(home, systemRemover)
 	}
 	return app
 }
@@ -139,6 +154,7 @@ func newAppWithServiceBundle(scanner Scanner, proxyProber ProxyProber, planner I
 		scanner: scanner, proxyProber: proxyProber, installPlanner: planner, profiles: profileService,
 		planOwners: make(map[string]string), taskOwners: make(map[string]string),
 		recordedTasks: make(map[string]bool),
+		removalPlans:  make(map[string]string),
 	}
 	if executor, ok := planner.(InstallExecutor); ok {
 		app.installExecutor = executor
@@ -434,6 +450,93 @@ func knownComponentID(id string) bool {
 	}
 }
 
+func (app *App) scanComponent(componentID string) (domain.Component, error) {
+	if app == nil || !knownComponentID(componentID) {
+		return domain.Component{}, errors.New("unknown component")
+	}
+	app.mu.RLock()
+	scanner := app.scanner
+	app.mu.RUnlock()
+	if scanner == nil {
+		return domain.Component{}, errors.New("scanner unavailable")
+	}
+	snapshot, err := scanner.Scan(app.appContext())
+	if err != nil {
+		return domain.Component{}, err
+	}
+	for _, component := range snapshot.Components {
+		if component.ID == componentID {
+			return component, nil
+		}
+	}
+	return domain.Component{}, errors.New("component missing")
+}
+
+// CreateRemovalPlan previews exact package or recoverable Trash effects from a
+// fresh backend scan. It never accepts a filesystem path from the frontend.
+func (app *App) CreateRemovalPlan(componentID string) (removal.Plan, error) {
+	if app == nil || !knownComponentID(componentID) {
+		return removal.Plan{}, domain.NewPublicError(domain.ErrRemovalPlanFailed, "该工具不能由 Osverse 安全移除", nil)
+	}
+	app.mu.RLock()
+	service := app.removal
+	app.mu.RUnlock()
+	if service == nil {
+		return removal.Plan{}, domain.NewPublicError(domain.ErrRemovalPlanFailed, "移除服务不可用", nil)
+	}
+	component, err := app.scanComponent(componentID)
+	if err != nil {
+		return removal.Plan{}, domain.NewPublicError(domain.ErrRemovalPlanFailed, "无法确认当前安装状态", err)
+	}
+	plan, err := service.CreatePlan(app.appContext(), component)
+	if err != nil {
+		message := "无法创建移除计划"
+		if errors.Is(err, removal.ErrRemovalUnsupported) {
+			message = "该安装来源无法安全自动移除，请使用原安装方式"
+		}
+		return removal.Plan{}, domain.NewPublicError(domain.ErrRemovalPlanFailed, message, err)
+	}
+	app.mu.Lock()
+	app.removalPlans[plan.ID] = componentID
+	app.mu.Unlock()
+	return plan, nil
+}
+
+// RemoveComponent confirms one single-use removal plan after rescanning the
+// component and revalidating every captured filesystem identity.
+func (app *App) RemoveComponent(planID string) (removal.Result, error) {
+	if app == nil || planID == "" {
+		return removal.Result{}, domain.NewPublicError(domain.ErrRemovalTaskFailed, "移除计划不可用", nil)
+	}
+	app.mu.RLock()
+	service := app.removal
+	componentID := app.removalPlans[planID]
+	app.mu.RUnlock()
+	if service == nil || componentID == "" {
+		return removal.Result{}, domain.NewPublicError(domain.ErrRemovalTaskFailed, "移除计划不可用", nil)
+	}
+	component, err := app.scanComponent(componentID)
+	if err != nil {
+		return removal.Result{}, domain.NewPublicError(domain.ErrRemovalTaskFailed, "安装状态已变化，请重新预览", err)
+	}
+	result, err := service.Execute(app.appContext(), planID, component)
+	app.mu.Lock()
+	delete(app.removalPlans, planID)
+	app.mu.Unlock()
+	if err != nil {
+		message := "移除未完成，原安装保持不变"
+		if errors.Is(err, removal.ErrEvidenceChanged) {
+			message = "安装状态已变化，请重新预览"
+		}
+		return removal.Result{}, domain.NewPublicError(domain.ErrRemovalTaskFailed, message, err)
+	}
+	app.appendHistory(historyservice.Input{
+		OperationID: planID, ComponentID: componentID, Name: componentDisplayName(componentID),
+		Action: "remove", Status: "completed", Message: result.Message,
+	})
+	return result, nil
+}
+
 // ListHistory returns only the bounded redacted operation ledger.
 func (app *App) ListHistory() ([]historyservice.Entry, error) {
 	if app == nil {
@@ -504,34 +607,22 @@ func isUserDesktopComponent(id string) bool {
 
 // LaunchComponent rescans a fixed component ID and starts only the exact
 // backend-verified installation. No filesystem path is accepted from the UI.
-func (app *App) LaunchComponent(componentID string) error {
+func (app *App) LaunchComponent(componentID, installationPath string) error {
 	if app == nil || !knownComponentID(componentID) {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "该应用不能由 Osverse 启动", nil)
 	}
 	app.mu.RLock()
 	launcher := app.componentLauncher
-	scanner := app.scanner
 	app.mu.RUnlock()
-	if launcher == nil || scanner == nil {
+	if launcher == nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "应用启动服务不可用", nil)
 	}
 	ctx := app.appContext()
-	snapshot, err := scanner.Scan(ctx)
+	component, err := app.scanComponent(componentID)
 	if err != nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "启动前重新扫描失败", err)
 	}
-	var component domain.Component
-	found := false
-	for _, candidate := range snapshot.Components {
-		if candidate.ID == componentID {
-			component, found = candidate, true
-			break
-		}
-	}
-	if !found {
-		return domain.NewPublicError(domain.ErrInstallTaskFailed, "重新扫描后未找到该工具", nil)
-	}
-	if err := launcher.Launch(ctx, component); err != nil {
+	if err := launcher.Launch(ctx, component, installationPath); err != nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "无法启动应用，请重新扫描或安装", err)
 	}
 	app.appendHistory(historyservice.Input{

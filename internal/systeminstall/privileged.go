@@ -18,12 +18,13 @@ import (
 )
 
 const (
-	privilegedFlag      = "--osverse-privileged"
-	privilegedAction    = "install-claude-desktop"
-	keyURL              = "https://downloads.claude.ai/claude-desktop/key.asc"
-	expectedFingerprint = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
-	repositoryLine      = "deb [signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main\n"
-	maxKeyBytes         = 1024 * 1024
+	privilegedFlag         = "--osverse-privileged"
+	privilegedAction       = "install-claude-desktop"
+	privilegedRemoveAction = "remove-system-package"
+	keyURL                 = "https://downloads.claude.ai/claude-desktop/key.asc"
+	expectedFingerprint    = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+	repositoryLine         = "deb [signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main\n"
+	maxKeyBytes            = 1024 * 1024
 )
 
 type privilegedDeps struct {
@@ -40,7 +41,20 @@ func IsPrivilegedInvocation(args []string) bool {
 
 // RunPrivileged returns a process exit code and accepts no user-controlled operation.
 func RunPrivileged(args []string) int {
-	if (len(args) != 2 && len(args) != 4) || args[0] != privilegedFlag || args[1] != privilegedAction || os.Geteuid() != 0 {
+	if len(args) < 2 || args[0] != privilegedFlag || os.Geteuid() != 0 {
+		return 2
+	}
+	if args[1] == privilegedRemoveAction {
+		if len(args) != 3 {
+			return 2
+		}
+		deps := privilegedDeps{root: "/", run: runFixedCommand}
+		if err := removeSystemPackage(context.Background(), deps, args[2]); err != nil {
+			return 1
+		}
+		return 0
+	}
+	if (len(args) != 2 && len(args) != 4) || args[1] != privilegedAction {
 		return 2
 	}
 	protocol, port := proxyservice.Protocol(""), 0
@@ -63,6 +77,26 @@ func RunPrivileged(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+var removableSystemPackages = map[string]string{
+	"claude-desktop":   "claude-desktop",
+	"chatgpt-desktop":  "chatgpt-desktop",
+	"opencode-desktop": "opencode-desktop",
+	"cc-switch":        "cc-switch",
+	"cockpit-tools":    "cockpit-tools",
+}
+
+func removeSystemPackage(ctx context.Context, deps privilegedDeps, componentID string) error {
+	packageName, ok := removableSystemPackages[componentID]
+	if !ok {
+		return ErrUnknownComponent
+	}
+	if deps.root != "/" || deps.run == nil {
+		return errors.New("privileged dependencies unavailable")
+	}
+	_, err := deps.run(ctx, "/usr/bin/apt-get", []string{"remove", "-y", packageName}, nil)
+	return err
 }
 
 func installClaude(ctx context.Context, deps privilegedDeps) (returnErr error) {

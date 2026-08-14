@@ -6,10 +6,11 @@ interface ToolSectionProps {
   description: string
   components: Component[]
   onInstall?: (id: string) => void
-  onLaunch?: (id: string) => void
+  onLaunch?: (id: string, installationPath: string) => void
+  onRemove?: (id: string) => void
 }
 
-function ToolSection({ title, description, components, onInstall, onLaunch }: ToolSectionProps) {
+function ToolSection({ title, description, components, onInstall, onLaunch, onRemove }: ToolSectionProps) {
   const headingId = `section-${title}`
 
   return (
@@ -24,7 +25,7 @@ function ToolSection({ title, description, components, onInstall, onLaunch }: To
       {components.length > 0 ? (
         <ul className="tool-grid">
           {components.map((component) => (
-            <ToolCard key={component.id} component={component} onInstall={onInstall} onLaunch={onLaunch} />
+            <ToolCard key={component.id} component={component} onInstall={onInstall} onLaunch={onLaunch} onRemove={onRemove} />
           ))}
         </ul>
       ) : (
