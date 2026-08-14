@@ -38,9 +38,9 @@ var componentRules = map[string]componentRule{
 	"codex-cli":        {category: "Core CLI", command: "codex"},
 	"opencode-cli":     {category: "Core CLI", command: "opencode"},
 	"claude-desktop":   {category: "Desktop Applications", uninstallKind: "winget", uninstallID: "Anthropic.Claude"},
-	"chatgpt-desktop":  {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},
+	"chatgpt-desktop":  {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9NT1R1C2HH7J"},
 	"codex-desktop":    {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},
-	"opencode-desktop": {category: "Desktop Applications", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\OpenCode\Uninstall OpenCode.exe`, `AppData\Local\Programs\opencode\Uninstall OpenCode.exe`}, uninstallArgs: []string{"/S"}},
+	"opencode-desktop": {category: "Desktop Applications", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\OpenCode\Uninstall OpenCode.exe`, `AppData\Local\Programs\opencode\Uninstall OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\Uninstall OpenCode.exe`}, uninstallArgs: []string{"/S"}},
 	"cc-switch":        {category: "Management Tools", uninstallKind: "msi", uninstallID: "{634D5E13-C751-4997-A707-B6B27B354D77}"},
 	"cockpit-tools":    {category: "Management Tools", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\Cockpit Tools\uninstall.exe`, `AppData\Local\Cockpit Tools\uninstall.exe`, `AppData\Local\Programs\Cockpit Tools\Uninstall Cockpit Tools.exe`}, uninstallArgs: []string{"/S"}},
 }
@@ -92,7 +92,7 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 		return removal.Plan{}, err
 	}
 	rule, known := componentRules[component.ID]
-	if manager == nil || !known || component.Category != rule.category || len(component.Installations) == 0 ||
+	if manager == nil || !known || component.Category != rule.category || (len(component.Installations) == 0 && component.Category == "Core CLI") ||
 		(component.Status != domain.StatusInstalled && component.Status != domain.StatusUpdateAvailable && component.Status != domain.StatusConflict) {
 		return removal.Plan{}, removal.ErrRemovalUnsupported
 	}
@@ -116,7 +116,7 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 		warning = "应用将通过固定卸载身份移除；应用配置、API 凭据和会话数据不会删除。"
 	}
 	if rule.uninstallKind == "store" {
-		warning = "该产品现在是包含 ChatGPT 与 Codex 的统一 OpenAI Windows 应用；卸载会同时移除这两个入口，但不会删除用户数据。"
+		warning = "该 Microsoft Store 应用将通过固定产品 ID 移除；不会影响另一个 OpenAI 桌面应用，也不会删除用户数据。"
 	}
 	stored.public.ID, stored.public.ComponentID, stored.public.Name = id, component.ID, component.Name
 	stored.public.Warning, stored.public.CreatedAt, stored.public.ExpiresAt = warning, created, created.Add(planLifetime)

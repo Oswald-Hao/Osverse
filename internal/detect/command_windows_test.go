@@ -3,10 +3,54 @@
 package detect
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
+
+	"github.com/Oswald-Hao/Osverse/internal/domain"
+	"github.com/Oswald-Hao/Osverse/internal/platform"
 )
+
+type failingWindowsVersionRunner struct{}
+
+func (failingWindowsVersionRunner) Run(context.Context, platform.CommandRequest) (platform.CommandResult, error) {
+	return platform.CommandResult{ExitCode: 1, Stderr: "version unavailable"}, errors.New("version unavailable")
+}
+
+func TestWindowsCommandDetectorTreatsExistingClaudeAsInstalledWhenVersionIsUnavailable(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "claude.exe")
+	if err := os.WriteFile(path, []byte("MZ fixture"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spec := CommandSpec{ID: "claude-code", Name: "Claude Code", ExecutableNames: []string{"claude.exe"},
+		VersionArgs: []string{"--version"}, VersionPattern: regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+)$`), MinimumOS: "Windows 10 1809"}
+	component := (CommandDetector{Runner: failingWindowsVersionRunner{}}).Detect(context.Background(), spec, []string{directory})
+	if component.Status != domain.StatusInstalled || component.Message != installedUnverifiedMessage || len(component.Installations) != 1 || component.Installations[0].Version != "unknown" {
+		t.Fatalf("component = %#v", component)
+	}
+}
+
+func TestWindowsCommandDetectorExcludesKnownDesktopAliases(t *testing.T) {
+	tests := []struct{ id, path string }{
+		{"claude-code", `C:\Users\Alice\AppData\Local\Microsoft\WindowsApps\Claude.exe`},
+		{"claude-code", `C:\Users\Alice\AppData\Local\Programs\Claude\Claude.exe`},
+		{"codex-cli", `C:\Users\Alice\AppData\Local\Microsoft\WindowsApps\Codex.exe`},
+		{"opencode-cli", `C:\Users\Alice\AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
+		{"opencode-cli", `C:\Program Files\OpenCode\OpenCode.exe`},
+	}
+	for _, test := range tests {
+		if !excludedWindowsCLICandidate(test.id, test.path) {
+			t.Errorf("desktop alias accepted as CLI: %s", test.path)
+		}
+	}
+	if excludedWindowsCLICandidate("codex-cli", `C:\Users\Alice\AppData\Local\OpenAI\Codex\bin\codex.exe`) {
+		t.Fatal("bundled Codex CLI excluded")
+	}
+}
 
 func TestManagedWindowsShimRequiresExactMarkerAndContainedTarget(t *testing.T) {
 	home := t.TempDir()

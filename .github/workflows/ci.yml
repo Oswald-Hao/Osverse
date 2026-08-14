@@ -47,6 +47,7 @@ jobs:
 
   supply-chain:
     name: Vulnerability, secret, license, and SBOM checks
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -91,6 +92,7 @@ jobs:
 
   go:
     name: Go tests and vet
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -133,6 +135,7 @@ jobs:
 
   frontend:
     name: Frontend tests and build
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -171,6 +174,7 @@ jobs:
 
   windows:
     name: Windows tests, installer, and smoke
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: windows-2022
     timeout-minutes: 40
     steps:
@@ -245,6 +249,7 @@ jobs:
 
   linux-webkitgtk-4:
     name: Ubuntu 22.04 WebKitGTK 4.0 build
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -330,6 +335,7 @@ jobs:
 
   linux-ubuntu20:
     name: Ubuntu 20.04 compatibility build
+    if: github.event_name != 'pull_request' || github.base_ref == 'dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     container:

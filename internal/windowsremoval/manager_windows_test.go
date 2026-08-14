@@ -58,13 +58,13 @@ func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
 	}
 }
 
-func TestStoreRemovalPlanDisclosesUnifiedProductImpact(t *testing.T) {
+func TestCodexStoreRemovalPlanUsesExactProductID(t *testing.T) {
 	manager, err := NewManager(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	component := domain.Component{ID: "codex-desktop", Name: "Codex Desktop", Category: "Desktop Applications", Status: domain.StatusInstalled,
-		Installations: []domain.Installation{{Path: `C:\Users\test\AppData\Local\Microsoft\WindowsApps\Codex.exe`, ResolvedPath: `C:\Program Files\WindowsApps\Codex.exe`, Source: "appmodel"}}}
+		Installations: nil}
 	plan, err := manager.CreatePlan(context.Background(), component)
 	if err != nil {
 		t.Fatal(err)

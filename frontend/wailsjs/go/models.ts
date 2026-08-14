@@ -713,3 +713,75 @@ export namespace removal {
 	}
 
 }
+
+export namespace selfupdate {
+
+	export class ApplyResult {
+	    started: boolean;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ApplyResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.started = source["started"];
+	        this.message = source["message"];
+	    }
+	}
+	export class Info {
+	    available: boolean;
+	    canInstall: boolean;
+	    planId: string;
+	    currentVersion: string;
+	    latestVersion: string;
+	    releaseName: string;
+	    releaseNotes: string;
+	    // Go type: time
+	    publishedAt: any;
+	    downloadBytes: number;
+	    platform: string;
+	    format: string;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.canInstall = source["canInstall"];
+	        this.planId = source["planId"];
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.releaseName = source["releaseName"];
+	        this.releaseNotes = source["releaseNotes"];
+	        this.publishedAt = this.convertValues(source["publishedAt"], null);
+	        this.downloadBytes = source["downloadBytes"];
+	        this.platform = source["platform"];
+	        this.format = source["format"];
+	        this.message = source["message"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}

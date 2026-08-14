@@ -1054,6 +1054,56 @@ button:focus-visible {
 .settings-paths dt { color: var(--muted-aa); font-size: 0.72rem; }
 .settings-paths dd { margin: 0; overflow-wrap: anywhere; }
 
+.settings-update { align-items: center; margin-bottom: 18px; }
+.settings-update h3 { margin: 0 0 8px; }
+.settings-update p { max-width: 690px; margin: 0; color: var(--muted-aa); line-height: 1.55; }
+.settings-update__action { display: grid; gap: 12px; justify-items: end; }
+.settings-update__action strong { color: var(--accent-blue); font-size: 0.84rem; }
+
+.update-backdrop { z-index: 120; }
+.update-dialog { max-width: 680px; }
+.dialog-close {
+  width: 38px;
+  height: 38px;
+  color: var(--muted-aa);
+  font-size: 1.45rem;
+  background: #f3f6fa;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.update-version-row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 15px 17px;
+  margin: 4px 0 16px;
+  background: #f5f8fc;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.update-version-row span { color: var(--muted-aa); }
+.update-version-row b { color: var(--accent-blue); }
+.update-version-row strong { color: var(--ink); }
+.update-version-row em { justify-self: end; color: var(--muted-aa); font-size: 0.76rem; font-style: normal; }
+.update-notes { margin-bottom: 16px; }
+.update-notes h3 { margin: 0 0 9px; font-size: 0.9rem; }
+.update-notes pre {
+  max-height: 230px;
+  padding: 15px 17px;
+  overflow: auto;
+  color: var(--muted-aa);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #fbfcfe;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
 @media (min-width: 901px) and (max-width: 1060px) {
   .app-shell {
     grid-template-columns: clamp(190px, 22vw, 220px) minmax(0, 1fr);
@@ -1145,6 +1195,9 @@ button:focus-visible {
   .compatibility-grid { grid-template-columns: 1fr; }
   .api-form-grid__wide { grid-column: auto; }
   .settings-grid { grid-template-columns: 1fr; }
+  .settings-update__action { justify-items: stretch; }
+  .update-version-row { grid-template-columns: auto auto auto; }
+  .update-version-row em { grid-column: 1 / -1; justify-self: start; }
   .history-actions { flex-direction: column; }
 }
 

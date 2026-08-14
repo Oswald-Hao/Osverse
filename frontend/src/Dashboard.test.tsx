@@ -440,6 +440,19 @@ describe('environment status dashboard', () => {
     expect(launch).toHaveBeenNthCalledWith(3, 'codex-cli', '/home/test/.local/bin/codex')
   })
 
+  it('allows fixed-identity removal when a Store app alias is disabled', () => {
+    mockUseEnvironmentScan.mockReturnValue(scanState({ snapshot: {
+      ...snapshot,
+      components: snapshot.components.map((component) => component.id === 'chatgpt-desktop' ? {
+        ...component, status: 'installed', installations: [], message: '已安装（应用执行别名未启用）',
+      } : component),
+    }}))
+    render(<App />)
+    const card = screen.getByRole('heading', { name: 'ChatGPT Desktop' }).closest('article')
+    expect(within(card as HTMLElement).getByRole('button', { name: /移除/ })).toBeEnabled()
+    expect(within(card as HTMLElement).queryByRole('button', { name: /启动/ })).not.toBeInTheDocument()
+  })
+
   it('previews exact recoverable effects before removing a detected installation', async () => {
     const create = vi.fn().mockResolvedValue({
       id: 'remove-plan', componentId: 'claude-code', name: 'Claude Code',
