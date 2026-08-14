@@ -37,32 +37,46 @@ import sys
 version, repository, release_dir_raw, output_raw = sys.argv[1:]
 release_dir = pathlib.Path(release_dir_raw)
 output = pathlib.Path(output_raw)
-pattern = re.compile(
+linux_pattern = re.compile(
     r"^osverse(?:-|_)(?P<version>[^_]+?)(?:-linux-amd64-|_amd64_)"
     r"(?P<target>ubuntu(?:20\.04|22\.04))(?P<suffix>\.AppImage|\.tar\.gz|\.deb)$"
 )
-formats = {".AppImage": "appimage", ".tar.gz": "tar.gz", ".deb": "deb"}
+windows_pattern = re.compile(
+    r"^osverse-(?P<version>.+?)-windows-amd64(?P<suffix>-setup\.exe|-portable\.zip|\.exe)$"
+)
+linux_formats = {".AppImage": "appimage", ".tar.gz": "tar.gz", ".deb": "deb"}
+windows_formats = {"-setup.exe": "nsis", "-portable.zip": "zip", ".exe": "exe"}
 artifacts = []
 for candidate in sorted(release_dir.iterdir(), key=lambda item: item.name):
     if not candidate.is_file() or candidate.is_symlink():
         continue
-    match = pattern.match(candidate.name)
-    if not match or match.group("version") != version:
+    linux_match = linux_pattern.match(candidate.name)
+    windows_match = windows_pattern.match(candidate.name)
+    if linux_match and linux_match.group("version") == version:
+        match = linux_match
+        platform = "linux"
+        target = match.group("target")
+        artifact_format = linux_formats[match.group("suffix")]
+    elif windows_match and windows_match.group("version") == version:
+        match = windows_match
+        platform = "windows"
+        target = "windows10+"
+        artifact_format = windows_formats[match.group("suffix")]
+    else:
         continue
-    suffix = match.group("suffix")
     digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
     artifacts.append({
         "architecture": "amd64",
         "filename": candidate.name,
-        "format": formats[suffix],
-        "platform": "linux",
+        "format": artifact_format,
+        "platform": platform,
         "sha256": digest,
         "size": candidate.stat().st_size,
-        "target": match.group("target"),
+        "target": target,
         "url": f"https://github.com/{repository}/releases/download/v{version}/{candidate.name}",
     })
-if len(artifacts) != 6:
-    raise SystemExit(f"expected six Linux release artifacts, found {len(artifacts)}")
+if len(artifacts) != 9:
+    raise SystemExit(f"expected nine Linux and Windows release artifacts, found {len(artifacts)}")
 document = {
     "artifacts": artifacts,
     "channel": "prerelease" if "-" in version else "stable",
