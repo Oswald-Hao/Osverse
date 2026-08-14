@@ -239,10 +239,10 @@ func mergeOpenCodeConfig(raw []byte, input Input) ([]byte, error) {
 		root["provider"] = providers
 	}
 	providers["osverse"] = map[string]any{
-		"npm":  "@ai-sdk/openai",
+		"npm":  "@ai-sdk/openai-compatible",
 		"name": "Osverse: " + input.Name,
 		"options": map[string]any{
-			"baseURL": input.BaseURL,
+			"baseURL": openAIBaseURL(input.BaseURL),
 			"apiKey":  input.APIKey,
 		},
 		"models": map[string]any{
@@ -251,6 +251,14 @@ func mergeOpenCodeConfig(raw []byte, input Input) ([]byte, error) {
 	}
 	root["model"] = "osverse/" + input.Model
 	return marshalConfigJSON(root)
+}
+
+func openAIBaseURL(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/v1") {
+		return base
+	}
+	return base + "/v1"
 }
 
 func marshalConfigJSON(root map[string]any) ([]byte, error) {
@@ -335,7 +343,7 @@ func mergeCodexConfig(raw []byte, input Input) ([]byte, error) {
 		codexBlockStart,
 		"[model_providers.osverse]",
 		"name = " + strconv.Quote("Osverse: "+input.Name),
-		"base_url = " + strconv.Quote(input.BaseURL),
+		"base_url = " + strconv.Quote(openAIBaseURL(input.BaseURL)),
 		"experimental_bearer_token = " + strconv.Quote(input.APIKey),
 		"requires_openai_auth = false",
 		codexBlockEnd,

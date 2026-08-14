@@ -91,6 +91,29 @@ func TestServiceCompatibilityBlocksMismatchedTargets(t *testing.T) {
 	}
 }
 
+func TestCompatibilityUsesChatCompletionsForOpenCode(t *testing.T) {
+	probe := compatibleProbe()
+	probe.Protocols[0].Status = "unavailable"
+	matrix := compatibilityMatrix(probe)
+	compatible := make(map[string]bool, len(matrix))
+	for _, item := range matrix {
+		compatible[item.Target] = item.Compatible
+	}
+	if compatible[TargetCodex] || !compatible[TargetOpenCode] {
+		t.Fatalf("responses unavailable compatibility = %#v", compatible)
+	}
+
+	probe.Protocols[0].Status = "compatible"
+	probe.Protocols[1].Status = "unavailable"
+	matrix = compatibilityMatrix(probe)
+	for _, item := range matrix {
+		compatible[item.Target] = item.Compatible
+	}
+	if !compatible[TargetCodex] || compatible[TargetOpenCode] {
+		t.Fatalf("chat unavailable compatibility = %#v", compatible)
+	}
+}
+
 func TestProfileUpdateAndDeleteInvalidateObservationsAndPlans(t *testing.T) {
 	home := t.TempDir()
 	store, _ := NewStore(home)
