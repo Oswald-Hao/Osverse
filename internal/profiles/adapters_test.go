@@ -73,9 +73,45 @@ func TestOpenCodeAdapterMergesOsverseProviderWithoutReplacingOthers(t *testing.T
 		t.Fatal("existing provider was replaced")
 	}
 	osverse := providers["osverse"].(map[string]any)
+	if osverse["npm"] != "@ai-sdk/openai-compatible" {
+		t.Fatalf("OpenCode provider package = %#v", osverse["npm"])
+	}
 	options := osverse["options"].(map[string]any)
 	if options["apiKey"] != "secret-key-1234" || options["baseURL"] != "https://api.example/v1" {
 		t.Fatalf("Osverse provider options = %#v", options)
+	}
+}
+
+func TestOpenAIAdaptersAppendV1ToAnUnversionedBaseURL(t *testing.T) {
+	home := t.TempDir()
+	adapters, err := NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := adapterInput()
+	input.BaseURL = "https://api.example/gateway"
+
+	if _, err := adapters.Apply(context.Background(), TargetOpenCode, input); err != nil {
+		t.Fatal(err)
+	}
+	openCodePath, _ := adapters.TargetPath(TargetOpenCode)
+	root := readJSONMap(t, openCodePath)
+	osverse := root["provider"].(map[string]any)["osverse"].(map[string]any)
+	options := osverse["options"].(map[string]any)
+	if options["baseURL"] != "https://api.example/gateway/v1" {
+		t.Fatalf("OpenCode Base URL = %#v", options["baseURL"])
+	}
+
+	if _, err := adapters.Apply(context.Background(), TargetCodex, input); err != nil {
+		t.Fatal(err)
+	}
+	codexPath, _ := adapters.TargetPath(TargetCodex)
+	codex, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(codex), `base_url = "https://api.example/gateway/v1"`) {
+		t.Fatalf("Codex config did not receive versioned Base URL:\n%s", codex)
 	}
 }
 
