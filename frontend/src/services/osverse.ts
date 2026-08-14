@@ -1,9 +1,11 @@
 import {
   ApplyAPIPlan,
+	ClearHistory,
   CreateAPIApplyPlan,
   DeleteAPIProfile,
   GetAPICompatibility,
   ListAPIProfiles,
+	ListHistory,
 	LaunchManagedApp,
   ProbeAPIProfile,
   ProbeProxy,
@@ -28,6 +30,7 @@ import type {
   InstallPlan,
   InstallTask,
   InstallTaskPhase,
+	HistoryEntry,
   ProxyProtocol,
   ProxyResult,
 } from '../domain'
@@ -52,6 +55,7 @@ type StartFunction = (planId: string) => Promise<unknown>
 type TaskFunction = (taskId: string) => Promise<unknown>
 type CancelFunction = (taskId: string) => Promise<void>
 type ProfileOperation = (...args: never[]) => Promise<unknown>
+type HistoryOperation = (...args: never[]) => Promise<unknown>
 
 const componentStatuses = new Set<string>([
   'detecting',
@@ -79,6 +83,8 @@ let probeProfile = ProbeAPIProfile as unknown as ProfileOperation
 let getCompatibility = GetAPICompatibility as unknown as ProfileOperation
 let createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
 let applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
+let readHistory = ListHistory as unknown as HistoryOperation
+let clearHistoryOperation = ClearHistory as unknown as HistoryOperation
 
 const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
@@ -332,6 +338,25 @@ export async function launchManagedApp(componentId: string): Promise<void> {
 	await LaunchManagedApp(componentId)
 }
 
+export async function listHistory(): Promise<HistoryEntry[]> {
+	const result = await readHistory()
+	if (!Array.isArray(result)) throw new Error('历史记录返回了无效结果')
+	return result.map((raw) => {
+		const value = recordValue(raw)
+		const status = stringValue(value.status)
+		if (!['completed', 'failed', 'canceled'].includes(status)) throw new Error('历史记录返回了无效状态')
+		return {
+			id: stringValue(value.id), operationId: stringValue(value.operationId), componentId: stringValue(value.componentId),
+			name: stringValue(value.name), action: stringValue(value.action), status: status as HistoryEntry['status'],
+			message: stringValue(value.message), createdAt: stringValue(value.createdAt),
+		}
+	})
+}
+
+export async function clearHistory(): Promise<void> {
+	await clearHistoryOperation()
+}
+
 // These guarded exports provide a resettable Vitest seam without making a
 // runtime bridge or replaceable scanner available in production builds.
 export function setScanEnvironmentForTests(testScan: ScanFunction): void {
@@ -420,4 +445,16 @@ export function resetProfileOperationsForTests(): void {
   getCompatibility = GetAPICompatibility as unknown as ProfileOperation
   createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
   applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
+}
+
+export function setHistoryOperationsForTests(list: HistoryOperation, clear: HistoryOperation = () => Promise.resolve()): void {
+	if (!testSeamEnabled()) throw new Error('The history test seam is unavailable outside tests')
+	readHistory = list
+	clearHistoryOperation = clear
+}
+
+export function resetHistoryOperationsForTests(): void {
+	if (!testSeamEnabled()) throw new Error('The history test seam is unavailable outside tests')
+	readHistory = ListHistory as unknown as HistoryOperation
+	clearHistoryOperation = ClearHistory as unknown as HistoryOperation
 }

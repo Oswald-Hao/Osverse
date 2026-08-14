@@ -15,6 +15,7 @@ const (
 	ErrInstallPlanFailed  ErrorCode = "INSTALL_PLAN_FAILED"
 	ErrInstallTaskFailed  ErrorCode = "INSTALL_TASK_FAILED"
 	ErrProfileFailed      ErrorCode = "PROFILE_FAILED"
+	ErrHistoryFailed      ErrorCode = "HISTORY_FAILED"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause

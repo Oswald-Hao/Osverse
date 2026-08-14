@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	historyservice "github.com/Oswald-Hao/Osverse/internal/history"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
@@ -100,9 +101,9 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
-		"ApplyAPIPlan", "CancelInstallTask", "CreateAPIApplyPlan", "CreateInstallPlan",
+		"ApplyAPIPlan", "CancelInstallTask", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan",
 		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchManagedApp",
-		"ListAPIProfiles", "ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
+		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
 		"StartInstall", "UseDirectConnection",
 	}
 	if typeOfApp.NumMethod() != len(want) {
@@ -293,6 +294,35 @@ func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
 	}
 }
 
+func TestHistoryBridgeRecordsTerminalInstallExactlyOnceAndClears(t *testing.T) {
+	manager := &fakeInstallManager{}
+	manager.create = func(context.Context, string) (install.Plan, error) { return install.Plan{}, nil }
+	manager.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "codex-cli", Phase: "completed", Message: "安装完成"}, nil
+	}
+	manager.cancel = func(string) error { return nil }
+	ledger := &fakeHistoryService{}
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) { return domain.EnvironmentSnapshot{}, nil }}, &fakeProxyProber{}, manager)
+	app.history = ledger
+	if _, err := app.GetInstallTask("task"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.GetInstallTask("task"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ledger.appended) != 1 || ledger.appended[0].ComponentID != "codex-cli" || ledger.appended[0].Name != "Codex CLI" {
+		t.Fatalf("history = %#v", ledger.appended)
+	}
+	ledger.entries = []historyservice.Entry{{ID: "entry", ComponentID: "codex-cli"}}
+	entries, err := app.ListHistory()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ListHistory() = (%#v, %v)", entries, err)
+	}
+	if err := app.ClearHistory(); err != nil || !ledger.cleared {
+		t.Fatalf("ClearHistory() = %v, cleared %v", err, ledger.cleared)
+	}
+}
+
 func TestCreateInstallPlanUsesStartupContextAndMapsFailures(t *testing.T) {
 	startup := context.WithValue(context.Background(), struct{}{}, "value")
 	want := install.Plan{ID: "plan", ComponentID: "codex-cli"}
@@ -472,6 +502,21 @@ type fakeProfileService struct {
 	createPlan    func(context.Context, string, []string) (profiles.ApplyPlan, error)
 	apply         func(context.Context, string) (profiles.ApplyBatchResult, error)
 }
+
+type fakeHistoryService struct {
+	appended []historyservice.Input
+	entries  []historyservice.Entry
+	cleared  bool
+}
+
+func (service *fakeHistoryService) Append(_ context.Context, input historyservice.Input) (historyservice.Entry, error) {
+	service.appended = append(service.appended, input)
+	return historyservice.Entry{ID: "entry"}, nil
+}
+func (service *fakeHistoryService) List(context.Context) ([]historyservice.Entry, error) {
+	return service.entries, nil
+}
+func (service *fakeHistoryService) Clear(context.Context) error { service.cleared = true; return nil }
 
 func (service *fakeProfileService) Save(ctx context.Context, input profiles.Input) (profiles.Profile, error) {
 	return service.save(ctx, input)

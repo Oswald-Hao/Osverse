@@ -10,6 +10,10 @@ export function CancelInstallTask(arg1) {
   return window['go']['main']['App']['CancelInstallTask'](arg1);
 }
 
+export function ClearHistory() {
+  return window['go']['main']['App']['ClearHistory']();
+}
+
 export function CreateAPIApplyPlan(arg1, arg2) {
   return window['go']['main']['App']['CreateAPIApplyPlan'](arg1, arg2);
 }
@@ -36,6 +40,10 @@ export function LaunchManagedApp(arg1) {
 
 export function ListAPIProfiles() {
   return window['go']['main']['App']['ListAPIProfiles']();
+}
+
+export function ListHistory() {
+  return window['go']['main']['App']['ListHistory']();
 }
 
 export function ProbeAPIProfile(arg1) {

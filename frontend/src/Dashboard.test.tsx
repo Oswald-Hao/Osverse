@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentSnapshot } from './domain'
 import type { EnvironmentScanState } from './hooks/useEnvironmentScan'
 import App from './App'
+import { resetHistoryOperationsForTests, setHistoryOperationsForTests } from './services/osverse'
 
 const mockUseEnvironmentScan = vi.fn<() => EnvironmentScanState>()
 
@@ -143,7 +144,10 @@ beforeEach(() => {
   mockUseEnvironmentScan.mockReturnValue(scanState())
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  resetHistoryOperationsForTests()
+})
 
 describe('environment status dashboard', () => {
   it('renders system facts, local scan-time semantics, and summary counts', () => {
@@ -332,6 +336,16 @@ describe('environment status dashboard', () => {
     }
     expect(within(navigation).getByRole('button', { name: '总览' })).toHaveAttribute('aria-current', 'page')
     expect(within(navigation).queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('opens real history and settings pages instead of placeholders', async () => {
+	setHistoryOperationsForTests(() => Promise.resolve([]))
+	render(<App />)
+	fireEvent.click(screen.getByRole('button', { name: '安装记录' }))
+	expect(await screen.findByText('还没有操作记录')).toBeVisible()
+	fireEvent.click(screen.getByRole('button', { name: '设置' }))
+	expect(screen.getByRole('heading', { name: 'AES-256-GCM' })).toBeVisible()
+	expect(screen.getByText('无遥测')).toBeVisible()
   })
 
   it('keeps desktop-width sidebar labels in normal layout', () => {

@@ -9,6 +9,7 @@ import (
 
 	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	historyservice "github.com/Oswald-Hao/Osverse/internal/history"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
@@ -50,6 +51,12 @@ type ProfileService interface {
 	Apply(context.Context, string) (profiles.ApplyBatchResult, error)
 }
 
+type HistoryService interface {
+	Append(context.Context, historyservice.Input) (historyservice.Entry, error)
+	List(context.Context) ([]historyservice.Entry, error)
+	Clear(context.Context) error
+}
+
 type proxySelection struct {
 	Protocol proxyservice.Protocol
 	Port     int
@@ -72,6 +79,8 @@ type App struct {
 	planOwners      map[string]string
 	taskOwners      map[string]string
 	profiles        ProfileService
+	history         HistoryService
+	recordedTasks   map[string]bool
 }
 
 func NewApp(scanner Scanner) *App {
@@ -81,10 +90,15 @@ func NewApp(scanner Scanner) *App {
 		planner, _ = install.NewManager(home)
 	}
 	var profileService ProfileService
+	var history HistoryService
 	if err == nil {
 		profileService, _ = profiles.NewService(home)
+		history, _ = historyservice.NewStore(home)
 	}
 	app := newAppWithServiceBundle(scanner, proxyservice.NewService(), planner, profileService)
+	if app != nil {
+		app.history = history
+	}
 	if err == nil && app != nil {
 		if appManager, managerErr := appservice.NewManager(home); managerErr == nil {
 			app.appPlanner = appManager
@@ -116,6 +130,7 @@ func newAppWithServiceBundle(scanner Scanner, proxyProber ProxyProber, planner I
 	app := &App{
 		scanner: scanner, proxyProber: proxyProber, installPlanner: planner, profiles: profileService,
 		planOwners: make(map[string]string), taskOwners: make(map[string]string),
+		recordedTasks: make(map[string]bool),
 	}
 	if executor, ok := planner.(InstallExecutor); ok {
 		app.installExecutor = executor
@@ -149,6 +164,7 @@ func (app *App) SaveAPIProfile(input profiles.Input) (profiles.Profile, error) {
 		}
 		return profiles.Profile{}, domain.NewPublicError(domain.ErrProfileFailed, message, err)
 	}
+	app.appendHistory(historyservice.Input{OperationID: "profile-save-" + profile.ID + "-" + profile.UpdatedAt.UTC().Format(time.RFC3339Nano), ComponentID: "api-profile", Name: "API 配置档案", Action: "profile-save", Status: "completed", Message: "档案已加密保存"})
 	return profile, nil
 }
 
@@ -171,6 +187,7 @@ func (app *App) DeleteAPIProfile(profileID string) error {
 	if err := app.profiles.Delete(app.appContext(), profileID); err != nil {
 		return domain.NewPublicError(domain.ErrProfileFailed, "无法删除 API 配置档案", err)
 	}
+	app.appendHistory(historyservice.Input{OperationID: "profile-delete-" + profileID, ComponentID: "api-profile", Name: "API 配置档案", Action: "profile-delete", Status: "completed", Message: "档案已删除"})
 	return nil
 }
 
@@ -223,6 +240,11 @@ func (app *App) ApplyAPIPlan(planID string) (profiles.ApplyBatchResult, error) {
 			domain.ErrProfileFailed, "API 配置应用失败", err,
 		)
 	}
+	status, message := "completed", "API 配置已应用"
+	if result.Failed > 0 {
+		status, message = "failed", "部分 API 配置目标未完成"
+	}
+	app.appendHistory(historyservice.Input{OperationID: result.PlanID, ComponentID: "api-profile", Name: "API 配置", Action: "configure", Status: status, Message: message})
 	return result, nil
 }
 
@@ -331,7 +353,100 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 			domain.ErrInstallTaskFailed, "无法读取安装进度", err,
 		)
 	}
+	app.recordInstallHistory(task)
 	return task, nil
+}
+
+func (app *App) appendHistory(input historyservice.Input) {
+	if app == nil {
+		return
+	}
+	app.mu.RLock()
+	service := app.history
+	app.mu.RUnlock()
+	if service != nil {
+		_, _ = service.Append(app.appContext(), input)
+	}
+}
+
+func (app *App) recordInstallHistory(task install.Task) {
+	if !terminalInstallPhase(task.Phase) {
+		return
+	}
+	app.mu.Lock()
+	if app.recordedTasks == nil {
+		app.recordedTasks = make(map[string]bool)
+	}
+	if app.recordedTasks[task.ID] {
+		app.mu.Unlock()
+		return
+	}
+	app.recordedTasks[task.ID] = true
+	app.mu.Unlock()
+	app.appendHistory(historyservice.Input{
+		OperationID: task.ID, ComponentID: task.ComponentID, Name: componentDisplayName(task.ComponentID),
+		Action: "install", Status: task.Phase, Message: task.Message,
+	})
+}
+
+func terminalInstallPhase(phase string) bool {
+	return phase == "completed" || phase == "failed" || phase == "canceled"
+}
+
+func componentDisplayName(id string) string {
+	switch id {
+	case "claude-code":
+		return "Claude Code"
+	case "codex-cli":
+		return "Codex CLI"
+	case "opencode-cli":
+		return "OpenCode CLI"
+	case "claude-desktop":
+		return "Claude Desktop"
+	case "opencode-desktop":
+		return "OpenCode Desktop"
+	case "cc-switch":
+		return "CC Switch"
+	case "cockpit-tools":
+		return "Cockpit Tools"
+	default:
+		return "Osverse 组件"
+	}
+}
+
+// ListHistory returns only the bounded redacted operation ledger.
+func (app *App) ListHistory() ([]historyservice.Entry, error) {
+	if app == nil {
+		return nil, domain.NewPublicError(domain.ErrHistoryFailed, "历史记录服务不可用", nil)
+	}
+	app.mu.RLock()
+	service := app.history
+	app.mu.RUnlock()
+	if service == nil {
+		return nil, domain.NewPublicError(domain.ErrHistoryFailed, "历史记录服务不可用", nil)
+	}
+	entries, err := service.List(app.appContext())
+	if err != nil {
+		return nil, domain.NewPublicError(domain.ErrHistoryFailed, "无法读取历史记录", err)
+	}
+	return entries, nil
+}
+
+// ClearHistory removes only Osverse's redacted local ledger.
+func (app *App) ClearHistory() error {
+	if app == nil {
+		return domain.NewPublicError(domain.ErrHistoryFailed, "历史记录服务不可用", nil)
+	}
+	app.mu.RLock()
+	service := app.history
+	app.mu.RUnlock()
+	if service == nil {
+		return domain.NewPublicError(domain.ErrHistoryFailed, "历史记录服务不可用", nil)
+	}
+	if err := service.Clear(app.appContext()); err != nil {
+		return domain.NewPublicError(domain.ErrHistoryFailed, "无法清除历史记录", err)
+	}
+	return nil
 }
 
 // CancelInstallTask requests rollback-safe cancellation.

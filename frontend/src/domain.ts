@@ -101,6 +101,17 @@ export interface InstallTask {
   finishedAt: string
 }
 
+export interface HistoryEntry {
+  id: string
+  operationId: string
+  componentId: string
+  name: string
+  action: string
+  status: 'completed' | 'failed' | 'canceled'
+  message: string
+  createdAt: string
+}
+
 export interface APIProfileInput {
   id: string
   name: string
