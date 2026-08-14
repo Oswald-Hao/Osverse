@@ -100,7 +100,7 @@ func NewStore(home string) (*Store, error) {
 	if err != nil || !info.IsDir() {
 		return nil, ErrUnsafeStorage
 	}
-	root, err := ensurePrivateDirectories(resolved, ".local", "share", "osverse", "profiles")
+	root, err := ensurePrivateDirectories(resolved, profileStoreComponents()...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func NewStore(home string) (*Store, error) {
 		root: root, keyPath: filepath.Join(root, "master.key"),
 		dataPath: filepath.Join(root, "profiles.json"), now: time.Now, random: rand.Reader,
 	}
-	store.key, err = loadOrCreateKey(store.keyPath, store.random)
+	store.key, err = loadOrCreateMasterKey(store.keyPath, store.random)
 	if err != nil {
 		return nil, err
 	}
@@ -138,40 +138,6 @@ func ensurePrivateDirectories(base string, components ...string) (string, error)
 		return "", err
 	}
 	return current, nil
-}
-
-func loadOrCreateKey(path string, random io.Reader) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err == nil {
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() != 32 {
-			return nil, ErrUnsafeStorage
-		}
-		key, err := os.ReadFile(path)
-		if err != nil || len(key) != 32 {
-			return nil, ErrUnsafeStorage
-		}
-		return key, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(random, key); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := file.Write(key); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	return key, file.Close()
 }
 
 // Save validates and encrypts a new or existing profile.
@@ -460,7 +426,7 @@ func publicProfile(record encryptedRecord, secret secretData) Profile {
 	return Profile{
 		ID: record.ID, Name: record.Name, KeyHint: record.KeyHint,
 		BaseURL: secret.BaseURL, Model: secret.Model,
-		AllowPrivateNetwork: secret.AllowPrivateNetwork, Protection: "local-file",
+		AllowPrivateNetwork: secret.AllowPrivateNetwork, Protection: profileProtectionLabel(),
 		CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
 }
@@ -478,7 +444,7 @@ func (store *Store) readLocked() (storeFile, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return storeFile{Version: storeVersion, Records: []encryptedRecord{}}, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() > maxStoreBytes {
+	if err != nil || !info.Mode().IsRegular() || !privateProfileFileMode(info) || info.Size() > maxStoreBytes {
 		return storeFile{}, ErrUnsafeStorage
 	}
 	raw, err := os.ReadFile(store.dataPath)
@@ -536,7 +502,7 @@ func (store *Store) writeLocked(value storeFile) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, store.dataPath); err != nil {
+	if err := replaceProfileFile(temporary, store.dataPath); err != nil {
 		return err
 	}
 	cleanup = false

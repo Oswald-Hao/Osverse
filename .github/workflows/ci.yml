@@ -169,6 +169,80 @@ jobs:
       - name: Audit responsive desktop breakpoints
         run: npm --prefix frontend run audit:responsive
 
+  windows:
+    name: Windows tests, installer, and smoke
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+
+      - name: Verify Windows toolchain
+        shell: pwsh
+        run: |
+          if ((go env GOVERSION) -ne 'go1.25.12') { throw 'Unexpected Go version.' }
+          if ((node --version) -ne 'v22.23.2') { throw 'Unexpected Node.js version.' }
+          if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Unexpected runner architecture.' }
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Run native Windows tests and vet
+        shell: pwsh
+        run: |
+          go mod verify
+          go test ./...
+          go test -race ./...
+          go vet ./...
+
+      - name: Test and audit frontend
+        shell: pwsh
+        run: |
+          npm --prefix frontend test
+          npm --prefix frontend run typecheck
+          npm --prefix frontend audit --audit-level=high
+
+      - name: Build user-scoped NSIS installer
+        shell: pwsh
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+
+      - name: Package and verify Windows release candidates
+        shell: pwsh
+        run: |
+          ./build/windows/package.ps1 -Version 0.0.0-ci -Binary build/bin/osverse.exe -Installer build/bin/osverse-amd64-installer.exe -OutputDirectory build/release/windows
+          Push-Location build/release/windows
+          Get-Content SHA256SUMS-windows-amd64 | ForEach-Object {
+            $parts = $_ -split '  ', 2
+            if ((Get-FileHash -LiteralPath $parts[1] -Algorithm SHA256).Hash.ToLowerInvariant() -ne $parts[0]) { throw "Checksum mismatch: $($parts[1])" }
+          }
+          Pop-Location
+
+      - name: Install, launch, and remove Windows package
+        shell: pwsh
+        run: ./build/windows/smoke.ps1 -Installer build/release/windows/osverse-0.0.0-ci-windows-amd64-setup.exe
+
+      - name: Upload Windows release candidates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: osverse-windows-amd64
+          path: build/release/windows/*
+          if-no-files-found: error
+          retention-days: 7
+
   linux-webkitgtk-4:
     name: Ubuntu 22.04 WebKitGTK 4.0 build
     runs-on: ubuntu-22.04

@@ -12,7 +12,8 @@
 <p align="center">
   <a href="README.en.md">English</a> ·
   <a href="https://github.com/Oswald-Hao/Osverse/releases">下载</a> ·
-  <a href="docs/testing/linux-v1-acceptance.md">验收矩阵</a> ·
+  <a href="docs/testing/linux-v1-acceptance.md">Linux 验收</a> ·
+  <a href="docs/testing/windows-v1-acceptance.md">Windows 验收</a> ·
   <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
@@ -21,11 +22,12 @@
   <a href="https://github.com/Oswald-Hao/Osverse/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Oswald-Hao/Osverse?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Oswald-Hao/Osverse"></a>
   <img alt="Ubuntu 20.04 与 22.04" src="https://img.shields.io/badge/Ubuntu-20.04%20%7C%2022.04-E95420?logo=ubuntu&logoColor=white">
+  <img alt="Windows 10 与 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="本地优先" src="https://img.shields.io/badge/本地优先-无遥测-159957">
 </p>
 
 > [!IMPORTANT]
-> Osverse 目前是面向 **Ubuntu 20.04/22.04 x86_64** 的 Linux 预发布版。Linux 稳定后才会按 Windows、macOS 的顺序继续适配。
+> Osverse 目前支持 **Ubuntu 20.04/22.04 x86_64** 与 **Windows 10/11 x64**。Windows 版已通过原生 Runner 的测试、安装、启动和卸载验证；macOS 将在 Windows 版稳定后适配。
 
 ![Osverse 环境状态与代理检测](docs/assets/screenshots/连接状态检查.png)
 
@@ -41,25 +43,38 @@
 - **代理只服务 Osverse。** 只需输入 `127.0.0.1` 上的端口，软件自动识别 HTTP、HTTPS CONNECT、SOCKS5，不改终端或系统全局代理。
 - **桌面生态统一管理。** 支持的桌面客户端与 API 切换工具可以在同一面板安装、更新和启动。
 
-## Linux 预发布版能管理什么
+## 能管理什么
 
-| 范围 | 当前支持 |
-| --- | --- |
-| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI 的检测与事务式安装/更新 |
-| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop |
-| API 管理工具 | CC Switch、Cockpit Tools |
-| API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key |
-| 组件控制 | 启动所有已验证安装、按位置处理冲突、预览并安全移除 |
-| 网络 | 直连或本机 HTTP / HTTPS CONNECT / SOCKS5 代理 |
-| 可审计性 | 脱敏操作历史、校验和、SPDX SBOM、构建来源证明 |
+| 范围 | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
+| --- | --- | --- |
+| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI 的检测与事务式安装/更新 | Claude Code、Codex CLI、OpenCode CLI 的检测与固定来源安装/更新 |
+| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT（含 Codex） |
+| API 管理工具 | CC Switch、Cockpit Tools | CC Switch、Cockpit Tools |
+| API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key | 同左；主密钥由当前 Windows 用户的 DPAPI 保护 |
+| 组件控制 | 启动所有已验证安装、按位置处理冲突、预览并安全移除 | 同左；受管 CLI 移入 Osverse 恢复区 |
+| 网络 | 直连或本机 HTTP / HTTPS CONNECT / SOCKS5 代理 | 同左 |
+| 可审计性 | 脱敏操作历史、校验和、SPDX SBOM、构建来源证明 | 同左 |
 
 Claude Desktop 官方 Linux 包的最低要求是 Ubuntu 22.04，所以在 Ubuntu 20.04 上会明确显示为不支持。ChatGPT Desktop 没有官方 Linux 版本，Osverse 不会提供来源不明的替代安装包。
 
 ## 安装
 
-打开 [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases)，下载与你的 Ubuntu 版本匹配的文件。
+打开 [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases)，下载与你的平台匹配的文件。
 
-### AppImage（免安装）
+### Windows（推荐安装包）
+
+下载 `osverse-*-windows-amd64-setup.exe`，双击后按提示安装。安装范围仅为当前用户，不需要管理员权限；安装包内置 WebView2 bootstrapper。也可使用 `*-portable.zip` 免安装版或单文件 `.exe`。
+
+PowerShell 校验：
+
+```powershell
+(Get-FileHash .\osverse-*-windows-amd64-setup.exe -Algorithm SHA256).Hash
+Get-Content .\SHA256SUMS
+```
+
+### Ubuntu
+
+#### AppImage（免安装）
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
@@ -67,7 +82,7 @@ chmod +x osverse-*-linux-amd64-ubuntuXX.XX.AppImage
 ./osverse-*-linux-amd64-ubuntuXX.XX.AppImage
 ```
 
-### Debian 安装包
+#### Debian 安装包
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
@@ -87,9 +102,10 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 - 外部已安装 CLI 保留在原位置；同名外部命令不会被 Osverse 覆盖。
 - 启动和移除前会重新扫描并验证目标身份；前端不能提交任意可执行路径或系统包名。
 - 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
+- Windows 上受管 CLI 使用锁定文件身份移入 `%LOCALAPPDATA%\Osverse\recovery`，卸载桌面应用只允许固定的 WinGet ID、Microsoft Store ID、MSI ProductCode 或受信任卸载器路径。
 - 安装源来自内置白名单，并同时校验文件长度与 SHA-256。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
-- API Key 不会出现在档案列表、历史或日志中；私网和保留地址必须明确确认。
+- API Key 不会出现在档案列表、历史或日志中；Linux 使用权限受限的 AES-256-GCM 密钥，Windows 再以当前用户 DPAPI 保护主密钥；私网和保留地址必须明确确认。
 - Claude Desktop 的提权助手只能执行固定动作，不能运行用户输入的命令。
 - 软件不包含遥测，也不会修改系统或终端的全局代理。
 
@@ -125,7 +141,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 
 </details>
 
-以上截图均来自 Ubuntu 22.04 上真实运行的 Osverse 窗口，不是概念稿。
+以上截图均来自 Ubuntu 22.04 上真实运行的 Osverse 窗口，不是概念稿。Windows 使用同一套前端界面；平台能力由原生后端提供。
 
 ## 从源码运行
 
@@ -146,6 +162,19 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
 
 # Ubuntu 20.04
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
+```
+
+Windows 10/11 x64（PowerShell，需 Go、Node.js、WebView2 与 Wails 构建环境）：
+
+```powershell
+npm --prefix frontend ci
+go test ./...
+go test -race ./...
+go vet ./...
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+
+# 生成每用户范围的 NSIS 安装包
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 ```
 
 ## 分支与贡献

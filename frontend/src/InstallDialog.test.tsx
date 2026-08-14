@@ -52,3 +52,17 @@ it('shows progress and prevents dismissing an active transaction', () => {
   fireEvent.click(screen.getByRole('button', { name: '取消安装' }))
   expect(flow.cancel).toHaveBeenCalledTimes(1)
 })
+
+it('identifies an exact Microsoft Store install without claiming APT', () => {
+  const flow = reviewFlow()
+  flow.plan = {
+    ...flow.plan!, componentId: 'codex-desktop', name: 'Codex Desktop', command: 'codex-desktop',
+    version: 'Store latest', downloadBytes: 0,
+    changes: [{ kind: 'store', path: '9PLM9XGG6VKS', description: '通过精确 Microsoft Store 产品 ID 安装' }],
+  }
+  render(<InstallDialog flow={flow} />)
+
+  expect(screen.getByText('Microsoft Store')).toBeVisible()
+  expect(screen.getByText('9PLM9XGG6VKS')).toBeVisible()
+  expect(screen.queryByText('官方 APT 稳定版')).not.toBeInTheDocument()
+})

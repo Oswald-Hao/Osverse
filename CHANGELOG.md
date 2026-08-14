@@ -2,6 +2,17 @@
 
 Osverse follows semantic versioning while it is in prerelease. Published artifacts and exact dates are available on the [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) page.
 
+## 0.3.0-beta.1
+
+- Add native Windows 10/11 x64 system, CLI, desktop application, and management-tool detection.
+- Add identity-checked Windows launch with Job Object process-tree cleanup.
+- Protect encrypted API profile master keys with current-user Windows DPAPI.
+- Install pinned Claude Code, Codex CLI, and OpenCode CLI artifacts with checksum, size, extraction, and version verification.
+- Install supported Windows desktop tools through fixed vendor artifacts, WinGet IDs, Store IDs, MSI ProductCodes, and trusted uninstall identities.
+- Safely remove managed Windows CLIs into a recovery directory while preserving configs, credentials, and login sessions.
+- Publish per-user NSIS, portable zip, and standalone exe packages after native Windows install/launch/uninstall smoke tests.
+- Extend release checksums, signed update metadata, SBOM, and provenance to both Linux and Windows artifacts.
+
 ## 0.2.0-beta.1
 
 - Launch every freshly verified CLI, desktop application, and management tool, with separate controls for multiple installation locations.

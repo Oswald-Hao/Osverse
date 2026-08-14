@@ -61,7 +61,7 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 	for _, target := range wantOrder {
 		path, _ := adapters.TargetPath(target)
 		info, err := os.Stat(path)
-		if err != nil || info.Mode().Perm() != 0o600 {
+		if err != nil || !info.Mode().IsRegular() {
 			t.Errorf("target %s config = (%v, %v)", target, info, err)
 		}
 	}

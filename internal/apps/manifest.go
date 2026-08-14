@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package apps installs and launches the fixed Linux desktop-tool catalog.
 package apps
 

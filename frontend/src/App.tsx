@@ -266,7 +266,7 @@ function App() {
             </div>
             <div className="notice notice--error"><strong>请检查影响范围</strong><span>{removalPlan.warning}</span></div>
             <ol className="install-changes">
-              {removalPlan.effects.map((effect, index) => <li key={`${effect.path}-${index}`}><strong>{effect.description}</strong><code>{effect.path}</code><span>{effect.recoverable ? '可从回收站恢复' : '由系统包管理器执行'}</span></li>)}
+              {removalPlan.effects.map((effect, index) => <li key={`${effect.path}-${index}`}><strong>{effect.description}</strong><code>{effect.path}</code><span>{effect.recoverable ? '可从恢复区恢复' : '由受信任卸载器执行'}</span></li>)}
             </ol>
             <div className="install-dialog__actions">
               <button className="secondary-button" type="button" onClick={() => setRemovalPlan(null)} disabled={removalBusy}>取消</button>
