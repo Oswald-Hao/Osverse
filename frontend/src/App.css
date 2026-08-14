@@ -819,6 +819,16 @@ button:focus-visible {
 
 .compatibility-card { margin-top: 28px; }
 .compatibility-card > p { color: var(--muted-aa); font-size: 0.8rem; }
+.protocol-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 17px 0; }
+.protocol-details__item { display: grid; gap: 7px; padding: 12px; background: #f2f7fb; border: 1px solid transparent; border-radius: 12px; }
+.protocol-details__item > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.protocol-details__item strong { font-size: 0.75rem; }
+.protocol-details__item span { color: var(--muted-aa); font-size: 0.66rem; font-weight: 750; }
+.protocol-details__item small { color: var(--muted-aa); font-size: 0.67rem; line-height: 1.4; }
+.protocol-details__item--compatible { border-color: rgba(23, 130, 87, 0.24); }
+.protocol-details__item--compatible span { color: var(--success); }
+.protocol-details__item--unavailable { border-color: rgba(190, 68, 68, 0.2); }
+.protocol-details__item--unavailable span { color: var(--danger); }
 .compatibility-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 17px 0; }
 .compatibility-grid label { display: flex; align-items: flex-start; gap: 9px; padding: 12px; background: #f2f7fb; border-radius: 12px; }
 .compatibility-grid label > span { display: grid; gap: 4px; }
@@ -1117,6 +1127,7 @@ button:focus-visible {
   .install-plan-summary { grid-template-columns: 1fr; }
   .api-form-grid,
   .profile-grid,
+  .protocol-details,
   .compatibility-grid { grid-template-columns: 1fr; }
   .api-form-grid__wide { grid-column: auto; }
   .settings-grid { grid-template-columns: 1fr; }

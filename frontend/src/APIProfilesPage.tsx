@@ -24,6 +24,16 @@ const targetNames: Record<string, string> = {
   'opencode-cli': 'OpenCode CLI',
 }
 
+const protocolNames: Record<string, string> = {
+  'openai-responses': 'OpenAI Responses',
+  'openai-chat': 'OpenAI Chat Completions',
+  'anthropic-messages': 'Anthropic Messages',
+}
+
+const protocolStatusNames: Record<string, string> = {
+  compatible: '已确认', unavailable: '不可用', unconfirmed: '未确认',
+}
+
 const emptyInput: APIProfileInput = {
   id: '', name: '', apiKey: '', baseUrl: '', model: '', allowPrivateNetwork: false,
 }
@@ -173,6 +183,14 @@ export default function APIProfilesPage() {
         <section className="compatibility-card" aria-labelledby="compatibility-title">
           <div><h3 id="compatibility-title">兼容矩阵</h3><span className={probe.authenticated ? 'support-ok' : 'support-bad'}>{probe.authenticated ? '凭据已验证' : '凭据未验证'}</span></div>
           <p>{probe.message}</p>
+          <div className="protocol-details" role="region" aria-label="协议探测详情">
+            {probe.protocols.map((protocol) => (
+              <article key={protocol.protocol} className={`protocol-details__item protocol-details__item--${protocol.status}`}>
+                <div><strong>{protocolNames[protocol.protocol] ?? protocol.protocol}</strong><span>{protocolStatusNames[protocol.status] ?? protocol.status}</span></div>
+                <small>{protocol.message}</small>
+              </article>
+            ))}
+          </div>
           <div className="compatibility-grid">
             {matrix.map((item) => (
               <label key={item.target} className={item.compatible ? '' : 'compatibility-disabled'}>
