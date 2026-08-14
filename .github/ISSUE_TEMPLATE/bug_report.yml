@@ -15,12 +15,14 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: ubuntu
+    id: platform
     attributes:
-      label: Ubuntu version
+      label: Operating system
       options:
         - Ubuntu 20.04 x86_64
         - Ubuntu 22.04 x86_64
+        - Windows 10 x64
+        - Windows 11 x64
         - Unsupported or other environment
     validations:
       required: true
@@ -32,6 +34,9 @@ body:
         - AppImage
         - Debian package
         - Portable tar
+        - Windows installer
+        - Windows portable zip
+        - Windows standalone exe
         - Built from source
     validations:
       required: true

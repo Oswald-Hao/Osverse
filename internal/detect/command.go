@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package detect contains read-only component detectors.
 package detect
 
@@ -8,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,16 +31,6 @@ const (
 	conflictMessage                   = "检测到多个安装位置"
 	brokenVersionMessage              = "版本检测失败"
 )
-
-// CommandSpec defines the fixed executable names and version parser for a CLI.
-type CommandSpec struct {
-	ID              string
-	Name            string
-	ExecutableNames []string
-	VersionArgs     []string
-	VersionPattern  *regexp.Regexp
-	MinimumOS       string
-}
 
 // CommandDetector detects CLI candidates through explicit filesystem paths.
 type CommandDetector struct {
@@ -351,19 +342,6 @@ func samePhysicalCommand(existing []commandCandidate, candidate commandCandidate
 		}
 	}
 	return false
-}
-
-func parseCommandVersion(pattern *regexp.Regexp, result platform.CommandResult) (string, bool) {
-	if pattern == nil {
-		return "", false
-	}
-	for _, output := range []string{strings.TrimSpace(result.Stdout), strings.TrimSpace(result.Stderr)} {
-		matches := pattern.FindStringSubmatch(output)
-		if len(matches) > 1 && matches[1] != "" {
-			return matches[1], true
-		}
-	}
-	return "", false
 }
 
 func osverseToolsRoot() (string, bool) {

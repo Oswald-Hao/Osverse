@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-During the Linux prerelease, security fixes are applied to the newest published prerelease and the active `dev` branch. Older prereleases may be replaced rather than patched in place.
+During the Linux and Windows prerelease, security fixes are applied to the newest published prerelease and the active `dev` branch. Older prereleases may be replaced rather than patched in place.
 
 ## Report a vulnerability privately
 
 Please do not open a public issue for a suspected vulnerability. Use [GitHub private vulnerability reporting](https://github.com/Oswald-Hao/Osverse/security/advisories/new) and include:
 
-- the affected Osverse version and Ubuntu release;
+- the affected Osverse version and operating-system release;
 - a minimal reproduction or proof of concept;
 - the expected impact and required user interaction;
 - whether credentials, filesystem writes, privilege boundaries, update metadata, or installer rollback are involved.
@@ -17,7 +17,7 @@ Remove real API keys, access tokens, private URLs, usernames, and unrelated pers
 
 ## Trust boundary
 
-Osverse is local-first and has no telemetry. The frontend cannot choose download URLs or digests: installers use backend-owned allowlists and plans. API secrets are encrypted at rest and are not returned in lists or operation history. Privileged Claude Desktop installation is restricted to a fixed PolicyKit helper action.
+Osverse is local-first and has no telemetry. The frontend cannot choose download URLs or digests: installers use backend-owned allowlists and plans. API secrets are encrypted at rest and are not returned in lists or operation history. On Windows, the profile master key is additionally protected with current-user DPAPI. Privileged Linux Claude Desktop installation is restricted to a fixed PolicyKit helper action; Windows installs and removals use backend-owned artifact identities, Store/WinGet IDs, MSI ProductCodes, or trusted uninstaller paths.
 
 Release consumers should verify `SHA256SUMS` and GitHub build provenance:
 

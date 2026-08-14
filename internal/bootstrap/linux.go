@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package bootstrap wires production dependencies without starting a scan.
 package bootstrap
 

@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package systeminstall owns the narrow privileged Claude Desktop workflow.
 package systeminstall
 

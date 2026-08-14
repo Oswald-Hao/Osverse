@@ -1,3 +1,5 @@
+//go:build linux
+
 package profiles
 
 import (
@@ -209,13 +211,6 @@ func TestCodexAdapterRejectsAnUnmanagedOsverseProvider(t *testing.T) {
 	_, err := mergeCodexConfig([]byte("[model_providers.osverse]\nname = \"User\"\n"), adapterInput())
 	if !errors.Is(err, ErrConfigConflict) {
 		t.Fatalf("unmanaged provider error = %v", err)
-	}
-}
-
-func adapterInput() Input {
-	return Input{
-		ID: "profile", Name: "Work", APIKey: "secret-key-1234",
-		BaseURL: "https://api.example/v1", Model: "model-name",
 	}
 }
 

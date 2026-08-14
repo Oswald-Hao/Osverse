@@ -47,7 +47,7 @@ func NewAdapterSet(home string) (*AdapterSet, error) {
 	if err != nil || !filepath.IsAbs(resolved) || filepath.Clean(resolved) == string(filepath.Separator) {
 		return nil, ErrUnsafeStorage
 	}
-	backupRoot, err := ensurePrivateDirectories(resolved, ".local", "share", "osverse", "profiles", "backups")
+	backupRoot, err := ensurePrivateDirectories(resolved, profileBackupComponents()...)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +403,7 @@ func atomicWriteConfig(path string, content []byte, mode os.FileMode) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, path); err != nil {
+	if err := replaceProfileFile(temporary, path); err != nil {
 		return err
 	}
 	cleanup = false
