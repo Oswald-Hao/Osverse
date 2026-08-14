@@ -6,16 +6,18 @@ import {
   GetAPICompatibility,
   ListAPIProfiles,
 	ListHistory,
-	LaunchManagedApp,
+	LaunchComponent,
   ProbeAPIProfile,
   ProbeProxy,
   CancelInstallTask,
   CreateInstallPlan,
+  CreateRemovalPlan,
   GetInstallTask,
   ScanEnvironment,
   UseDirectConnection,
   StartInstall,
   SaveAPIProfile,
+  RemoveComponent,
 } from '../../wailsjs/go/main/App'
 import type { domain as generated } from '../../wailsjs/go/models'
 import type {
@@ -31,6 +33,8 @@ import type {
   InstallTask,
   InstallTaskPhase,
 	HistoryEntry,
+  RemovalPlan,
+  RemovalResult,
   ProxyProtocol,
   ProxyResult,
 } from '../domain'
@@ -56,6 +60,8 @@ type TaskFunction = (taskId: string) => Promise<unknown>
 type CancelFunction = (taskId: string) => Promise<void>
 type ProfileOperation = (...args: never[]) => Promise<unknown>
 type HistoryOperation = (...args: never[]) => Promise<unknown>
+type LaunchOperation = (componentId: string, installationPath: string) => Promise<void>
+type RemovalOperation = (id: string) => Promise<unknown>
 
 const componentStatuses = new Set<string>([
   'detecting',
@@ -85,6 +91,9 @@ let createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
 let applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
 let readHistory = ListHistory as unknown as HistoryOperation
 let clearHistoryOperation = ClearHistory as unknown as HistoryOperation
+let launchOperation: LaunchOperation = LaunchComponent
+let createRemovalOperation: RemovalOperation = CreateRemovalPlan as unknown as RemovalOperation
+let removeComponentOperation: RemovalOperation = RemoveComponent as unknown as RemovalOperation
 
 const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
@@ -334,8 +343,31 @@ export async function applyProfilePlan(id: string): Promise<APIApplyBatchResult>
   }
 }
 
-export async function launchManagedApp(componentId: string): Promise<void> {
-	await LaunchManagedApp(componentId)
+export async function launchComponent(componentId: string, installationPath: string): Promise<void> {
+	await launchOperation(componentId, installationPath)
+}
+
+export async function createRemovalPlan(componentId: string): Promise<RemovalPlan> {
+  const value = recordValue(await createRemovalOperation(componentId))
+  const effects = Array.isArray(value.effects) ? value.effects : []
+  return {
+    id: stringValue(value.id), componentId: stringValue(value.componentId), name: stringValue(value.name),
+    effects: effects.map((raw) => {
+      const effect = recordValue(raw)
+      const action = stringValue(effect.action)
+      if (action !== 'trash' && action !== 'package') throw new Error('移除服务返回了无效操作')
+      return { action, path: stringValue(effect.path), description: stringValue(effect.description), recoverable: booleanValue(effect.recoverable) }
+    }),
+    warning: stringValue(value.warning), createdAt: stringValue(value.createdAt), expiresAt: stringValue(value.expiresAt),
+  }
+}
+
+export async function removeComponent(planId: string): Promise<RemovalResult> {
+  const value = recordValue(await removeComponentOperation(planId))
+  return {
+    planId: stringValue(value.planId), componentId: stringValue(value.componentId),
+    removed: booleanValue(value.removed), message: stringValue(value.message),
+  }
 }
 
 export async function listHistory(): Promise<HistoryEntry[]> {
@@ -457,4 +489,26 @@ export function resetHistoryOperationsForTests(): void {
 	if (!testSeamEnabled()) throw new Error('The history test seam is unavailable outside tests')
 	readHistory = ListHistory as unknown as HistoryOperation
 	clearHistoryOperation = ClearHistory as unknown as HistoryOperation
+}
+
+export function setLaunchOperationForTests(operation: LaunchOperation): void {
+	if (!testSeamEnabled()) throw new Error('The launch test seam is unavailable outside tests')
+	launchOperation = operation
+}
+
+export function resetLaunchOperationForTests(): void {
+	if (!testSeamEnabled()) throw new Error('The launch test seam is unavailable outside tests')
+	launchOperation = LaunchComponent
+}
+
+export function setRemovalOperationsForTests(create: RemovalOperation, remove: RemovalOperation): void {
+  if (!testSeamEnabled()) throw new Error('The removal test seam is unavailable outside tests')
+  createRemovalOperation = create
+  removeComponentOperation = remove
+}
+
+export function resetRemovalOperationsForTests(): void {
+  if (!testSeamEnabled()) throw new Error('The removal test seam is unavailable outside tests')
+  createRemovalOperation = CreateRemovalPlan as unknown as RemovalOperation
+  removeComponentOperation = RemoveComponent as unknown as RemovalOperation
 }

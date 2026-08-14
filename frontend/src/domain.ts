@@ -173,6 +173,30 @@ export interface APIApplyResult {
   message: string
 }
 
+export interface RemovalEffect {
+  action: 'trash' | 'package'
+  path: string
+  description: string
+  recoverable: boolean
+}
+
+export interface RemovalPlan {
+  id: string
+  componentId: string
+  name: string
+  effects: RemovalEffect[]
+  warning: string
+  createdAt: string
+  expiresAt: string
+}
+
+export interface RemovalResult {
+  planId: string
+  componentId: string
+  removed: boolean
+  message: string
+}
+
 export interface APIApplyBatchResult {
   planId: string
   profileId: string
