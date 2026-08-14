@@ -2,6 +2,11 @@
 
 Osverse follows semantic versioning while it is in prerelease. Published artifacts and exact dates are available on the [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) page.
 
+## 0.3.0-beta.2
+
+- Accept the valid Windows desktop `installing` task phase so verified vendor and Microsoft Store installations continue polling instead of being reported as an invalid task state.
+- Add an end-to-end frontend regression for the native Windows install progress payload.
+
 ## 0.3.0-beta.1
 
 - Add native Windows 10/11 x64 system, CLI, desktop application, and management-tool detection.
