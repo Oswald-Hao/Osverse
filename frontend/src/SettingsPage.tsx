@@ -1,7 +1,7 @@
 const protections = [
   { title: 'API 档案', value: 'AES-256-GCM', detail: 'API Key、Base URL 和模型名均加密后写入本机；密钥文件权限为 0600。' },
   { title: '代理作用域', value: '仅 Osverse', detail: '只接受 127.0.0.1 端口，系统终端和其他应用不会被修改。' },
-  { title: '安装校验', value: '固定清单 + SHA-256', detail: 'CLI 与 AppImage 必须匹配内置版本、长度和摘要；Claude Desktop 由 APT 签名验证。' },
+  { title: '安装校验', value: '固定清单 + SHA-256', detail: '组件与 Osverse 自身更新必须匹配固定仓库、版本、长度和摘要；系统包继续由操作系统确认。' },
   { title: '数据收集', value: '无遥测', detail: '环境扫描、档案和脱敏历史记录均保留在本机。' },
 ]
 

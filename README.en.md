@@ -42,6 +42,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 - **Keep API credentials local.** Third-party API profiles are stored with AES-256-GCM encryption, can be edited safely, are probed for protocol compatibility, and are applied only after a second confirmation.
 - **Use your proxy, not a global rewrite.** Enter one loopback port; Osverse detects HTTP, HTTPS CONNECT, and SOCKS5 and uses the result only for its own downloads.
 - **Manage the surrounding desktop stack.** Install, update, and launch supported desktop clients and API-switching tools from the same dashboard.
+- **Update Osverse in place.** Startup checks the official Release feed, shows the version and release notes, then downloads, verifies, and applies the matching package only after confirmation—no uninstall or manual GitHub trip.
 
 ## What it manages
 
@@ -53,6 +54,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 | API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
 | Component controls | Launch verified installations, resolve location conflicts, preview and safely remove | Same; managed CLIs move to an Osverse recovery directory |
 | Networking | Direct or loopback HTTP / HTTPS CONNECT / SOCKS5 proxy | Same |
+| Osverse update | Atomic AppImage/portable replacement and system-confirmed `.deb` updates | Verified NSIS installer launch with automatic handoff from the old version |
 | Auditability | Redacted history, checksums, SPDX SBOM, provenance | Same |
 
 Claude Desktop's official Linux package requires Ubuntu 22.04 or newer, so Osverse reports it as unsupported on Ubuntu 20.04. ChatGPT Desktop has no official Linux build and is not installed by Osverse.
@@ -94,6 +96,8 @@ A portable `.tar.gz` is also published. Every release includes one unified check
 gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 ```
 
+After the first installation, Osverse checks for updates quietly at startup and prompts only when a newer release is available. Update downloads use the currently verified loopback proxy when selected; the frontend cannot provide an artifact URL, path, or digest.
+
 ## Safety model
 
 Osverse is deliberately narrower than a generic package manager.
@@ -104,6 +108,7 @@ Osverse is deliberately narrower than a generic package manager.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
 - Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest.
+- Osverse self-update accepts only semantic versions and platform artifacts from the fixed official repository and release-manifest path. Stable builds ignore prereleases; prerelease builds can advance to newer prereleases or stable releases.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.
 - API keys are never returned in profile lists, history, or logs. Windows protects the AES-256-GCM master key with current-user DPAPI. Private and reserved endpoints require explicit acknowledgement.
