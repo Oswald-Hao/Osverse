@@ -42,6 +42,7 @@ var fixedComponents = map[string]componentKind{
 	"opencode-cli":     {category: "Core CLI"},
 	"claude-desktop":   {category: "Desktop Applications"},
 	"chatgpt-desktop":  {category: "Desktop Applications"},
+	"codex-desktop":    {category: "Desktop Applications"},
 	"opencode-desktop": {category: "Desktop Applications", managedDesktop: true},
 	"cc-switch":        {category: "Management Tools", managedDesktop: true},
 	"cockpit-tools":    {category: "Management Tools", managedDesktop: true},

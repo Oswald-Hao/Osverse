@@ -2,6 +2,13 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Osverse",
   "outputfilename": "osverse",
+  "info": {
+    "companyName": "Osverse",
+    "productName": "Osverse",
+    "productVersion": "0.3.0",
+    "copyright": "Copyright © 2026 Osverse contributors",
+    "comments": "Local-first AI development environment manager"
+  },
   "build:tags": "",
   "frontend:install": "npm ci",
   "frontend:build": "npm run build",

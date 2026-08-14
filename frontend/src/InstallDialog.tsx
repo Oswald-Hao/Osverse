@@ -7,7 +7,8 @@ function formatBytes(bytes: number): string {
 export default function InstallDialog({ flow }: { flow: InstallFlowState }) {
   if (flow.phase === 'idle') return null
   const busy = flow.phase === 'planning' || flow.phase === 'installing'
-  const isSystemPackage = flow.plan?.componentId === 'claude-desktop'
+  const isSystemPackage = flow.plan?.changes.some((change) => change.kind === 'privilege') ?? false
+  const isStorePackage = flow.plan?.changes.some((change) => change.kind === 'store') ?? false
 
   return (
     <div className="dialog-backdrop" role="presentation">
@@ -30,7 +31,9 @@ export default function InstallDialog({ flow }: { flow: InstallFlowState }) {
           <>
             <div className="install-plan-summary">
               <span>版本 <strong>{flow.plan.version}</strong></span>
-              <span>{flow.plan.downloadBytes > 0 ? <>下载 <strong>{formatBytes(flow.plan.downloadBytes)}</strong></> : <>来源 <strong>官方 APT 稳定版</strong></>}</span>
+              <span>{flow.plan.downloadBytes > 0
+                ? <>下载 <strong>{formatBytes(flow.plan.downloadBytes)}</strong></>
+                : <>来源 <strong>{isStorePackage ? 'Microsoft Store' : '官方 APT 稳定版'}</strong></>}</span>
               <span>命令 <strong>{flow.plan.command}</strong></span>
             </div>
             <p className="install-dialog__explain">

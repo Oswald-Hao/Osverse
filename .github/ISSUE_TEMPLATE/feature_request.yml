@@ -34,7 +34,7 @@ body:
       options:
         - Ubuntu 20.04
         - Ubuntu 22.04
-        - Future Windows support
+        - Windows 10/11 x64
         - Future macOS support
         - Platform-independent
     validations:

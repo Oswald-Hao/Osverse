@@ -12,7 +12,8 @@
 <p align="center">
   <a href="README.md">简体中文</a> ·
   <a href="https://github.com/Oswald-Hao/Osverse/releases">Download</a> ·
-  <a href="docs/testing/linux-v1-acceptance.md">Test matrix</a> ·
+  <a href="docs/testing/linux-v1-acceptance.md">Linux acceptance</a> ·
+  <a href="docs/testing/windows-v1-acceptance.md">Windows acceptance</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
@@ -21,11 +22,12 @@
   <a href="https://github.com/Oswald-Hao/Osverse/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Oswald-Hao/Osverse?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Oswald-Hao/Osverse"></a>
   <img alt="Ubuntu 20.04 and 22.04" src="https://img.shields.io/badge/Ubuntu-20.04%20%7C%2022.04-E95420?logo=ubuntu&logoColor=white">
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="Local first" src="https://img.shields.io/badge/local--first-no%20telemetry-159957">
 </p>
 
 > [!IMPORTANT]
-> Osverse is currently a **Linux prerelease** for Ubuntu 20.04/22.04 on x86_64. Windows and macOS are planned only after the Linux release is stable.
+> Osverse supports **Ubuntu 20.04/22.04 x86_64** and **Windows 10/11 x64**. The Windows build passes native tests plus installer, launch, and uninstall smoke tests. macOS follows after Windows stabilizes.
 
 ![Osverse environment and proxy overview](docs/assets/screenshots/连接状态检查.png)
 
@@ -43,23 +45,34 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 
 ## What it manages
 
-| Area | Supported in Linux prerelease |
-| --- | --- |
-| Core CLI | Claude Code, Codex CLI, OpenCode CLI detection and transactional install/update |
-| Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop |
-| API tools | CC Switch, Cockpit Tools |
-| API profiles | Anthropic-compatible and OpenAI-compatible endpoints, model, Base URL, encrypted key |
-| Component controls | Launch every verified installation, handle per-location conflicts, preview and safely remove |
-| Networking | Direct connection or loopback HTTP / HTTPS CONNECT / SOCKS5 proxy |
-| Auditability | Redacted local operation history, release checksums, SPDX SBOM, build provenance |
+| Area | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
+| --- | --- | --- |
+| Core CLI | Claude Code, Codex CLI, OpenCode CLI detection and transactional install/update | Detection and pinned-source install/update for the same three CLIs |
+| Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, and ChatGPT (including Codex) |
+| API tools | CC Switch, Cockpit Tools | CC Switch, Cockpit Tools |
+| API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
+| Component controls | Launch verified installations, resolve location conflicts, preview and safely remove | Same; managed CLIs move to an Osverse recovery directory |
+| Networking | Direct or loopback HTTP / HTTPS CONNECT / SOCKS5 proxy | Same |
+| Auditability | Redacted history, checksums, SPDX SBOM, provenance | Same |
 
 Claude Desktop's official Linux package requires Ubuntu 22.04 or newer, so Osverse reports it as unsupported on Ubuntu 20.04. ChatGPT Desktop has no official Linux build and is not installed by Osverse.
 
 ## Install
 
-Open the [latest GitHub prerelease](https://github.com/Oswald-Hao/Osverse/releases) and download the artifact matching your Ubuntu version.
+Open the [latest GitHub prerelease](https://github.com/Oswald-Hao/Osverse/releases) and download the artifact matching your platform.
 
-### AppImage
+### Windows (recommended installer)
+
+Download `osverse-*-windows-amd64-setup.exe` and follow the installer. It installs only for the current user and does not need administrator access; the WebView2 bootstrapper is embedded. A portable zip and a standalone exe are also available.
+
+```powershell
+(Get-FileHash .\osverse-*-windows-amd64-setup.exe -Algorithm SHA256).Hash
+Get-Content .\SHA256SUMS
+```
+
+### Ubuntu
+
+#### AppImage
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
@@ -67,7 +80,7 @@ chmod +x osverse-*-linux-amd64-ubuntuXX.XX.AppImage
 ./osverse-*-linux-amd64-ubuntuXX.XX.AppImage
 ```
 
-### Debian package
+#### Debian package
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
@@ -89,10 +102,11 @@ Osverse is deliberately narrower than a generic package manager.
 - Existing commands are detected at their real locations and never need to be moved into an Osverse-managed path.
 - Launch and removal rescan and verify target identity; the frontend cannot supply an arbitrary executable path or system package name.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
+- On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
 - Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.
-- API keys are never returned in profile lists, history, or logs. Private and reserved endpoints require explicit acknowledgement.
+- API keys are never returned in profile lists, history, or logs. Windows protects the AES-256-GCM master key with current-user DPAPI. Private and reserved endpoints require explicit acknowledgement.
 - Privileged Claude Desktop installation uses a fixed PolicyKit helper; it cannot execute user-supplied commands.
 - Osverse has no telemetry and does not modify the terminal or operating system's global proxy settings.
 
@@ -128,7 +142,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and the full trust bo
 
 </details>
 
-All screenshots above are from a real Osverse session on Ubuntu 22.04, not design mockups.
+All screenshots above are from a real Osverse session on Ubuntu 22.04, not design mockups. Windows uses the same frontend with native platform services underneath.
 
 ## Build from source
 
@@ -151,7 +165,20 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
 ```
 
-Release packaging is checksum-pinned and produces `.deb`, `.AppImage`, portable tar, checksums, SBOM, and update metadata:
+On Windows 10/11 x64 (PowerShell, with Go, Node.js, WebView2, and the Wails build environment):
+
+```powershell
+npm --prefix frontend ci
+go test ./...
+go test -race ./...
+go vet ./...
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+
+# Build a per-user NSIS installer
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+```
+
+Release packaging is checksum-pinned and produces Windows NSIS/portable artifacts plus Linux `.deb`, `.AppImage`, portable tar, checksums, SBOM, and update metadata:
 
 ```bash
 build/linux/fetch-appimage-tools.sh build/tools/appimage

@@ -397,7 +397,9 @@ describe('environment status dashboard', () => {
     expect(within(openCodeDesktop as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
     const ccSwitch = screen.getByRole('heading', { name: 'CC Switch' }).closest('article')
     expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
-    expect(screen.getAllByText('官方校验安装')).toHaveLength(3)
+    const chatGPT = screen.getByRole('heading', { name: 'ChatGPT Desktop' }).closest('article')
+    expect(within(chatGPT as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
+    expect(screen.getAllByText('官方校验安装')).toHaveLength(4)
   })
 
   it('starts detected CLI and external desktop installations through Osverse', () => {
