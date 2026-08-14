@@ -395,6 +395,8 @@ func componentDisplayName(id string) string {
 		return "Claude Code"
 	case "codex-cli":
 		return "Codex CLI"
+	case "codex-desktop":
+		return "Codex Desktop"
 	case "opencode-cli":
 		return "OpenCode CLI"
 	case "claude-desktop":
@@ -415,7 +417,7 @@ func componentDisplayName(id string) string {
 func knownComponentID(id string) bool {
 	switch id {
 	case "claude-code", "codex-cli", "opencode-cli", "claude-desktop", "chatgpt-desktop",
-		"opencode-desktop", "cc-switch", "cockpit-tools":
+		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
 		return false
