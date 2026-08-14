@@ -7,13 +7,14 @@ function formatBytes(bytes: number): string {
 export default function InstallDialog({ flow }: { flow: InstallFlowState }) {
   if (flow.phase === 'idle') return null
   const busy = flow.phase === 'planning' || flow.phase === 'installing'
+  const isSystemPackage = flow.plan?.componentId === 'claude-desktop'
 
   return (
     <div className="dialog-backdrop" role="presentation">
       <section className="install-dialog" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title">
         <div className="install-dialog__header">
           <div>
-            <p className="card-kicker">VERIFIED INSTALL</p>
+            <p className="card-kicker">{isSystemPackage ? 'VERIFIED SYSTEM PACKAGE' : 'VERIFIED INSTALL'}</p>
             <h2 id="install-dialog-title">
               {flow.phase === 'planning' ? '正在准备安装计划' : flow.plan?.name ?? '安装工具'}
             </h2>
@@ -29,10 +30,14 @@ export default function InstallDialog({ flow }: { flow: InstallFlowState }) {
           <>
             <div className="install-plan-summary">
               <span>版本 <strong>{flow.plan.version}</strong></span>
-              <span>下载 <strong>{formatBytes(flow.plan.downloadBytes)}</strong></span>
+              <span>{flow.plan.downloadBytes > 0 ? <>下载 <strong>{formatBytes(flow.plan.downloadBytes)}</strong></> : <>来源 <strong>官方 APT 稳定版</strong></>}</span>
               <span>命令 <strong>{flow.plan.command}</strong></span>
             </div>
-            <p className="install-dialog__explain">确认后只会执行以下固定变更。不会运行 shell 安装脚本，也不会覆盖其他程序的命令。</p>
+            <p className="install-dialog__explain">
+              {isSystemPackage
+                ? '确认后会请求一次系统管理员授权，验证 Anthropic 签名密钥，再由 APT 安装或升级软件包。'
+                : '确认后只会执行以下固定变更。不会运行 shell 安装脚本，也不会覆盖其他程序的命令。'}
+            </p>
             <ol className="install-changes">
               {flow.plan.changes.map((change) => (
                 <li key={`${change.kind}-${change.path}`}>

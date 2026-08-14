@@ -15,7 +15,7 @@ const actionLabels: Record<Component['status'], string> = {
 
 const installableComponents = new Set([
   'claude-code', 'codex-cli', 'opencode-cli',
-  'opencode-desktop', 'cc-switch', 'cockpit-tools',
+  'claude-desktop', 'opencode-desktop', 'cc-switch', 'cockpit-tools',
 ])
 
 function ToolCard({ component, onInstall, onLaunch }: {

@@ -12,6 +12,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"github.com/Oswald-Hao/Osverse/internal/systeminstall"
 )
 
 // Scanner is the narrow read-only operation used by the Wails application.
@@ -66,6 +67,8 @@ type App struct {
 	appPlanner      InstallPlanner
 	appExecutor     InstallExecutor
 	appLauncher     AppLauncher
+	systemPlanner   InstallPlanner
+	systemExecutor  InstallExecutor
 	planOwners      map[string]string
 	taskOwners      map[string]string
 	profiles        ProfileService
@@ -87,6 +90,12 @@ func NewApp(scanner Scanner) *App {
 			app.appPlanner = appManager
 			app.appExecutor = appManager
 			app.appLauncher = appManager
+		}
+	}
+	if app != nil {
+		if systemManager, managerErr := systeminstall.NewManager(); managerErr == nil {
+			app.systemPlanner = systemManager
+			app.systemExecutor = systemManager
 		}
 	}
 	return app
@@ -234,6 +243,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	if isUserDesktopComponent(componentID) && app.appPlanner != nil {
 		planner = app.appPlanner
 		owner = "app"
+	} else if componentID == "claude-desktop" && app.systemPlanner != nil {
+		planner = app.systemPlanner
+		owner = "system"
 	}
 	app.mu.RUnlock()
 	if planner == nil {
@@ -249,7 +261,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 		app.mu.Unlock()
 		return plan, nil
 	}
-	if errors.Is(err, install.ErrUnknownComponent) || errors.Is(err, install.ErrUnsupportedTarget) {
+	if errors.Is(err, install.ErrUnknownComponent) || errors.Is(err, install.ErrUnsupportedTarget) ||
+		errors.Is(err, appservice.ErrUnknownComponent) || errors.Is(err, appservice.ErrUnsupportedTarget) ||
+		errors.Is(err, systeminstall.ErrUnknownComponent) || errors.Is(err, systeminstall.ErrUnsupportedTarget) {
 		return install.Plan{}, domain.NewPublicError(
 			domain.ErrInstallPlanFailed, "该工具暂不支持在当前系统安装", err,
 		)
@@ -271,6 +285,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 	owner := app.planOwners[planID]
 	if owner == "app" {
 		executor = app.appExecutor
+	} else if owner == "system" {
+		executor = app.systemExecutor
 	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
@@ -302,6 +318,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 	executor := app.installExecutor
 	if app.taskOwners[taskID] == "app" {
 		executor = app.appExecutor
+	} else if app.taskOwners[taskID] == "system" {
+		executor = app.systemExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {
@@ -326,6 +344,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 	executor := app.installExecutor
 	if app.taskOwners[taskID] == "app" {
 		executor = app.appExecutor
+	} else if app.taskOwners[taskID] == "system" {
+		executor = app.systemExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {

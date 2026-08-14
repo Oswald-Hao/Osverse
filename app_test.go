@@ -272,6 +272,27 @@ func TestDesktopInstallPlansAndTasksStayOnDesktopManager(t *testing.T) {
 	}
 }
 
+func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
+	cli := &fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("system plan reached CLI manager")
+		return install.Plan{}, nil
+	}}
+	system := &fakeInstallPlanner{create: func(_ context.Context, id string) (install.Plan, error) {
+		if id != "claude-desktop" {
+			t.Fatalf("system CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "system-plan", ComponentID: id}, nil
+	}}
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.systemPlanner = system
+	plan, err := app.CreateInstallPlan("claude-desktop")
+	if err != nil || plan.ID != "system-plan" || app.planOwners[plan.ID] != "system" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner %q", plan, err, app.planOwners[plan.ID])
+	}
+}
+
 func TestCreateInstallPlanUsesStartupContextAndMapsFailures(t *testing.T) {
 	startup := context.WithValue(context.Background(), struct{}{}, "value")
 	want := install.Plan{ID: "plan", ComponentID: "codex-cli"}
