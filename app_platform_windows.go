@@ -10,6 +10,7 @@ import (
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	"github.com/Oswald-Hao/Osverse/internal/windowsapps"
 	"github.com/Oswald-Hao/Osverse/internal/windowsinstall"
+	"github.com/Oswald-Hao/Osverse/internal/windowsremoval"
 )
 
 func configurePlatformServices(app *App, home string) {
@@ -21,6 +22,7 @@ func configurePlatformServices(app *App, home string) {
 		app.appPlanner = manager
 		app.appExecutor = manager
 	}
+	app.removal, _ = windowsremoval.NewManager(home)
 	app.componentLauncher = launchservice.NewManager(platformwindows.NewDetachedStarter(), nil)
 }
 
