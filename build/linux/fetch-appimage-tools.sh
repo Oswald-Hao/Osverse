@@ -23,7 +23,7 @@ download_verified() {
   temporary=$(mktemp "$output_dir/.download.XXXXXX")
   trap 'rm -f -- "$temporary"' RETURN
   curl --fail --location --proto '=https' --tlsv1.2 \
-    --retry 3 --retry-all-errors --silent --show-error \
+    --retry 3 --retry-delay 1 --retry-connrefused --silent --show-error \
     --output "$temporary" "$url"
   printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check --status
   chmod 0755 "$temporary"

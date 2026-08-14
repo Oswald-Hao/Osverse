@@ -16,6 +16,50 @@ permissions:
   contents: read
 
 jobs:
+  supply-chain:
+    name: Vulnerability, secret, license, and SBOM checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source and scan history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go for reachability analysis
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Fetch checksum-pinned security tools
+        run: build/security/fetch-tools.sh "$RUNNER_TEMP/osverse-security-tools"
+
+      - name: Scan Git history for secrets
+        run: |
+          "$RUNNER_TEMP/osverse-security-tools/gitleaks" git --redact --no-banner .
+
+      - name: Scan dependency vulnerabilities and licenses
+        run: |
+          "$RUNNER_TEMP/osverse-security-tools/osv-scanner" scan source --recursive --call-analysis=go \
+            --licenses='0BSD,Apache-2.0,BlueOak-1.0.0,BSD-2-Clause,BSD-3-Clause,CC-BY-4.0,CC0-1.0,ISC,MIT,MIT-0,MPL-2.0,Unlicense' \
+            .
+
+      - name: Generate and validate SPDX SBOM
+        run: |
+          "$RUNNER_TEMP/osverse-security-tools/syft" dir:. \
+            --source-name Osverse --source-version "$GITHUB_SHA" \
+            --output spdx-json=/tmp/osverse.spdx.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/osverse.spdx.json', encoding='utf-8') as source:
+              document = json.load(source)
+          assert document['spdxVersion'].startswith('SPDX-2.')
+          assert document['SPDXID'] == 'SPDXRef-DOCUMENT'
+          assert document['packages']
+          PY
+
   go:
     name: Go tests and vet
     runs-on: ubuntu-22.04

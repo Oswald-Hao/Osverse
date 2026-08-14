@@ -37,6 +37,7 @@ archive_root="$staging_root/$archive_name"
 install -d -m 0755 "$archive_root"
 install -m 0755 "$binary_path" "$archive_root/osverse"
 install -m 0644 README.md "$archive_root/README.md"
+install -m 0644 LICENSE "$archive_root/LICENSE"
 printf '%s\n' "$package_version" > "$archive_root/VERSION"
 
 source_epoch=${SOURCE_DATE_EPOCH:-0}
@@ -54,6 +55,7 @@ install -d -m 0755 \
 install -m 0755 "$binary_path" "$deb_root/usr/bin/osverse"
 install -m 0644 build/appicon.png "$deb_root/usr/share/icons/hicolor/512x512/apps/osverse.png"
 install -m 0644 README.md "$deb_root/usr/share/doc/osverse/README.md"
+install -m 0644 LICENSE "$deb_root/usr/share/doc/osverse/copyright"
 
 cat > "$deb_root/DEBIAN/control" <<EOF
 Package: osverse
@@ -69,7 +71,7 @@ Description: Local-first AI development environment manager
  tools on Ubuntu with explicit plans and rollback-safe user-level transactions.
 EOF
 
-cat > "$deb_root/usr/share/applications/osverse.desktop" <<'EOF'
+cat > "$deb_root/usr/share/applications/io.github.osverse.Osverse.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Osverse
@@ -81,7 +83,7 @@ Categories=Development;Utility;
 StartupNotify=true
 EOF
 
-chmod 0644 "$deb_root/DEBIAN/control" "$deb_root/usr/share/applications/osverse.desktop"
+chmod 0644 "$deb_root/DEBIAN/control" "$deb_root/usr/share/applications/io.github.osverse.Osverse.desktop"
 
 find "$deb_root" -print0 | xargs -0 touch --date="@$source_epoch"
 deb_name="osverse_${package_version}_amd64_${target_name}.deb"
@@ -92,16 +94,18 @@ install -d -m 0755 \
   "$appdir/usr/bin" \
   "$appdir/usr/share/applications" \
   "$appdir/usr/share/icons/hicolor/512x512/apps" \
+  "$appdir/usr/share/licenses/osverse" \
   "$appdir/usr/share/metainfo"
 install -m 0755 "$binary_path" "$appdir/usr/bin/osverse"
 install -m 0644 build/appicon.png "$appdir/osverse.png"
 install -m 0644 build/appicon.png "$appdir/usr/share/icons/hicolor/512x512/apps/osverse.png"
+install -m 0644 LICENSE "$appdir/usr/share/licenses/osverse/LICENSE"
 cat > "$appdir/AppRun" <<'EOF'
 #!/bin/sh
 set -eu
 exec "${APPDIR}/usr/bin/osverse" "$@"
 EOF
-cat > "$appdir/osverse.desktop" <<EOF
+cat > "$appdir/io.github.osverse.Osverse.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Osverse
@@ -114,25 +118,9 @@ StartupNotify=true
 X-AppImage-Version=$package_version
 EOF
 chmod 0755 "$appdir/AppRun"
-chmod 0644 "$appdir/osverse.desktop"
-cp "$appdir/osverse.desktop" "$appdir/usr/share/applications/osverse.desktop"
-cat > "$appdir/usr/share/metainfo/osverse.appdata.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop-application">
-  <id>io.github.oswald_hao.osverse</id>
-  <name>Osverse</name>
-  <summary>Manage local AI development tools</summary>
-  <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LicenseRef-proprietary</project_license>
-  <description>
-    <p>Osverse detects, installs, updates, and configures supported AI development tools on Ubuntu.</p>
-  </description>
-  <launchable type="desktop-id">osverse.desktop</launchable>
-  <url type="homepage">https://github.com/Oswald-Hao/Osverse</url>
-  <provides><binary>osverse</binary></provides>
-  <releases><release version="$package_version" date="$(date --utc --date="@$source_epoch" +%F)"/></releases>
-</component>
-EOF
+chmod 0644 "$appdir/io.github.osverse.Osverse.desktop"
+cp "$appdir/io.github.osverse.Osverse.desktop" "$appdir/usr/share/applications/io.github.osverse.Osverse.desktop"
+install -m 0644 build/linux/osverse.appdata.xml "$appdir/usr/share/metainfo/io.github.osverse.Osverse.appdata.xml"
 find "$appdir" -print0 | xargs -0 touch --date="@$source_epoch"
 
 appimage_name="osverse-${package_version}-linux-amd64-${target_name}.AppImage"
