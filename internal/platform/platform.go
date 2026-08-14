@@ -1,0 +1,43 @@
+package platform
+
+import (
+	"context"
+	"os"
+	"time"
+
+	"github.com/Oswald-Hao/Osverse/internal/domain"
+)
+
+// SystemProbe collects the host details used to determine scan support.
+type SystemProbe interface {
+	Probe(context.Context) (domain.SystemInfo, error)
+}
+
+// PathProbe discovers absolute command-search directories without executing shell profiles.
+type PathProbe interface {
+	Paths(context.Context) ([]string, error)
+}
+
+// CommandRequest describes one direct process invocation.
+type CommandRequest struct {
+	Path             string
+	PinnedExecutable *os.File
+	Args             []string
+	Env              []string
+	Timeout          time.Duration
+	OutputLimit      int
+}
+
+// CommandResult contains bounded process output and termination details.
+type CommandResult struct {
+	ExitCode  int
+	Stdout    string
+	Stderr    string
+	TimedOut  bool
+	Truncated bool
+}
+
+// CommandRunner runs a process without involving a command shell.
+type CommandRunner interface {
+	Run(context.Context, CommandRequest) (CommandResult, error)
+}
