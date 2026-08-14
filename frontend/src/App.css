@@ -185,7 +185,8 @@ button:focus-visible {
 }
 
 .refresh-button,
-.primary-button {
+.primary-button,
+.secondary-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -200,6 +201,13 @@ button:focus-visible {
   box-shadow: 0 10px 22px rgba(46, 114, 229, 0.24);
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.secondary-button {
+  color: #40536d;
+  background: #edf2f7;
+  border: 1px solid #d4dee9;
+  box-shadow: none;
 }
 
 .refresh-button:hover:not(:disabled),
@@ -260,6 +268,7 @@ button:focus-visible {
 
 .system-card,
 .summary-card,
+.proxy-panel,
 .tool-card,
 .empty-state {
   background: var(--surface);
@@ -268,6 +277,103 @@ button:focus-visible {
   box-shadow: 0 16px 40px rgba(46, 76, 110, 0.08);
   backdrop-filter: blur(16px);
 }
+
+.proxy-panel {
+  padding: 23px 25px;
+  margin: 0 0 38px;
+}
+
+.proxy-panel__heading,
+.proxy-panel__controls,
+.proxy-attempts article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.proxy-panel__heading h3 {
+  margin: 0 0 5px;
+  font-size: 1.2rem;
+}
+
+.proxy-panel__heading p:last-child,
+.proxy-panel__help,
+.proxy-attempts p {
+  margin: 0;
+  color: var(--muted-aa);
+  font-size: 0.79rem;
+}
+
+.connection-state {
+  flex: none;
+  padding: 7px 11px;
+  color: #40536d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: #e9eef5;
+  border-radius: 999px;
+}
+
+.connection-state--proxy { color: #0d6246; background: #dff4eb; }
+.connection-state--probing { color: #185ba8; background: #e4efff; }
+
+.proxy-panel__controls {
+  justify-content: flex-start;
+  margin-top: 20px;
+}
+
+.proxy-panel__controls label {
+  display: grid;
+  gap: 3px;
+  color: #33435a;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.proxy-address {
+  color: var(--muted-aa);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.proxy-panel__controls input {
+  width: 128px;
+  min-height: 44px;
+  padding: 0 13px;
+  color: var(--text);
+  background: #f7f9fc;
+  border: 1px solid #cbd7e4;
+  border-radius: 12px;
+}
+
+.proxy-panel__controls input:focus-visible {
+  outline: 3px solid rgba(46, 114, 229, 0.3);
+  border-color: var(--accent-blue);
+}
+
+.proxy-panel__help { margin-top: 10px; }
+.proxy-panel__notice { margin: 15px 0 0; }
+
+.proxy-attempts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.proxy-attempts article {
+  position: relative;
+  min-width: 0;
+  padding: 13px;
+  background: #f5f8fc;
+  border-radius: 12px;
+}
+
+.proxy-attempts strong { font-size: 0.76rem; }
+.proxy-attempts span { color: var(--muted-aa); font-size: 0.68rem; }
+.proxy-attempts p { margin-top: 7px; line-height: 1.45; }
+.proxy-attempts small { display: block; margin-top: 5px; color: var(--success); }
 
 .system-card {
   display: grid;
@@ -658,6 +764,10 @@ button:focus-visible {
   .summary-card { min-height: 82px; }
   .tool-grid { grid-template-columns: 1fr; }
   .tool-card__footer { align-items: flex-end; }
+  .proxy-panel__heading { align-items: flex-start; }
+  .proxy-panel__controls { align-items: stretch; flex-direction: column; }
+  .proxy-panel__controls input { width: 100%; }
+  .proxy-attempts { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

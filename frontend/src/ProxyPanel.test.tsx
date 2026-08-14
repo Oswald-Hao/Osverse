@@ -1,0 +1,58 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  resetProxyOperationsForTests,
+  setProxyOperationsForTests,
+} from './services/osverse'
+import ProxyPanel from './ProxyPanel'
+
+afterEach(() => {
+  cleanup()
+  resetProxyOperationsForTests()
+})
+
+describe('ProxyPanel', () => {
+  it('validates the only user-supplied network value locally', () => {
+    const probe = vi.fn()
+    setProxyOperationsForTests(probe)
+    render(<ProxyPanel />)
+
+    fireEvent.change(screen.getByLabelText(/本地代理端口/), { target: { value: 'host:7890' } })
+    fireEvent.click(screen.getByRole('button', { name: '探测并使用' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('1 到 65535')
+    expect(probe).not.toHaveBeenCalled()
+    expect(screen.getByText('127.0.0.1 :')).toBeVisible()
+  })
+
+  it('renders fixed protocol results and permits returning to direct mode', async () => {
+    const direct = vi.fn().mockResolvedValue(undefined)
+    setProxyOperationsForTests(() => Promise.resolve({
+      port: 7890,
+      reachable: true,
+      recommended: 'socks5',
+      checkedAt: '2026-08-14T01:02:03Z',
+      attempts: [
+        { protocol: 'http', available: true, latencyMillis: 3, message: 'HTTP 可用' },
+        { protocol: 'https-connect', available: false, latencyMillis: 0, message: 'CONNECT 不可用' },
+        { protocol: 'socks5', available: true, latencyMillis: 5, message: 'SOCKS5 可用' },
+      ],
+    }), direct)
+    render(<ProxyPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: '探测并使用' }))
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+
+    const results = screen.getByLabelText('代理探测结果')
+    expect(within(results).getByText('HTTP')).toBeVisible()
+    expect(within(results).getByText('HTTPS CONNECT')).toBeVisible()
+    expect(within(results).getByText('SOCKS5')).toBeVisible()
+    expect(within(results).getByText('5 ms')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: '使用直连' }))
+    expect(screen.getByText('直连', { selector: '.connection-state' })).toBeVisible()
+    expect(screen.queryByLabelText('代理探测结果')).not.toBeInTheDocument()
+    expect(direct).toHaveBeenCalledTimes(1)
+  })
+})

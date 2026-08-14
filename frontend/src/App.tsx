@@ -3,6 +3,7 @@ import './App.css'
 import Sidebar from './Sidebar'
 import SummaryCards from './SummaryCards'
 import ToolSection from './ToolSection'
+import ProxyPanel from './ProxyPanel'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 
 const sections = [
@@ -194,6 +195,8 @@ function App() {
           total={snapshot.total}
           needsAttention={snapshot.needsAttention}
         />
+
+        <ProxyPanel />
 
         <div className="tool-sections">
           {sections.map((section) => (

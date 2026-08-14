@@ -44,3 +44,20 @@ export interface EnvironmentSnapshot {
   total: number
   needsAttention: number
 }
+
+export type ProxyProtocol = 'http' | 'https-connect' | 'socks5'
+
+export interface ProxyAttempt {
+  protocol: ProxyProtocol
+  available: boolean
+  latencyMillis: number
+  message: string
+}
+
+export interface ProxyResult {
+  port: number
+  reachable: boolean
+  recommended: ProxyProtocol | ''
+  attempts: ProxyAttempt[]
+  checkedAt: string
+}

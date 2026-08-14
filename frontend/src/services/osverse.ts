@@ -1,12 +1,31 @@
-import { ScanEnvironment } from '../../wailsjs/go/main/App'
+import {
+  ProbeProxy,
+  ScanEnvironment,
+  UseDirectConnection,
+} from '../../wailsjs/go/main/App'
 import type { domain as generated } from '../../wailsjs/go/models'
 import type {
   ComponentStatus,
   EnvironmentSnapshot,
+  ProxyProtocol,
+  ProxyResult,
 } from '../domain'
 
 type ScanResult = generated.EnvironmentSnapshot | EnvironmentSnapshot
 type ScanFunction = () => Promise<ScanResult>
+type ProbeFunction = (port: number) => Promise<{
+  port: number
+  reachable: boolean
+  recommended: string
+  attempts: Array<{
+    protocol: string
+    available: boolean
+    latencyMillis: number
+    message: string
+  }> | null
+  checkedAt: unknown
+}>
+type DirectFunction = () => Promise<void>
 
 const componentStatuses = new Set<string>([
   'detecting',
@@ -21,6 +40,10 @@ const componentStatuses = new Set<string>([
 ])
 
 let scan: ScanFunction = ScanEnvironment
+let probe: ProbeFunction = ProbeProxy
+let direct: DirectFunction = UseDirectConnection
+
+const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 
 function testSeamEnabled(): boolean {
   const meta = import.meta as ImportMeta & { env: { MODE?: string } }
@@ -32,6 +55,13 @@ function componentStatus(value: string): ComponentStatus {
     throw new Error('环境扫描返回了无效的组件状态')
   }
   return value as ComponentStatus
+}
+
+function proxyProtocol(value: string): ProxyProtocol {
+  if (!proxyProtocols.has(value)) {
+    throw new Error('代理探测返回了无效的协议')
+  }
+  return value as ProxyProtocol
 }
 
 export async function scanEnvironment(): Promise<EnvironmentSnapshot> {
@@ -68,6 +98,30 @@ export async function scanEnvironment(): Promise<EnvironmentSnapshot> {
   }
 }
 
+export async function probeProxy(port: number): Promise<ProxyResult> {
+  const result = await probe(port)
+  const recommended = result.recommended === ''
+    ? ''
+    : proxyProtocol(result.recommended)
+
+  return {
+    port: result.port,
+    reachable: result.reachable,
+    recommended,
+    attempts: (result.attempts ?? []).map((attempt) => ({
+      protocol: proxyProtocol(attempt.protocol),
+      available: attempt.available,
+      latencyMillis: attempt.latencyMillis,
+      message: attempt.message,
+    })),
+    checkedAt: String(result.checkedAt ?? ''),
+  }
+}
+
+export async function useDirectConnection(): Promise<void> {
+  await direct()
+}
+
 // These guarded exports provide a resettable Vitest seam without making a
 // runtime bridge or replaceable scanner available in production builds.
 export function setScanEnvironmentForTests(testScan: ScanFunction): void {
@@ -82,4 +136,23 @@ export function resetScanEnvironmentForTests(): void {
     throw new Error('The scan test seam is unavailable outside tests')
   }
   scan = ScanEnvironment
+}
+
+export function setProxyOperationsForTests(
+  testProbe: ProbeFunction,
+  testDirect: DirectFunction = () => Promise.resolve(),
+): void {
+  if (!testSeamEnabled()) {
+    throw new Error('The proxy test seam is unavailable outside tests')
+  }
+  probe = testProbe
+  direct = testDirect
+}
+
+export function resetProxyOperationsForTests(): void {
+  if (!testSeamEnabled()) {
+    throw new Error('The proxy test seam is unavailable outside tests')
+  }
+  probe = ProbeProxy
+  direct = UseDirectConnection
 }

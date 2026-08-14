@@ -9,6 +9,8 @@ const (
 	ErrCommandFailed     ErrorCode = "COMMAND_FAILED"
 	ErrUnsupportedSystem ErrorCode = "UNSUPPORTED_SYSTEM"
 	ErrInvalidResult     ErrorCode = "INVALID_RESULT"
+	ErrInvalidInput      ErrorCode = "INVALID_INPUT"
+	ErrProxyProbeFailed  ErrorCode = "PROXY_PROBE_FAILED"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause
