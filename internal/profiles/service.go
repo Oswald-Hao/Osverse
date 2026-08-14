@@ -192,7 +192,7 @@ func compatibilityMatrix(result ProbeResult) []TargetCompatibility {
 	}{
 		{target: TargetClaude, protocol: "anthropic-messages"},
 		{target: TargetCodex, protocol: "openai-responses"},
-		{target: TargetOpenCode, protocol: "openai-responses"},
+		{target: TargetOpenCode, protocol: "openai-chat"},
 	}
 	matrix := make([]TargetCompatibility, 0, len(checks))
 	for _, check := range checks {
