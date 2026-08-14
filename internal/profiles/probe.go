@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -18,6 +19,9 @@ import (
 const (
 	probeBodyLimit = 64 * 1024
 	probeTimeout   = 12 * time.Second
+	// This is deliberately invalid JSON: a routed endpoint can reject it,
+	// while it cannot become a valid model-inference request.
+	malformedProtocolBody = "{"
 )
 
 var (
@@ -100,7 +104,7 @@ func (prober *Prober) Probe(ctx context.Context, input Input) (ProbeResult, erro
 		},
 	}
 	base := strings.TrimRight(validated.BaseURL, "/")
-	modelStatus, modelErr := prober.request(ctx, client, http.MethodGet, endpointURL(base, "models"), validated.APIKey)
+	modelStatus, modelErr := prober.request(ctx, client, http.MethodGet, endpointURL(base, "models"), validated.APIKey, nil)
 	if modelErr == nil {
 		result.Reachable = true
 		result.Authenticated = modelStatus >= 200 && modelStatus < 300
@@ -114,12 +118,14 @@ func (prober *Prober) Probe(ctx context.Context, input Input) (ProbeResult, erro
 		{index: 2, path: "messages"},
 	}
 	for _, route := range routes {
-		status, requestErr := prober.request(ctx, client, http.MethodOptions, endpointURL(base, route.path), validated.APIKey)
-		if requestErr != nil {
-			continue
+		observation, reached := prober.probeProtocol(
+			ctx, client, result.Protocols[route.index].Protocol,
+			endpointURL(base, route.path), validated.APIKey,
+		)
+		if reached {
+			result.Reachable = true
+			result.Protocols[route.index] = observation
 		}
-		result.Reachable = true
-		result.Protocols[route.index] = classifyProtocol(result.Protocols[route.index].Protocol, status)
 	}
 	if !result.Reachable {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -218,8 +224,46 @@ func endpointURL(base, endpoint string) string {
 	return base + "/v1/" + endpoint
 }
 
-func (prober *Prober) request(ctx context.Context, client httpDoer, method, endpoint, key string) (int, error) {
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+func (prober *Prober) probeProtocol(ctx context.Context, client httpDoer, protocol, endpoint, key string) (ProtocolResult, bool) {
+	optionsStatus, optionsErr := prober.request(ctx, client, http.MethodOptions, endpoint, key, nil)
+	if optionsErr == nil {
+		observation := classifyProtocol(protocol, optionsStatus)
+		if observation.Status == "compatible" {
+			return observation, true
+		}
+	}
+
+	postStatus, postErr := prober.request(
+		ctx, client, http.MethodPost, endpoint, key, []byte(malformedProtocolBody),
+	)
+	if postErr == nil {
+		observation := classifyMalformedPost(protocol, postStatus)
+		if observation.Status == "compatible" {
+			observation.Message = "已通过无推理请求识别协议路由"
+		}
+		return observation, true
+	}
+	if optionsErr == nil {
+		return classifyProtocol(protocol, optionsStatus), true
+	}
+	return ProtocolResult{Protocol: protocol, Status: "unconfirmed", Message: "协议路由探测失败"}, false
+}
+
+func classifyMalformedPost(protocol string, status int) ProtocolResult {
+	switch status {
+	case http.StatusNotFound, http.StatusGone:
+		return ProtocolResult{Protocol: protocol, Status: "unavailable", Message: "服务未提供该路由"}
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusNoContent,
+		http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+		http.StatusUnprocessableEntity, http.StatusTooManyRequests:
+		return ProtocolResult{Protocol: protocol, Status: "compatible", Message: "已识别协议路由"}
+	default:
+		return ProtocolResult{Protocol: protocol, Status: "unconfirmed", Message: fmt.Sprintf("无推理请求返回 HTTP %d", status)}
+	}
+}
+
+func (prober *Prober) request(ctx context.Context, client httpDoer, method, endpoint, key string, body []byte) (int, error) {
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, ErrProbeFailed
 	}
@@ -228,6 +272,9 @@ func (prober *Prober) request(ctx context.Context, client httpDoer, method, endp
 	request.Header.Set("X-Api-Key", key)
 	request.Header.Set("Anthropic-Version", "2023-06-01")
 	request.Header.Set("User-Agent", "Osverse-API-Probe")
+	if len(body) > 0 {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return 0, ErrProbeFailed

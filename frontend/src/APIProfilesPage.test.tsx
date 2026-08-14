@@ -86,6 +86,10 @@ describe('APIProfilesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '探测兼容性' }))
     await screen.findByRole('heading', { name: '兼容矩阵' })
     expect(screen.getByText('凭据已验证')).toBeVisible()
+    const protocolDetails = screen.getByRole('region', { name: '协议探测详情' })
+    expect(protocolDetails).toHaveTextContent('OpenAI Responses')
+    expect(protocolDetails).toHaveTextContent('Anthropic Messages')
+    expect(protocolDetails).toHaveTextContent('已识别协议路由')
     expect(screen.getByLabelText(/OpenCode CLI/)).toBeDisabled()
     expect(screen.getByLabelText(/Claude Code/)).toBeChecked()
 
