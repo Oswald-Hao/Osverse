@@ -94,6 +94,9 @@ func NewManager(home string) (*Manager, error) {
 	manager.client = proxyservice.NewHTTPClient
 	manager.replaceLink = replaceSymlink
 	manager.profiles = shellProfiles(manager.home, os.Getenv("SHELL"))
+	if err := manager.recoverTransactions(); err != nil {
+		return nil, err
+	}
 	return manager, nil
 }
 

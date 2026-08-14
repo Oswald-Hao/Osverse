@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused capability or managed tool
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user workflow, not only the desired control or button.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: input
+    id: upstream
+    attributes:
+      label: Official upstream source
+      description: Required for a new CLI or desktop tool.
+      placeholder: https://github.com/owner/project/releases
+  - type: textarea
+    id: safety
+    attributes:
+      label: Installation, rollback, and security considerations
+      description: Explain ownership, verification, privilege, secrets, and recovery concerns.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Ubuntu 20.04
+        - Ubuntu 22.04
+        - Future Windows support
+        - Future macOS support
+        - Platform-independent
+    validations:
+      required: true

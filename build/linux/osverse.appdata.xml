@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.osverse.Osverse</id>
+  <name>Osverse</name>
+  <summary>Manage local AI development tools</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <description>
+    <p>Osverse detects, installs, updates, and configures supported AI development tools on Ubuntu.</p>
+  </description>
+  <launchable type="desktop-id">io.github.osverse.Osverse.desktop</launchable>
+  <url type="homepage">https://github.com/Oswald-Hao/Osverse</url>
+  <provides>
+    <binary>osverse</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>
