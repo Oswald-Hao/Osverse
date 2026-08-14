@@ -143,13 +143,13 @@ describe('APIProfilesPage', () => {
 
     fireEvent.change(screen.getByLabelText('档案名称'), { target: { value: updated.name } })
     fireEvent.change(screen.getByLabelText('模型名'), { target: { value: updated.model } })
-    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'replacement-secret-5678' } })
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key-5678' } })
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
 
     await waitFor(() => expect(api.save).toHaveBeenCalledWith(expect.objectContaining({
       id: profile.id,
       name: updated.name,
-      apiKey: 'replacement-secret-5678',
+      apiKey: 'test-key-5678',
       model: updated.model,
     })))
     expect(await screen.findByRole('heading', { name: updated.name })).toBeVisible()
