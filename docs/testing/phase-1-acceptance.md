@@ -123,6 +123,25 @@ For every path displayed by Osverse, invoke that exact absolute path with the ca
 
 ## Sign-off
 
+### 2026-08-14 local beta smoke — Ubuntu 22.04.5
+
+Tester: Osverse maintainer workstation (`lejurobot-System-Product-Name`). CI run: [31760448767](https://github.com/Oswald-Hao/Osverse/actions/runs/31760448767), commit `d6772c8abe9be8292f3b2799063bfedbedba8eb7`.
+
+- Environment: Ubuntu 22.04.5 LTS, `x86_64`, GNOME/X11, Bash.
+- Ubuntu 20.04-compatible artifact SHA-256: `a5fc13c1a7f48f3edb3f4e05e59bee6ecc7190b8c2e38267a89f1e3bb7344d1a`.
+- Ubuntu 22.04 artifact SHA-256: `19f6093a781f67dd63c836903c8a8906f6340d69ffcbcc622431d3d07d839bee`.
+- Both artifacts resolved all required GTK/WebKitGTK libraries and opened a production Wails window successfully.
+- System evidence matched direct commands: Ubuntu 22.04.5, version 22.04, `x86_64`, Bash, supported.
+- Scanner evidence matched direct checks: Claude Code conflict with two version `2.1.114` installations; Codex CLI installed at version `0.147.0`; OpenCode CLI missing; Cockpit Tools installed; CC Switch missing.
+- Refresh advanced the displayed scan timestamp from `09:30:29` to `09:34:01` without clearing the previous snapshot.
+- Layout smoke passed at 320, 901, 1024, and 1440 CSS-pixel window widths with no observed horizontal overflow, overlap, or clipped long paths.
+- Keyboard Tab focus was visible on the refresh control.
+- After both Osverse processes exited, standalone `claude --version` and `codex --version` still succeeded with the same versions.
+- Cosmetic observation: several component detail messages remain English (`Installed`, `Not detected`, and `Multiple installations detected`) inside the otherwise Chinese dashboard.
+- Not covered on this workstation: Ubuntu 20.04 runtime, Zsh, screen-reader announcements, reduced motion/200% zoom, arm64 negative testing, and clean-snapshot fault fixtures. No system packages were installed for this smoke test.
+
+This is a successful local smoke test, not completion of the full matrix above.
+
 - [ ] All supported OS/shell rows are complete.
 - [ ] The unsupported-architecture negative case is complete.
 - [ ] Every mismatch has a linked issue or is resolved and rerun.
