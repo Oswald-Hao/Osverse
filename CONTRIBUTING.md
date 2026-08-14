@@ -19,7 +19,7 @@ Every change reaches a protected branch through a pull request. Use this fixed p
 
 The CI workflow runs on each pull request and validates the proposed merge with tests, static analysis, supply-chain checks, and Ubuntu builds. It intentionally does not run the same validation again after the pull request is merged. GitHub performs the branch update when the pull request is merged; CI never pushes or synchronizes branches. A maintainer can still start a manual diagnostic run with `workflow_dispatch`, but it does not replace a required pull-request run.
 
-Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
+The `Validate promotion path` required check enforces that chain. Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
 
 Use the pinned versions in the README. Before submitting, run:
 

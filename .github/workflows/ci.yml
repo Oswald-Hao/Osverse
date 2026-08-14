@@ -17,6 +17,34 @@ permissions:
   contents: read
 
 jobs:
+  promotion-path:
+    name: Validate promotion path
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Enforce feature to dev to beta to main
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          case "$BASE_BRANCH" in
+            dev)
+              [[ "$HEAD_BRANCH" != dev && "$HEAD_BRANCH" != beta && "$HEAD_BRANCH" != main ]]
+              ;;
+            beta)
+              [[ "$HEAD_BRANCH" == dev ]]
+              ;;
+            main)
+              [[ "$HEAD_BRANCH" == beta ]]
+              ;;
+            *)
+              echo "Unsupported target branch: $BASE_BRANCH" >&2
+              exit 1
+              ;;
+          esac
+
   supply-chain:
     name: Vulnerability, secret, license, and SBOM checks
     runs-on: ubuntu-24.04
