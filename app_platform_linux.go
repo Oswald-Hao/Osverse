@@ -21,6 +21,10 @@ func isUnsupportedInstallError(err error) bool {
 }
 
 func configurePlatformServices(app *App, home string) {
+	if manager, err := install.NewManager(home); err == nil {
+		app.installPlanner = manager
+		app.installExecutor = manager
+	}
 	if appManager, err := appservice.NewManager(home); err == nil {
 		app.appPlanner = appManager
 		app.appExecutor = appManager

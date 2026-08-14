@@ -96,17 +96,13 @@ type App struct {
 
 func NewApp(scanner Scanner) *App {
 	home, err := os.UserHomeDir()
-	var planner InstallPlanner
-	if err == nil {
-		planner, _ = install.NewManager(home)
-	}
 	var profileService ProfileService
 	var history HistoryService
 	if err == nil {
 		profileService, _ = profiles.NewService(home)
 		history, _ = historyservice.NewStore(home)
 	}
-	app := newAppWithServiceBundle(scanner, proxyservice.NewService(), planner, profileService)
+	app := newAppWithServiceBundle(scanner, proxyservice.NewService(), nil, profileService)
 	if app != nil {
 		app.history = history
 	}

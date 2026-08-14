@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package detect contains read-only component detectors.
 package detect
 

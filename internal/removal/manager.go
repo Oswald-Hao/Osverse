@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package removal creates single-use removal previews and moves user-owned
 // installations to the desktop Trash. System packages are delegated to a
 // fixed privileged remover.

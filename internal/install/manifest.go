@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package install provides the allowlisted, transactional CLI installer.
 package install
 
