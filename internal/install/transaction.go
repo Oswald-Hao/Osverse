@@ -82,6 +82,14 @@ func (manager *Manager) execute(
 	if err != nil {
 		return errExternalCommand
 	}
+	profileBefore := make([]profileState, 0, len(manager.profiles))
+	for _, profilePath := range manager.profiles {
+		state, err := inspectProfileState(profilePath)
+		if err != nil {
+			return err
+		}
+		profileBefore = append(profileBefore, state)
+	}
 
 	stagingRoot, err := ensureDirectories(root, 0o700, "staging")
 	if err != nil {
@@ -129,48 +137,53 @@ func (manager *Manager) execute(
 	if err := commitVersion(payload, finalPath, item); err != nil {
 		return err
 	}
-	committed := false
-	currentChanged := false
-	shimChanged := false
-	var profileChanges []profileState
+	backupRoot, err := ensureDirectories(root, 0o700, "state", "profile-backups")
+	if err != nil {
+		return err
+	}
+	journalPath, err := manager.writeTransactionJournal(root, stored, currentBefore, shimBefore, profileBefore)
+	if err != nil {
+		return err
+	}
 	defer func() {
-		if returnErr == nil || committed {
+		if returnErr == nil {
 			return
 		}
-		for index := len(profileChanges) - 1; index >= 0; index-- {
-			_ = restoreProfile(profileChanges[index])
+		restored := true
+		for index := len(profileBefore) - 1; index >= 0; index-- {
+			state := profileBefore[index]
+			state.changed = true
+			if err := restoreProfile(state); err != nil {
+				restored = false
+			}
 		}
-		if shimChanged {
-			_ = restoreLink(shimPath, shimBefore)
+		if err := restoreLink(shimPath, shimBefore); err != nil {
+			restored = false
 		}
-		if currentChanged {
-			_ = restoreLink(currentPath, currentBefore)
+		if err := restoreLink(currentPath, currentBefore); err != nil {
+			restored = false
+		}
+		if restored {
+			_ = removeJournal(journalPath)
 		}
 	}()
 	if err := manager.replaceLink(currentPath, item.Version); err != nil {
 		return err
 	}
-	currentChanged = true
 	shimTarget := filepath.Join(toolRoot, "current", filepath.FromSlash(item.BinaryPath))
 	if err := manager.replaceLink(shimPath, shimTarget); err != nil {
 		return err
 	}
-	shimChanged = true
-	backupRoot, err := ensureDirectories(root, 0o700, "state", "profile-backups")
-	if err != nil {
-		return err
-	}
-	for _, profilePath := range manager.profiles {
-		backupPath := filepath.Join(backupRoot, strings.TrimPrefix(filepath.Base(profilePath), ".")+".before-osverse")
-		state, err := ensureProfilePATH(profilePath, backupPath)
+	for _, state := range profileBefore {
+		backupPath := filepath.Join(backupRoot, strings.TrimPrefix(filepath.Base(state.path), ".")+".before-osverse")
+		_, err := ensureProfilePATHFromState(state, backupPath)
 		if err != nil {
 			return err
 		}
-		if state.changed {
-			profileChanges = append(profileChanges, state)
-		}
 	}
-	committed = true
+	if err := removeJournal(journalPath); err != nil {
+		return err
+	}
 	progress(progressUpdate{phase: "committing", progress: 99, message: "命令入口已更新"})
 	return nil
 }
@@ -481,8 +494,11 @@ func restoreLink(linkPath string, state linkState) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		if err != nil {
 			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return errors.New("managed link recovery path is occupied")
 		}
 		return os.Remove(linkPath)
 	}
