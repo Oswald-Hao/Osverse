@@ -62,7 +62,7 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 	valid, broken := 0, false
 	for _, candidate := range candidates {
 		installation := domain.Installation{Path: candidate.path, ResolvedPath: candidate.resolved, Source: "path"}
-		if managedOK && pathWithinWindows(managedRoot, candidate.resolved) {
+		if managedOK && (pathWithinWindows(managedRoot, candidate.resolved) || managedWindowsShim(candidate.path, managedRoot, spec.ID)) {
 			installation.Managed, installation.Source = true, "osverse"
 		}
 		if detector.Runner == nil || ctx.Err() != nil || !candidate.evidence.Unchanged(candidate.path) {
@@ -170,6 +170,52 @@ func windowsManagedToolsRoot() (string, bool) {
 		return "", false
 	}
 	return filepath.Join(filepath.Clean(home), "AppData", "Local", "Osverse", "tools"), true
+}
+
+func managedWindowsShim(candidatePath, managedRoot, componentID string) bool {
+	if strings.ToLower(filepath.Ext(candidatePath)) != ".cmd" || componentID == "" || len(componentID) > 64 ||
+		strings.ContainsAny(componentID, "\\/:\x00\r\n") {
+		return false
+	}
+	info, err := os.Lstat(candidatePath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > 16*1024 {
+		return false
+	}
+	raw, err := os.ReadFile(candidatePath)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(string(raw), "\r\n")
+	if len(lines) != 5 || lines[0] != "@rem Osverse managed shim v1: "+componentID ||
+		lines[1] != "@echo off" || lines[2] != "setlocal DisableDelayedExpansion" || lines[4] != "" {
+		return false
+	}
+	commandLine := lines[3]
+	if !strings.HasPrefix(commandLine, `"`) || !strings.HasSuffix(commandLine, `" %*`) {
+		return false
+	}
+	target, ok := decodeWindowsShimPath(strings.TrimSuffix(strings.TrimPrefix(commandLine, `"`), `" %*`))
+	if !ok || !filepath.IsAbs(target) {
+		return false
+	}
+	return pathWithinWindows(managedRoot, filepath.Clean(target))
+}
+
+func decodeWindowsShimPath(value string) (string, bool) {
+	var result strings.Builder
+	result.Grow(len(value))
+	for index := 0; index < len(value); index++ {
+		if value[index] != '%' {
+			result.WriteByte(value[index])
+			continue
+		}
+		if index+1 >= len(value) || value[index+1] != '%' {
+			return "", false
+		}
+		result.WriteByte('%')
+		index++
+	}
+	return result.String(), true
 }
 
 func pathWithinWindows(root, target string) bool {
