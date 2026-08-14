@@ -1,23 +1,28 @@
-## Summary
+## 变更说明 / Summary
 
-<!-- What user-visible problem does this solve? -->
+<!-- 简要说明问题、方案和用户可见结果。 -->
 
-## Verification
+## 目标分支 / Target branch
 
-- [ ] `go test ./...`
-- [ ] `go test -race ./...`
-- [ ] `go vet ./...`
-- [ ] `npm --prefix frontend test`
-- [ ] `npm --prefix frontend run typecheck`
-- [ ] Relevant Ubuntu/package/manual checks are documented below.
+- [ ] 功能或修复分支 → `dev`
+- [ ] `dev` → `beta`
+- [ ] `beta` → `main`
 
-## Safety review
+## 验证 / Verification
 
-- [ ] No credentials, private endpoints, or personal data are included.
-- [ ] Detection remains read-only and bounded.
-- [ ] Filesystem/network/privilege effects are explicit and rollback-safe.
-- [ ] External commands and user-managed configuration retain ownership protection.
+- [ ] 添加或更新了相关测试
+- [ ] 本地相关测试通过
+- [ ] 没有提交密钥、令牌、私有地址或用户数据
+- [ ] 用户可见变更已更新文档
 
-## Evidence
+## 安全检查 / Safety review
 
-<!-- Paste concise test output or attach redacted screenshots. -->
+- [ ] 探测保持只读且有明确边界
+- [ ] 文件、网络和提权变更可预览、可回滚
+- [ ] 外部命令和用户配置的所有权得到保护
+
+## 验证证据 / Evidence
+
+<!-- 粘贴简洁的测试结果或附上已脱敏截图。 -->
+
+关联 Issue / Closes:

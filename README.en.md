@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your local control center for AI development tools.</strong><br>
-  Detect, install, update, and configure Claude Code, Codex CLI, OpenCode, desktop apps, and third-party API profiles from one place.
+  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, desktop apps, and third-party API profiles from one place.
 </p>
 
 <p align="center">
@@ -34,8 +34,10 @@
 Moving to a new machine should not mean spending hours rediscovering runtimes, proxy settings, CLI locations, and API configuration formats. Osverse turns that setup work into an inspectable desktop workflow while preserving tools you already installed.
 
 - **Find what is already there.** Claude Code, Codex CLI, and OpenCode are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
+- **Control every real installation.** Multiple locations are shown separately. Before launch, the backend rescans and verifies file identity instead of executing an arbitrary frontend-provided path.
 - **Install without surrendering control.** Every supported CLI install starts with a backend-generated plan, verifies exact size and SHA-256, switches versions atomically, and can recover after interruption.
-- **Keep API credentials local.** Third-party API profiles are stored with AES-256-GCM encryption, probed for protocol compatibility, and applied only after a second confirmation.
+- **Preview and recover removals.** User and Osverse-managed files go to the desktop Trash, while system packages use a fixed privileged action. Config, credentials, and sessions are preserved by default.
+- **Keep API credentials local.** Third-party API profiles are stored with AES-256-GCM encryption, can be edited safely, are probed for protocol compatibility, and are applied only after a second confirmation.
 - **Use your proxy, not a global rewrite.** Enter one loopback port; Osverse detects HTTP, HTTPS CONNECT, and SOCKS5 and uses the result only for its own downloads.
 - **Manage the surrounding desktop stack.** Install, update, and launch supported desktop clients and API-switching tools from the same dashboard.
 
@@ -47,6 +49,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 | Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop |
 | API tools | CC Switch, Cockpit Tools |
 | API profiles | Anthropic-compatible and OpenAI-compatible endpoints, model, Base URL, encrypted key |
+| Component controls | Launch every verified installation, handle per-location conflicts, preview and safely remove |
 | Networking | Direct connection or loopback HTTP / HTTPS CONNECT / SOCKS5 proxy |
 | Auditability | Redacted local operation history, release checksums, SPDX SBOM, build provenance |
 
@@ -84,6 +87,8 @@ Osverse is deliberately narrower than a generic package manager.
 
 - Scans do not execute shell startup files or desktop entries.
 - Existing commands are detected at their real locations and never need to be moved into an Osverse-managed path.
+- Launch and removal rescan and verify target identity; the frontend cannot supply an arbitrary executable path or system package name.
+- User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.
@@ -155,7 +160,7 @@ build/linux/package.sh 0.1.0 build/bin/osverse ubuntu22.04 build/release/ubuntu2
 
 ## Project workflow
 
-Changes move in one direction: `dev` → `beta` → `main`. Development integration happens on `dev`, release-candidate testing happens on `beta`, and `main` receives only promoted candidates. Release tags must point to `main` history.
+Changes move in one direction: `feature branch` → `dev` → `beta` → `main`. The full CI suite runs once for each pull request and is not duplicated by a post-merge push run. `main` receives only promoted candidates, and release tags must point to `main` history.
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), open a focused issue, and keep platform expansion consistent with the safety boundaries above.
 

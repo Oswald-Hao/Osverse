@@ -13,6 +13,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"github.com/Oswald-Hao/Osverse/internal/removal"
 )
 
 func TestNewAppRejectsNilScanner(t *testing.T) {
@@ -101,9 +102,9 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
-		"ApplyAPIPlan", "CancelInstallTask", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan",
-		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchManagedApp",
-		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
+		"ApplyAPIPlan", "CancelInstallTask", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan", "CreateRemovalPlan",
+		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchComponent",
+		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "RemoveComponent", "SaveAPIProfile", "ScanEnvironment",
 		"StartInstall", "UseDirectConnection",
 	}
 	if typeOfApp.NumMethod() != len(want) {
@@ -113,6 +114,74 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 		if method := typeOfApp.Method(index); method.Name != name {
 			t.Fatalf("exported App method %d = %q, want %q", index, method.Name, name)
 		}
+	}
+}
+
+func TestRemovalBridgeRescansBeforePreviewAndConfirmation(t *testing.T) {
+	component := domain.Component{
+		ID: "codex-cli", Name: "Codex CLI", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: "/home/test/.local/bin/codex", ResolvedPath: "/home/test/.local/bin/codex"}},
+	}
+	scans := 0
+	service := &fakeRemovalService{}
+	service.create = func(ctx context.Context, got domain.Component) (removal.Plan, error) {
+		if ctx == nil || !reflect.DeepEqual(got, component) {
+			t.Fatalf("CreatePlan evidence = %#v", got)
+		}
+		return removal.Plan{ID: "remove-plan", ComponentID: component.ID}, nil
+	}
+	service.execute = func(ctx context.Context, id string, got domain.Component) (removal.Result, error) {
+		if ctx == nil || id != "remove-plan" || !reflect.DeepEqual(got, component) {
+			t.Fatalf("Execute(%q, %#v)", id, got)
+		}
+		return removal.Result{PlanID: id, ComponentID: component.ID, Removed: true}, nil
+	}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		scans++
+		return domain.EnvironmentSnapshot{Components: []domain.Component{component}}, nil
+	}}, &fakeProxyProber{})
+	app.removal = service
+	plan, err := app.CreateRemovalPlan(component.ID)
+	if err != nil || plan.ID != "remove-plan" {
+		t.Fatalf("CreateRemovalPlan() = (%#v, %v)", plan, err)
+	}
+	result, err := app.RemoveComponent(plan.ID)
+	if err != nil || !result.Removed || scans != 2 {
+		t.Fatalf("RemoveComponent() = (%#v, %v), scans %d", result, err, scans)
+	}
+
+	service.create = func(context.Context, domain.Component) (removal.Plan, error) {
+		return removal.Plan{}, errors.New("private removal diagnostic")
+	}
+	if _, err := app.CreateRemovalPlan(component.ID); err == nil || strings.Contains(err.Error(), "private") {
+		t.Fatalf("removal failure was not redacted: %v", err)
+	}
+}
+
+func TestLaunchComponentUsesOnlyFreshBackendScanEvidence(t *testing.T) {
+	want := domain.Component{
+		ID: "claude-code", Name: "Claude Code", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: "/home/test/.local/bin/claude", ResolvedPath: "/home/test/.local/share/claude/versions/2.1.232"}},
+	}
+	launcher := &fakeComponentLauncher{}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{Components: []domain.Component{want}}, nil
+	}}, &fakeProxyProber{})
+	app.componentLauncher = launcher
+
+	if err := app.LaunchComponent("claude-code", want.Installations[0].Path); err != nil {
+		t.Fatalf("LaunchComponent() error = %v", err)
+	}
+	if !reflect.DeepEqual(launcher.component, want) || launcher.context == nil {
+		t.Fatalf("launcher received (%#v, %v)", launcher.component, launcher.context)
+	}
+
+	if err := app.LaunchComponent("unknown", "/tmp/payload"); err == nil {
+		t.Fatal("unknown component launch succeeded")
+	}
+	launcher.err = errors.New("private launch diagnostic")
+	if err := app.LaunchComponent("claude-code", want.Installations[0].Path); err == nil || strings.Contains(err.Error(), "private") {
+		t.Fatalf("launch failure was not redacted: %v", err)
 	}
 }
 
@@ -507,6 +576,31 @@ type fakeHistoryService struct {
 	appended []historyservice.Input
 	entries  []historyservice.Entry
 	cleared  bool
+}
+
+type fakeComponentLauncher struct {
+	context   context.Context
+	component domain.Component
+	selector  string
+	err       error
+}
+
+type fakeRemovalService struct {
+	create  func(context.Context, domain.Component) (removal.Plan, error)
+	execute func(context.Context, string, domain.Component) (removal.Result, error)
+}
+
+func (service *fakeRemovalService) CreatePlan(ctx context.Context, component domain.Component) (removal.Plan, error) {
+	return service.create(ctx, component)
+}
+
+func (service *fakeRemovalService) Execute(ctx context.Context, id string, component domain.Component) (removal.Result, error) {
+	return service.execute(ctx, id, component)
+}
+
+func (launcher *fakeComponentLauncher) Launch(ctx context.Context, component domain.Component, selector string) error {
+	launcher.context, launcher.component, launcher.selector = ctx, component, selector
+	return launcher.err
 }
 
 func (service *fakeHistoryService) Append(_ context.Context, input historyservice.Input) (historyservice.Entry, error) {

@@ -10,7 +10,16 @@ Thanks for helping make AI development environments easier to reproduce. Osverse
 
 ## Development flow
 
-Pull requests target `dev`. Changes are promoted by maintainers from `dev` to `beta`, then from `beta` to `main`; do not open feature pull requests directly against `main`.
+Every change reaches a protected branch through a pull request. Use this fixed promotion path:
+
+1. Create a focused branch and open a pull request into `dev`.
+2. When a tested development set is ready, open a `dev` → `beta` pull request.
+3. After beta acceptance, open a `beta` → `main` pull request.
+4. Create release tags only from `main`.
+
+The CI workflow runs on each pull request and validates the proposed merge with tests, static analysis, supply-chain checks, and Ubuntu builds. It intentionally does not run the same validation again after the pull request is merged. GitHub performs the branch update when the pull request is merged; CI never pushes or synchronizes branches. A maintainer can still start a manual diagnostic run with `workflow_dispatch`, but it does not replace a required pull-request run.
+
+The `Validate promotion path` required check enforces that chain. Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
 
 Use the pinned versions in the README. Before submitting, run:
 

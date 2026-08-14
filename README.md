@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>你的本地 AI 开发环境控制台。</strong><br>
-  在一个界面里检测、安装、更新和配置 Claude Code、Codex CLI、OpenCode、桌面应用与第三方 API。
+  在一个界面里检测、安装、更新、启动和安全移除 Claude Code、Codex CLI、OpenCode、桌面应用与第三方 API。
 </p>
 
 <p align="center">
@@ -34,8 +34,10 @@
 换一台电脑，不应该重新花几个小时找运行时、代理端口、CLI 安装位置和各不相同的 API 配置文件。Osverse 把这些工作收进一个可检查、可确认、可恢复的桌面流程，并且尊重你已经安装好的工具。
 
 - **已有工具无需搬家。** Claude Code、Codex CLI、OpenCode 会从用户真实可用的命令路径中发现，不要求放进 Osverse 目录。
+- **每个真实安装都能控制。** 同一工具存在多个安装位置时会分别展示；启动前由后端重新扫描并核对文件身份，不会执行界面传入的任意路径。
 - **安装过程可解释。** 安装前显示后端生成的变更计划；下载同时校验固定长度和 SHA-256；版本原子切换，失败和异常退出都可恢复。
-- **API Key 留在本地。** 第三方 API 档案使用 AES-256-GCM 加密，先探测协议兼容性，再由用户二次确认写入目标 CLI。
+- **移除可以预览和恢复。** 用户安装和 Osverse 管理的文件先进入系统回收站；系统软件包只通过固定提权动作移除，配置、凭据和会话默认保留。
+- **API Key 留在本地。** 第三方 API 档案使用 AES-256-GCM 加密，支持安全编辑，先探测协议兼容性，再由用户二次确认写入目标 CLI。
 - **代理只服务 Osverse。** 只需输入 `127.0.0.1` 上的端口，软件自动识别 HTTP、HTTPS CONNECT、SOCKS5，不改终端或系统全局代理。
 - **桌面生态统一管理。** 支持的桌面客户端与 API 切换工具可以在同一面板安装、更新和启动。
 
@@ -47,6 +49,7 @@
 | 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop |
 | API 管理工具 | CC Switch、Cockpit Tools |
 | API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key |
+| 组件控制 | 启动所有已验证安装、按位置处理冲突、预览并安全移除 |
 | 网络 | 直连或本机 HTTP / HTTPS CONNECT / SOCKS5 代理 |
 | 可审计性 | 脱敏操作历史、校验和、SPDX SBOM、构建来源证明 |
 
@@ -82,6 +85,8 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 
 - 扫描不会执行 Shell 启动文件或 `.desktop` 文件。
 - 外部已安装 CLI 保留在原位置；同名外部命令不会被 Osverse 覆盖。
+- 启动和移除前会重新扫描并验证目标身份；前端不能提交任意可执行路径或系统包名。
+- 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
 - 安装源来自内置白名单，并同时校验文件长度与 SHA-256。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
 - API Key 不会出现在档案列表、历史或日志中；私网和保留地址必须明确确认。
@@ -145,7 +150,7 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
 
 ## 分支与贡献
 
-代码只按 `dev` → `beta` → `main` 单向晋级：`dev` 做开发集成，`beta` 做候选版验收，`main` 只接收通过门禁的版本；发版标签必须属于 `main` 历史。
+代码只按 `功能分支 → dev → beta → main` 单向晋级：每个 PR 运行一次完整 CI，合并后不会再重复运行同一套 push 流程；`main` 只接收通过门禁的候选版，发版标签必须属于 `main` 历史。
 
 欢迎贡献。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，提交聚焦的问题或 PR，并保持现有安全边界。
 

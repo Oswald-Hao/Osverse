@@ -41,3 +41,17 @@ type CommandResult struct {
 type CommandRunner interface {
 	Run(context.Context, CommandRequest) (CommandResult, error)
 }
+
+// LaunchRequest describes one detached user-visible component start. Paths
+// come from a fresh backend scan, never from a frontend-supplied filesystem
+// value.
+type LaunchRequest struct {
+	Path                 string
+	ExpectedResolvedPath string
+	Terminal             bool
+}
+
+// ProcessStarter starts a detached component without involving a shell.
+type ProcessStarter interface {
+	Start(LaunchRequest) error
+}
