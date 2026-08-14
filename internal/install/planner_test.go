@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -22,6 +23,26 @@ func TestManagerRejectsUnsafeHomesAndUnsupportedArchitecture(t *testing.T) {
 	manager := testManager(t, "/home/test", "arm64")
 	if _, err := manager.CreatePlan(context.Background(), "codex-cli"); !errors.Is(err, ErrUnsupportedTarget) {
 		t.Fatalf("arm64 CreatePlan() error = %v", err)
+	}
+}
+
+func TestNewManagerResolvesTheExistingHome(t *testing.T) {
+	realHome := t.TempDir()
+	parent := t.TempDir()
+	alias := filepath.Join(parent, "home-link")
+	if err := os.Symlink(realHome, alias); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(alias)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	resolved, _ := filepath.EvalSymlinks(realHome)
+	if manager.home != resolved {
+		t.Fatalf("manager home = %q, want %q", manager.home, resolved)
+	}
+	if _, err := NewManager(filepath.Join(parent, "missing")); !errors.Is(err, ErrInvalidHome) {
+		t.Fatalf("missing home error = %v", err)
 	}
 }
 

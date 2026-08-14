@@ -98,7 +98,7 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 
 func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
-	want := []string{"CreateInstallPlan", "ProbeProxy", "ScanEnvironment", "UseDirectConnection"}
+	want := []string{"CancelInstallTask", "CreateInstallPlan", "GetInstallTask", "ProbeProxy", "ScanEnvironment", "StartInstall", "UseDirectConnection"}
 	if typeOfApp.NumMethod() != len(want) {
 		t.Fatalf("exported App methods = %d, want %d fixed operations", typeOfApp.NumMethod(), len(want))
 	}
@@ -106,6 +106,54 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 		if method := typeOfApp.Method(index); method.Name != name {
 			t.Fatalf("exported App method %d = %q, want %q", index, method.Name, name)
 		}
+	}
+}
+
+func TestInstallTaskBridgeUsesInternalProxyAndRedactsErrors(t *testing.T) {
+	manager := &fakeInstallManager{}
+	manager.create = func(context.Context, string) (install.Plan, error) {
+		return install.Plan{ID: "plan"}, nil
+	}
+	manager.start = func(_ context.Context, planID string, protocol proxyservice.Protocol, port int) (install.Task, error) {
+		if planID != "plan" || protocol != proxyservice.ProtocolSOCKS5 || port != 7890 {
+			t.Fatalf("Start(%q, %q, %d)", planID, protocol, port)
+		}
+		return install.Task{ID: "task", PlanID: planID}, nil
+	}
+	manager.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, Phase: "downloading"}, nil
+	}
+	manager.cancel = func(id string) error {
+		if id != "task" {
+			t.Fatalf("Cancel(%q)", id)
+		}
+		return nil
+	}
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, manager)
+	app.proxySelection = proxySelection{Protocol: proxyservice.ProtocolSOCKS5, Port: 7890}
+
+	started, err := app.StartInstall("plan")
+	if err != nil || started.ID != "task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", started, err)
+	}
+	progress, err := app.GetInstallTask("task")
+	if err != nil || progress.Phase != "downloading" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", progress, err)
+	}
+	if err := app.CancelInstallTask("task"); err != nil {
+		t.Fatalf("CancelInstallTask() error = %v", err)
+	}
+
+	secret := "artifact-url-secret"
+	manager.start = func(context.Context, string, proxyservice.Protocol, int) (install.Task, error) {
+		return install.Task{}, errors.New(secret)
+	}
+	_, err = app.StartInstall("plan")
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Code != domain.ErrInstallTaskFailed || strings.Contains(public.Error(), secret) {
+		t.Fatalf("public start error = %v", err)
 	}
 }
 
@@ -270,6 +318,25 @@ type fakeInstallPlanner struct {
 
 func (planner *fakeInstallPlanner) CreatePlan(ctx context.Context, id string) (install.Plan, error) {
 	return planner.create(ctx, id)
+}
+
+type fakeInstallManager struct {
+	fakeInstallPlanner
+	start  func(context.Context, string, proxyservice.Protocol, int) (install.Task, error)
+	task   func(string) (install.Task, error)
+	cancel func(string) error
+}
+
+func (manager *fakeInstallManager) Start(ctx context.Context, id string, protocol proxyservice.Protocol, port int) (install.Task, error) {
+	return manager.start(ctx, id, protocol, port)
+}
+
+func (manager *fakeInstallManager) Task(id string) (install.Task, error) {
+	return manager.task(id)
+}
+
+func (manager *fakeInstallManager) Cancel(id string) error {
+	return manager.cancel(id)
 }
 
 func (prober *fakeProxyProber) Probe(ctx context.Context, port int) (proxyservice.Result, error) {

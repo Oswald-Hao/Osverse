@@ -27,6 +27,12 @@ type InstallPlanner interface {
 	CreatePlan(context.Context, string) (install.Plan, error)
 }
 
+type InstallExecutor interface {
+	Start(context.Context, string, proxyservice.Protocol, int) (install.Task, error)
+	Task(string) (install.Task, error)
+	Cancel(string) error
+}
+
 type proxySelection struct {
 	Protocol proxyservice.Protocol
 	Port     int
@@ -40,6 +46,7 @@ type App struct {
 	proxySelection  proxySelection
 	proxyGeneration uint64
 	installPlanner  InstallPlanner
+	installExecutor InstallExecutor
 }
 
 func NewApp(scanner Scanner) *App {
@@ -59,7 +66,11 @@ func newAppWithAllServices(scanner Scanner, proxyProber ProxyProber, planner Ins
 	if scanner == nil || proxyProber == nil {
 		return nil
 	}
-	return &App{scanner: scanner, proxyProber: proxyProber, installPlanner: planner}
+	app := &App{scanner: scanner, proxyProber: proxyProber, installPlanner: planner}
+	if executor, ok := planner.(InstallExecutor); ok {
+		app.installExecutor = executor
+	}
+	return app
 }
 
 // CreateInstallPlan previews an allowlisted CLI install without changing disk.
@@ -89,6 +100,71 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	return install.Plan{}, domain.NewPublicError(
 		domain.ErrInstallPlanFailed, "无法创建安装计划", err,
 	)
+}
+
+// StartInstall is the explicit confirmation boundary. It accepts only a
+// single-use plan ID previously returned by CreateInstallPlan.
+func (app *App) StartInstall(planID string) (install.Task, error) {
+	if app == nil {
+		return unavailableInstallTask()
+	}
+	app.mu.RLock()
+	ctx := app.ctx
+	executor := app.installExecutor
+	selection := app.proxySelection
+	app.mu.RUnlock()
+	if executor == nil {
+		return unavailableInstallTask()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	task, err := executor.Start(ctx, planID, selection.Protocol, selection.Port)
+	if err != nil {
+		return install.Task{}, domain.NewPublicError(
+			domain.ErrInstallTaskFailed, "无法开始安装，请重新确认安装计划", err,
+		)
+	}
+	return task, nil
+}
+
+// GetInstallTask returns one redacted progress snapshot.
+func (app *App) GetInstallTask(taskID string) (install.Task, error) {
+	if app == nil {
+		return unavailableInstallTask()
+	}
+	app.mu.RLock()
+	executor := app.installExecutor
+	app.mu.RUnlock()
+	if executor == nil {
+		return unavailableInstallTask()
+	}
+	task, err := executor.Task(taskID)
+	if err != nil {
+		return install.Task{}, domain.NewPublicError(
+			domain.ErrInstallTaskFailed, "无法读取安装进度", err,
+		)
+	}
+	return task, nil
+}
+
+// CancelInstallTask requests rollback-safe cancellation.
+func (app *App) CancelInstallTask(taskID string) error {
+	if app == nil {
+		_, err := unavailableInstallTask()
+		return err
+	}
+	app.mu.RLock()
+	executor := app.installExecutor
+	app.mu.RUnlock()
+	if executor == nil {
+		_, err := unavailableInstallTask()
+		return err
+	}
+	if err := executor.Cancel(taskID); err != nil {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "无法取消安装任务", err)
+	}
+	return nil
 }
 
 // ProbeProxy checks one loopback port using fixed protocol probes. A new probe
@@ -198,6 +274,14 @@ func unavailableProxy() (proxyservice.Result, error) {
 
 func unavailableInstallPlan() (install.Plan, error) {
 	return install.Plan{}, domain.NewPublicError(
+		domain.ErrInstallUnavailable,
+		"安装服务不可用",
+		nil,
+	)
+}
+
+func unavailableInstallTask() (install.Task, error) {
+	return install.Task{}, domain.NewPublicError(
 		domain.ErrInstallUnavailable,
 		"安装服务不可用",
 		nil,

@@ -13,6 +13,7 @@ const (
 	ErrProxyProbeFailed   ErrorCode = "PROXY_PROBE_FAILED"
 	ErrInstallUnavailable ErrorCode = "INSTALL_UNAVAILABLE"
 	ErrInstallPlanFailed  ErrorCode = "INSTALL_PLAN_FAILED"
+	ErrInstallTaskFailed  ErrorCode = "INSTALL_TASK_FAILED"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause

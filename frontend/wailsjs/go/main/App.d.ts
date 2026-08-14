@@ -4,10 +4,16 @@ import {install} from '../models';
 import {proxy} from '../models';
 import {domain} from '../models';
 
+export function CancelInstallTask(arg1:string):Promise<void>;
+
 export function CreateInstallPlan(arg1:string):Promise<install.Plan>;
+
+export function GetInstallTask(arg1:string):Promise<install.Task>;
 
 export function ProbeProxy(arg1:number):Promise<proxy.Result>;
 
 export function ScanEnvironment():Promise<domain.EnvironmentSnapshot>;
+
+export function StartInstall(arg1:string):Promise<install.Task>;
 
 export function UseDirectConnection():Promise<void>;

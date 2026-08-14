@@ -6,10 +6,16 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/Oswald-Hao/Osverse/internal/platform"
+	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
+	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
 const planLifetime = 10 * time.Minute
@@ -50,22 +56,42 @@ type storedPlan struct {
 
 // Manager owns server-created plans and installation tasks.
 type Manager struct {
-	mu       sync.Mutex
-	home     string
-	arch     string
-	now      func() time.Time
-	randomID func() (string, error)
-	catalog  map[string]artifact
-	plans    map[string]*storedPlan
+	mu          sync.Mutex
+	home        string
+	arch        string
+	now         func() time.Time
+	randomID    func() (string, error)
+	catalog     map[string]artifact
+	plans       map[string]*storedPlan
+	tasks       map[string]*taskState
+	active      map[string]string
+	runner      platform.CommandRunner
+	client      func(proxyservice.Protocol, int) (*http.Client, error)
+	replaceLink func(string, string) error
 }
 
 // NewManager creates the production installer planner for one absolute home.
 func NewManager(home string) (*Manager, error) {
+	resolvedHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return nil, ErrInvalidHome
+	}
+	info, err := os.Stat(resolvedHome)
+	if err != nil || !info.IsDir() {
+		return nil, ErrInvalidHome
+	}
 	value, err := builtInManifest()
 	if err != nil {
 		return nil, err
 	}
-	return newManager(home, runtime.GOARCH, artifactCatalog(value), time.Now, secureID)
+	manager, err := newManager(resolvedHome, runtime.GOARCH, artifactCatalog(value), time.Now, secureID)
+	if err != nil {
+		return nil, err
+	}
+	manager.runner = platformlinux.NewExecRunner()
+	manager.client = proxyservice.NewHTTPClient
+	manager.replaceLink = replaceSymlink
+	return manager, nil
 }
 
 func newManager(
@@ -83,7 +109,9 @@ func newManager(
 	}
 	return &Manager{
 		home: cleanHome, arch: arch, now: now, randomID: randomID,
-		catalog: catalog, plans: make(map[string]*storedPlan),
+		catalog: catalog, plans: make(map[string]*storedPlan), tasks: make(map[string]*taskState),
+		active:      make(map[string]string),
+		replaceLink: replaceSymlink,
 	}, nil
 }
 
