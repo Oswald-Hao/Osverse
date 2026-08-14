@@ -11,6 +11,7 @@ import APIProfilesPage from './APIProfilesPage'
 import type { AppView } from './Sidebar'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 import { useInstallFlow } from './hooks/useInstallFlow'
+import { launchManagedApp } from './services/osverse'
 
 const sections = [
   {
@@ -97,6 +98,7 @@ function App() {
   const [view, setView] = useState<AppView>('overview')
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
   const install = useInstallFlow(refresh)
+  const [launchNotice, setLaunchNotice] = useState<string | null>(null)
   const isScanning = phase === 'scanning'
 
   if (view === 'api') {
@@ -223,6 +225,8 @@ function App() {
 
         <ProxyPanel />
 
+        {launchNotice && <div className="notice notice--error" role="alert">{launchNotice}</div>}
+
         <div className="tool-sections">
           {sections.map((section) => (
             <ToolSection
@@ -233,6 +237,12 @@ function App() {
                 (component) => component.category === section.category,
               )}
               onInstall={install.prepare}
+              onLaunch={(id) => {
+                setLaunchNotice(null)
+                void launchManagedApp(id).catch((reason: unknown) => {
+                  setLaunchNotice(reason instanceof Error ? reason.message : '无法启动应用')
+                })
+              }}
             />
           ))}
         </div>

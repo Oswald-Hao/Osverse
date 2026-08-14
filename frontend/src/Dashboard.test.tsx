@@ -358,7 +358,7 @@ describe('environment status dashboard', () => {
     expect(card.getByText('/home/test/tools/codex')).toBeVisible()
   })
 
-  it('refreshes through the hook and enables only supported CLI installs', () => {
+  it('refreshes through the hook and enables supported verified installs', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: '刷新环境状态' }))
@@ -370,7 +370,11 @@ describe('environment status dashboard', () => {
     expect(within(claudeCard as HTMLElement).getByRole('button', { name: /配置/ })).toBeDisabled()
     const desktopCard = screen.getByRole('heading', { name: 'Claude Desktop' }).closest('article')
     expect(within(desktopCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeDisabled()
-    expect(screen.getAllByText('官方校验安装')).toHaveLength(1)
+    const openCodeDesktop = screen.getByRole('heading', { name: 'OpenCode Desktop' }).closest('article')
+    expect(within(openCodeDesktop as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
+    const ccSwitch = screen.getByRole('heading', { name: 'CC Switch' }).closest('article')
+    expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
+    expect(screen.getAllByText('官方校验安装')).toHaveLength(3)
   })
 
   it('announces an initial scan without rendering a stale dashboard', () => {

@@ -13,13 +13,21 @@ const actionLabels: Record<Component['status'], string> = {
   failed: '配置',
 }
 
-const installableCLI = new Set(['claude-code', 'codex-cli', 'opencode-cli'])
+const installableComponents = new Set([
+  'claude-code', 'codex-cli', 'opencode-cli',
+  'opencode-desktop', 'cc-switch', 'cockpit-tools',
+])
 
-function ToolCard({ component, onInstall }: { component: Component; onInstall?: (id: string) => void }) {
+function ToolCard({ component, onInstall, onLaunch }: {
+  component: Component
+  onInstall?: (id: string) => void
+  onLaunch?: (id: string) => void
+}) {
   const action = actionLabels[component.status]
-  const canInstall = component.category === 'Core CLI' &&
-    installableCLI.has(component.id) &&
+  const canInstall = installableComponents.has(component.id) &&
     ['missing', 'broken', 'failed', 'update_available'].includes(component.status)
+  const canLaunch = component.category !== 'Core CLI' && component.status === 'installed' &&
+    component.installations.some((installation) => installation.managed)
 
   return (
     <li>
@@ -65,9 +73,13 @@ function ToolCard({ component, onInstall }: { component: Component; onInstall?: 
 
         <div className="tool-card__footer">
           <span>最低要求：{component.minimumOS}</span>
-          <button type="button" disabled={!canInstall} onClick={() => canInstall && onInstall?.(component.id)}>
-            {action}
-            <span>{canInstall ? '官方校验安装' : component.status === 'installed' ? '当前已可用' : '暂不可用'}</span>
+          <button
+            type="button"
+            disabled={!canInstall && !canLaunch}
+            onClick={() => canInstall ? onInstall?.(component.id) : canLaunch ? onLaunch?.(component.id) : undefined}
+          >
+            {canLaunch ? '启动' : action}
+            <span>{canInstall ? '官方校验安装' : canLaunch ? 'Osverse 管理的应用' : component.status === 'installed' ? '当前已可用' : '暂不可用'}</span>
           </button>
         </div>
       </article>

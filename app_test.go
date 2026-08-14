@@ -101,8 +101,8 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
 		"ApplyAPIPlan", "CancelInstallTask", "CreateAPIApplyPlan", "CreateInstallPlan",
-		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "ListAPIProfiles",
-		"ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
+		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchManagedApp",
+		"ListAPIProfiles", "ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
 		"StartInstall", "UseDirectConnection",
 	}
 	if typeOfApp.NumMethod() != len(want) {
@@ -223,6 +223,52 @@ func TestInstallTaskBridgeUsesInternalProxyAndRedactsErrors(t *testing.T) {
 	var public *domain.PublicError
 	if !errors.As(err, &public) || public.Code != domain.ErrInstallTaskFailed || strings.Contains(public.Error(), secret) {
 		t.Fatalf("public start error = %v", err)
+	}
+}
+
+func TestDesktopInstallPlansAndTasksStayOnDesktopManager(t *testing.T) {
+	cli := &fakeInstallManager{}
+	cli.create = func(context.Context, string) (install.Plan, error) {
+		t.Fatal("desktop plan reached CLI manager")
+		return install.Plan{}, nil
+	}
+	desktop := &fakeInstallManager{}
+	desktop.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "cc-switch" {
+			t.Fatalf("desktop CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "app-plan", ComponentID: id}, nil
+	}
+	desktop.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		if id != "app-plan" {
+			t.Fatalf("desktop Start(%q)", id)
+		}
+		return install.Task{ID: "app-task", PlanID: id}, nil
+	}
+	desktop.task = func(id string) (install.Task, error) { return install.Task{ID: id, Phase: "completed"}, nil }
+	desktop.cancel = func(id string) error {
+		if id != "app-task" {
+			t.Fatalf("desktop Cancel(%q)", id)
+		}
+		return nil
+	}
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.appPlanner, app.appExecutor = desktop, desktop
+	plan, err := app.CreateInstallPlan("cc-switch")
+	if err != nil || plan.ID != "app-plan" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v)", plan, err)
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "app-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if task, err = app.GetInstallTask(task.ID); err != nil || task.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", task, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 

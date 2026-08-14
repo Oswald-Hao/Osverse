@@ -19,6 +19,8 @@ export function GetAPICompatibility(arg1:string):Promise<Array<profiles.TargetCo
 
 export function GetInstallTask(arg1:string):Promise<install.Task>;
 
+export function LaunchManagedApp(arg1:string):Promise<void>;
+
 export function ListAPIProfiles():Promise<Array<profiles.Profile>>;
 
 export function ProbeAPIProfile(arg1:string):Promise<profiles.ProbeResult>;

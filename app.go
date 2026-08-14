@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
@@ -34,6 +35,10 @@ type InstallExecutor interface {
 	Cancel(string) error
 }
 
+type AppLauncher interface {
+	Launch(string) error
+}
+
 type ProfileService interface {
 	Save(context.Context, profiles.Input) (profiles.Profile, error)
 	List(context.Context) ([]profiles.Profile, error)
@@ -58,6 +63,11 @@ type App struct {
 	proxyGeneration uint64
 	installPlanner  InstallPlanner
 	installExecutor InstallExecutor
+	appPlanner      InstallPlanner
+	appExecutor     InstallExecutor
+	appLauncher     AppLauncher
+	planOwners      map[string]string
+	taskOwners      map[string]string
 	profiles        ProfileService
 }
 
@@ -71,7 +81,15 @@ func NewApp(scanner Scanner) *App {
 	if err == nil {
 		profileService, _ = profiles.NewService(home)
 	}
-	return newAppWithServiceBundle(scanner, proxyservice.NewService(), planner, profileService)
+	app := newAppWithServiceBundle(scanner, proxyservice.NewService(), planner, profileService)
+	if err == nil && app != nil {
+		if appManager, managerErr := appservice.NewManager(home); managerErr == nil {
+			app.appPlanner = appManager
+			app.appExecutor = appManager
+			app.appLauncher = appManager
+		}
+	}
+	return app
 }
 
 func newAppWithServices(scanner Scanner, proxyProber ProxyProber) *App {
@@ -86,7 +104,10 @@ func newAppWithServiceBundle(scanner Scanner, proxyProber ProxyProber, planner I
 	if scanner == nil || proxyProber == nil {
 		return nil
 	}
-	app := &App{scanner: scanner, proxyProber: proxyProber, installPlanner: planner, profiles: profileService}
+	app := &App{
+		scanner: scanner, proxyProber: proxyProber, installPlanner: planner, profiles: profileService,
+		planOwners: make(map[string]string), taskOwners: make(map[string]string),
+	}
 	if executor, ok := planner.(InstallExecutor); ok {
 		app.installExecutor = executor
 	}
@@ -209,6 +230,11 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	app.mu.RLock()
 	ctx := app.ctx
 	planner := app.installPlanner
+	owner := "cli"
+	if isUserDesktopComponent(componentID) && app.appPlanner != nil {
+		planner = app.appPlanner
+		owner = "app"
+	}
 	app.mu.RUnlock()
 	if planner == nil {
 		return unavailableInstallPlan()
@@ -218,6 +244,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	}
 	plan, err := planner.CreatePlan(ctx, componentID)
 	if err == nil {
+		app.mu.Lock()
+		app.planOwners[plan.ID] = owner
+		app.mu.Unlock()
 		return plan, nil
 	}
 	if errors.Is(err, install.ErrUnknownComponent) || errors.Is(err, install.ErrUnsupportedTarget) {
@@ -239,6 +268,10 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 	app.mu.RLock()
 	ctx := app.ctx
 	executor := app.installExecutor
+	owner := app.planOwners[planID]
+	if owner == "app" {
+		executor = app.appExecutor
+	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
 	if executor == nil {
@@ -253,6 +286,10 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 			domain.ErrInstallTaskFailed, "无法开始安装，请重新确认安装计划", err,
 		)
 	}
+	app.mu.Lock()
+	delete(app.planOwners, planID)
+	app.taskOwners[task.ID] = owner
+	app.mu.Unlock()
 	return task, nil
 }
 
@@ -263,6 +300,9 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 	}
 	app.mu.RLock()
 	executor := app.installExecutor
+	if app.taskOwners[taskID] == "app" {
+		executor = app.appExecutor
+	}
 	app.mu.RUnlock()
 	if executor == nil {
 		return unavailableInstallTask()
@@ -284,6 +324,9 @@ func (app *App) CancelInstallTask(taskID string) error {
 	}
 	app.mu.RLock()
 	executor := app.installExecutor
+	if app.taskOwners[taskID] == "app" {
+		executor = app.appExecutor
+	}
 	app.mu.RUnlock()
 	if executor == nil {
 		_, err := unavailableInstallTask()
@@ -291,6 +334,32 @@ func (app *App) CancelInstallTask(taskID string) error {
 	}
 	if err := executor.Cancel(taskID); err != nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "无法取消安装任务", err)
+	}
+	return nil
+}
+
+func isUserDesktopComponent(id string) bool {
+	switch id {
+	case "opencode-desktop", "cc-switch", "cockpit-tools":
+		return true
+	default:
+		return false
+	}
+}
+
+// LaunchManagedApp starts only an AppImage installed and verified by Osverse.
+func (app *App) LaunchManagedApp(componentID string) error {
+	if app == nil || !isUserDesktopComponent(componentID) {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "该应用不能由 Osverse 启动", nil)
+	}
+	app.mu.RLock()
+	launcher := app.appLauncher
+	app.mu.RUnlock()
+	if launcher == nil {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "应用启动服务不可用", nil)
+	}
+	if err := launcher.Launch(componentID); err != nil {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "无法启动应用，请重新扫描或安装", err)
 	}
 	return nil
 }

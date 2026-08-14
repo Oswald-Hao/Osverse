@@ -4,6 +4,7 @@ import {
   DeleteAPIProfile,
   GetAPICompatibility,
   ListAPIProfiles,
+	LaunchManagedApp,
   ProbeAPIProfile,
   ProbeProxy,
   CancelInstallTask,
@@ -325,6 +326,10 @@ export async function applyProfilePlan(id: string): Promise<APIApplyBatchResult>
     }),
     succeeded: numberValue(value.succeeded), failed: numberValue(value.failed),
   }
+}
+
+export async function launchManagedApp(componentId: string): Promise<void> {
+	await LaunchManagedApp(componentId)
 }
 
 // These guarded exports provide a resettable Vitest seam without making a
