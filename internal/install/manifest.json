@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "sequence": 1,
+  "components": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "command": "claude",
+      "version": "2.1.232",
+      "architecture": "amd64",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.232.tgz",
+      "sha256": "cb0eafa919df3cfc4ff1de2ae3e27ff21a2f1149a5aad08f7850c40a4fd40f8e",
+      "downloadBytes": 96700641,
+      "expandedBytesLimit": 300000000,
+      "binaryPath": "package/claude",
+      "versionArgs": ["--version"]
+    },
+    {
+      "id": "codex-cli",
+      "name": "Codex CLI",
+      "command": "codex",
+      "version": "0.147.0",
+      "architecture": "amd64",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-linux-x64.tgz",
+      "sha256": "c969740cf8297e4c31905cd551efeb2c99af5080c12c236bdf825598b250139a",
+      "downloadBytes": 122020574,
+      "expandedBytesLimit": 400000000,
+      "binaryPath": "package/vendor/x86_64-unknown-linux-musl/bin/codex",
+      "versionArgs": ["--version"]
+    },
+    {
+      "id": "opencode-cli",
+      "name": "OpenCode CLI",
+      "command": "opencode",
+      "version": "1.18.18",
+      "architecture": "amd64",
+      "url": "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.18.18.tgz",
+      "sha256": "44c88fc35dd1ba0c8863e729cb8b99ddb0de934f6b52c234e1872c01d05f9e60",
+      "downloadBytes": 60031988,
+      "expandedBytesLimit": 250000000,
+      "binaryPath": "package/bin/opencode",
+      "versionArgs": ["--version"]
+    }
+  ]
+}

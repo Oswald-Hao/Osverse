@@ -4,11 +4,18 @@ package domain
 type ErrorCode string
 
 const (
-	ErrScanFailed        ErrorCode = "SCAN_FAILED"
-	ErrCommandTimeout    ErrorCode = "COMMAND_TIMEOUT"
-	ErrCommandFailed     ErrorCode = "COMMAND_FAILED"
-	ErrUnsupportedSystem ErrorCode = "UNSUPPORTED_SYSTEM"
-	ErrInvalidResult     ErrorCode = "INVALID_RESULT"
+	ErrScanFailed         ErrorCode = "SCAN_FAILED"
+	ErrCommandTimeout     ErrorCode = "COMMAND_TIMEOUT"
+	ErrCommandFailed      ErrorCode = "COMMAND_FAILED"
+	ErrUnsupportedSystem  ErrorCode = "UNSUPPORTED_SYSTEM"
+	ErrInvalidResult      ErrorCode = "INVALID_RESULT"
+	ErrInvalidInput       ErrorCode = "INVALID_INPUT"
+	ErrProxyProbeFailed   ErrorCode = "PROXY_PROBE_FAILED"
+	ErrInstallUnavailable ErrorCode = "INSTALL_UNAVAILABLE"
+	ErrInstallPlanFailed  ErrorCode = "INSTALL_PLAN_FAILED"
+	ErrInstallTaskFailed  ErrorCode = "INSTALL_TASK_FAILED"
+	ErrProfileFailed      ErrorCode = "PROFILE_FAILED"
+	ErrHistoryFailed      ErrorCode = "HISTORY_FAILED"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause

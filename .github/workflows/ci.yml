@@ -48,10 +48,12 @@ jobs:
         run: test "$(go env GOVERSION)" = 'go1.25.12'
 
       - name: Run Go tests
-        run: go test ./...
+        run: |
+          go mod verify
+          go test ./...
 
-      - name: Run focused race tests
-        run: go test -race ./internal/scan ./internal/detect ./internal/platform/...
+      - name: Run race tests
+        run: go test -race ./...
 
       - name: Run Go vet
         run: go vet ./...
@@ -90,6 +92,9 @@ jobs:
 
       - name: Audit dependency graph
         run: npm --prefix frontend audit --audit-level=high
+
+      - name: Audit responsive desktop breakpoints
+        run: npm --prefix frontend run audit:responsive
 
   linux-webkitgtk-4:
     name: Ubuntu 22.04 WebKitGTK 4.0 build
@@ -146,11 +151,20 @@ jobs:
           file build/bin/osverse
           ldd build/bin/osverse
 
+      - name: Package Ubuntu 22.04 release candidates
+        env:
+          SOURCE_DATE_EPOCH: '0'
+        run: build/linux/package.sh 0.0.0-ci build/bin/osverse ubuntu22.04 build/release/ubuntu22.04
+
+      - name: Verify Ubuntu 22.04 package checksums
+        working-directory: build/release/ubuntu22.04
+        run: sha256sum --check SHA256SUMS-ubuntu22.04
+
       - name: Upload Ubuntu 22.04 binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: osverse-linux-amd64-ubuntu22.04
-          path: build/bin/osverse
+          path: build/release/ubuntu22.04/*
           if-no-files-found: error
           retention-days: 7
 
@@ -221,10 +235,19 @@ jobs:
           file build/bin/osverse
           ldd build/bin/osverse
 
+      - name: Package Ubuntu 20.04 release candidates
+        env:
+          SOURCE_DATE_EPOCH: '0'
+        run: build/linux/package.sh 0.0.0-ci build/bin/osverse ubuntu20.04 build/release/ubuntu20.04
+
+      - name: Verify Ubuntu 20.04 package checksums
+        working-directory: build/release/ubuntu20.04
+        run: sha256sum --check SHA256SUMS-ubuntu20.04
+
       - name: Upload Ubuntu 20.04-compatible binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: osverse-linux-amd64-ubuntu20.04
-          path: build/bin/osverse
+          path: build/release/ubuntu20.04/*
           if-no-files-found: error
           retention-days: 7

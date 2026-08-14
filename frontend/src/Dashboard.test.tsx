@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentSnapshot } from './domain'
 import type { EnvironmentScanState } from './hooks/useEnvironmentScan'
 import App from './App'
+import { resetHistoryOperationsForTests, setHistoryOperationsForTests } from './services/osverse'
 
 const mockUseEnvironmentScan = vi.fn<() => EnvironmentScanState>()
 
@@ -143,7 +144,10 @@ beforeEach(() => {
   mockUseEnvironmentScan.mockReturnValue(scanState())
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  resetHistoryOperationsForTests()
+})
 
 describe('environment status dashboard', () => {
   it('renders system facts, local scan-time semantics, and summary counts', () => {
@@ -323,31 +327,32 @@ describe('environment status dashboard', () => {
     expect(screen.queryByText('not-a-date')).not.toBeInTheDocument()
   })
 
-  it('exposes static sidebar labels without navigation or decorative icons', () => {
+  it('exposes accessible sidebar navigation without decorative images', () => {
     render(<App />)
 
-    const overview = screen.getByRole('region', { name: '状态概览' })
-    for (const label of ['环境概览', '工具状态', '系统信息']) {
-      expect(
-        within(overview).getByRole('listitem', { name: label }),
-      ).toBeVisible()
+    const navigation = screen.getByRole('navigation', { name: '主导航' })
+    for (const label of ['总览', 'API 配置', '安装记录', '设置']) {
+      expect(within(navigation).getByRole('button', { name: label })).toBeVisible()
     }
-    expect(within(overview).queryByRole('navigation')).not.toBeInTheDocument()
-    expect(within(overview).queryByRole('img')).not.toBeInTheDocument()
-    for (const glyph of ['⌁', '⌘', '◈']) {
-      expect(within(overview).getByText(glyph)).toHaveAttribute(
-        'aria-hidden',
-        'true',
-      )
-    }
+    expect(within(navigation).getByRole('button', { name: '总览' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('opens real history and settings pages instead of placeholders', async () => {
+	setHistoryOperationsForTests(() => Promise.resolve([]))
+	render(<App />)
+	fireEvent.click(screen.getByRole('button', { name: '安装记录' }))
+	expect(await screen.findByText('还没有操作记录')).toBeVisible()
+	fireEvent.click(screen.getByRole('button', { name: '设置' }))
+	expect(screen.getByRole('heading', { name: 'AES-256-GCM' })).toBeVisible()
+	expect(screen.getByText('无遥测')).toBeVisible()
   })
 
   it('keeps desktop-width sidebar labels in normal layout', () => {
     render(<App />)
 
-    for (const label of ['环境概览', '工具状态', '系统信息']) {
-      const item = screen.getByRole('listitem', { name: label })
-      const visibleLabel = within(item).getByText(label)
+    for (const label of ['总览', 'API 配置', '安装记录', '设置']) {
+      const visibleLabel = screen.getByRole('button', { name: label }).querySelector('.sidebar__label')
       expect(visibleLabel).toBeVisible()
       expect(visibleLabel).toHaveStyle({ position: '' })
     }
@@ -367,20 +372,23 @@ describe('environment status dashboard', () => {
     expect(card.getByText('/home/test/tools/codex')).toBeVisible()
   })
 
-  it('refreshes through the hook and keeps mutation actions disabled', () => {
+  it('refreshes through the hook and enables supported verified installs', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: '刷新环境状态' }))
     expect(refresh).toHaveBeenCalledTimes(1)
 
-    const actions = screen.getAllByRole('button', {
-      name: /安装|更新|配置/,
-    })
-    expect(actions.length).toBeGreaterThan(0)
-    for (const action of actions) {
-      expect(action).toBeDisabled()
-    }
-    expect(screen.getAllByText('将在下一阶段开放').length).toBeGreaterThan(0)
+    const openCodeCard = screen.getByRole('heading', { name: 'OpenCode CLI' }).closest('article')
+    expect(within(openCodeCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
+    const claudeCard = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
+    expect(within(claudeCard as HTMLElement).getByRole('button', { name: /配置/ })).toBeDisabled()
+    const desktopCard = screen.getByRole('heading', { name: 'Claude Desktop' }).closest('article')
+    expect(within(desktopCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeDisabled()
+    const openCodeDesktop = screen.getByRole('heading', { name: 'OpenCode Desktop' }).closest('article')
+    expect(within(openCodeDesktop as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
+    const ccSwitch = screen.getByRole('heading', { name: 'CC Switch' }).closest('article')
+    expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
+    expect(screen.getAllByText('官方校验安装')).toHaveLength(3)
   })
 
   it('announces an initial scan without rendering a stale dashboard', () => {

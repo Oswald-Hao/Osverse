@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/Oswald-Hao/Osverse/internal/bootstrap"
+	"github.com/Oswald-Hao/Osverse/internal/systeminstall"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -18,6 +20,9 @@ const (
 )
 
 func main() {
+	if systeminstall.IsPrivilegedInvocation(os.Args[1:]) {
+		os.Exit(systeminstall.RunPrivileged(os.Args[1:]))
+	}
 	app := NewApp(bootstrap.NewLinuxScanner())
 
 	err := wails.Run(&options.App{

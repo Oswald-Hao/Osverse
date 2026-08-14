@@ -1,9 +1,19 @@
 import './App.css'
 
+import { useState } from 'react'
+
 import Sidebar from './Sidebar'
 import SummaryCards from './SummaryCards'
 import ToolSection from './ToolSection'
+import ProxyPanel from './ProxyPanel'
+import InstallDialog from './InstallDialog'
+import APIProfilesPage from './APIProfilesPage'
+import HistoryPage from './HistoryPage'
+import SettingsPage from './SettingsPage'
+import type { AppView } from './Sidebar'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
+import { useInstallFlow } from './hooks/useInstallFlow'
+import { launchManagedApp } from './services/osverse'
 
 const sections = [
   {
@@ -87,13 +97,31 @@ function formatScanTime(scannedAt: string) {
 }
 
 function App() {
+  const [view, setView] = useState<AppView>('overview')
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
+  const install = useInstallFlow(refresh)
+  const [launchNotice, setLaunchNotice] = useState<string | null>(null)
   const isScanning = phase === 'scanning'
+
+  if (view === 'api') {
+    return <div className="app-shell"><Sidebar active={view} onNavigate={setView} /><main className="dashboard-main"><APIProfilesPage /></main></div>
+  }
+
+  if (view === 'history' || view === 'settings') {
+    return (
+      <div className="app-shell">
+        <Sidebar active={view} onNavigate={setView} />
+        <main className="dashboard-main">
+          {view === 'history' ? <HistoryPage /> : <SettingsPage />}
+        </main>
+      </div>
+    )
+  }
 
   if (!snapshot && phase === 'error') {
     return (
       <div className="app-shell">
-        <Sidebar />
+        <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main">
           <EmptyState error={error ?? '环境扫描失败，请重试'} onRetry={refresh} />
         </main>
@@ -104,7 +132,7 @@ function App() {
   if (!snapshot) {
     return (
       <div className="app-shell">
-        <Sidebar />
+        <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main dashboard-main--centered">
           <ScanNotice hasSnapshot={false} />
         </main>
@@ -117,7 +145,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar active={view} onNavigate={setView} />
       <main className="dashboard-main">
         <header className="dashboard-header">
           <div>
@@ -195,6 +223,10 @@ function App() {
           needsAttention={snapshot.needsAttention}
         />
 
+        <ProxyPanel />
+
+        {launchNotice && <div className="notice notice--error" role="alert">{launchNotice}</div>}
+
         <div className="tool-sections">
           {sections.map((section) => (
             <ToolSection
@@ -204,10 +236,18 @@ function App() {
               components={snapshot.components.filter(
                 (component) => component.category === section.category,
               )}
+              onInstall={install.prepare}
+              onLaunch={(id) => {
+                setLaunchNotice(null)
+                void launchManagedApp(id).catch((reason: unknown) => {
+                  setLaunchNotice(reason instanceof Error ? reason.message : '无法启动应用')
+                })
+              }}
             />
           ))}
         </div>
       </main>
+      <InstallDialog flow={install} />
     </div>
   )
 }

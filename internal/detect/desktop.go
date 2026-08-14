@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	"golang.org/x/sys/unix"
@@ -25,7 +26,10 @@ const (
 	desktopInstalledWarning = "已安装，但当前系统不受支持"
 )
 
-var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?$`)
+var (
+	debianPackageName  = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?$`)
+	desktopComponentID = regexp.MustCompile(`^[a-z][a-z0-9-]{1,63}$`)
+)
 
 // PackageQuery reports the installed version of one fixed package name.
 type PackageQuery interface {
@@ -141,7 +145,12 @@ func DetectDesktop(
 		installation := domain.Installation{
 			Path: candidate.path, ResolvedPath: candidate.resolvedPath, Source: source,
 		}
-		if packageInstalled {
+		if managedVersion, managed := managedDesktopVersion(home, spec.ID, candidate.resolvedPath); managed {
+			installation.Managed = true
+			installation.Source = "osverse"
+			installation.Version = managedVersion
+		}
+		if packageInstalled && installation.Version == "" {
 			installation.Version = version
 		}
 		installations = append(installations, installation)
@@ -155,7 +164,51 @@ func DetectDesktop(
 	if len(installations) > 1 {
 		return desktopComponent(spec, domain.StatusConflict, installations, conflictMessage), nil
 	}
+	if installations[0].Managed && managedDesktopUpdateAvailable(spec.ID, installations[0].Version) {
+		return desktopComponent(spec, domain.StatusUpdateAvailable, installations, "发现可用的官方更新"), nil
+	}
 	return desktopComponent(spec, domain.StatusInstalled, installations, installedMessage), nil
+}
+
+func managedDesktopUpdateAvailable(componentID, installed string) bool {
+	latest, ok := appservice.LatestVersion(componentID)
+	if !ok {
+		return false
+	}
+	installedParts := strings.Split(installed, ".")
+	latestParts := strings.Split(latest, ".")
+	if len(installedParts) != 3 || len(latestParts) != 3 {
+		return false
+	}
+	for index := range latestParts {
+		installedNumber, installedErr := strconv.Atoi(installedParts[index])
+		latestNumber, latestErr := strconv.Atoi(latestParts[index])
+		if installedErr != nil || latestErr != nil || installedNumber < 0 || latestNumber < 0 {
+			return false
+		}
+		if installedNumber != latestNumber {
+			return installedNumber < latestNumber
+		}
+	}
+	return false
+}
+
+func managedDesktopVersion(home, componentID, resolvedPath string) (string, bool) {
+	cleanHome, ok := safeDesktopHome(home)
+	if !ok || !desktopComponentID.MatchString(componentID) || !filepath.IsAbs(resolvedPath) {
+		return "", false
+	}
+	root := filepath.Join(cleanHome, ".local", "share", "osverse", "apps", componentID)
+	relative, err := filepath.Rel(root, filepath.Clean(resolvedPath))
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(relative, string(filepath.Separator))
+	if len(parts) != 2 || parts[0] == "" || parts[0] == "." || parts[0] == ".." ||
+		parts[1] != "application.AppImage" || strings.ContainsAny(parts[0], "\\/\x00\r\n") {
+		return "", false
+	}
+	return parts[0], true
 }
 
 // DpkgQuery is the production package-query adapter.
