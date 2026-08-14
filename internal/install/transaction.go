@@ -41,6 +41,14 @@ type linkState struct {
 	target string
 }
 
+type profileState struct {
+	path    string
+	exists  bool
+	mode    os.FileMode
+	content []byte
+	changed bool
+}
+
 func (manager *Manager) execute(
 	ctx context.Context,
 	stored storedPlan,
@@ -121,21 +129,48 @@ func (manager *Manager) execute(
 	if err := commitVersion(payload, finalPath, item); err != nil {
 		return err
 	}
-	if err := manager.replaceLink(currentPath, item.Version); err != nil {
-		return err
-	}
-	currentChanged := true
+	committed := false
+	currentChanged := false
+	shimChanged := false
+	var profileChanges []profileState
 	defer func() {
-		if returnErr != nil && currentChanged {
+		if returnErr == nil || committed {
+			return
+		}
+		for index := len(profileChanges) - 1; index >= 0; index-- {
+			_ = restoreProfile(profileChanges[index])
+		}
+		if shimChanged {
+			_ = restoreLink(shimPath, shimBefore)
+		}
+		if currentChanged {
 			_ = restoreLink(currentPath, currentBefore)
 		}
 	}()
-	shimTarget := filepath.Join(toolRoot, "current", filepath.FromSlash(item.BinaryPath))
-	if err := manager.replaceLink(shimPath, shimTarget); err != nil {
-		_ = restoreLink(shimPath, shimBefore)
+	if err := manager.replaceLink(currentPath, item.Version); err != nil {
 		return err
 	}
-	currentChanged = false
+	currentChanged = true
+	shimTarget := filepath.Join(toolRoot, "current", filepath.FromSlash(item.BinaryPath))
+	if err := manager.replaceLink(shimPath, shimTarget); err != nil {
+		return err
+	}
+	shimChanged = true
+	backupRoot, err := ensureDirectories(root, 0o700, "state", "profile-backups")
+	if err != nil {
+		return err
+	}
+	for _, profilePath := range manager.profiles {
+		backupPath := filepath.Join(backupRoot, strings.TrimPrefix(filepath.Base(profilePath), ".")+".before-osverse")
+		state, err := ensureProfilePATH(profilePath, backupPath)
+		if err != nil {
+			return err
+		}
+		if state.changed {
+			profileChanges = append(profileChanges, state)
+		}
+	}
+	committed = true
 	progress(progressUpdate{phase: "committing", progress: 99, message: "命令入口已更新"})
 	return nil
 }

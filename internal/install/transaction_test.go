@@ -211,6 +211,41 @@ func TestCancelDuringVersionVerificationLeavesLinksUnchanged(t *testing.T) {
 	}
 }
 
+func TestProfileFailureRollsBackLinksAndEarlierProfile(t *testing.T) {
+	archive := testArchive(t, []tarEntry{{name: "package/bin/tool", body: []byte("binary")}})
+	manager, item := transactionManager(t, archive)
+	good := filepath.Join(manager.home, ".profile")
+	bad := filepath.Join(manager.home, ".bashrc")
+	if err := os.WriteFile(good, []byte("export EDITOR=vim\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(manager.home, "other")
+	if err := os.WriteFile(target, []byte("other"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, bad); err != nil {
+		t.Fatal(err)
+	}
+	manager.profiles = []string{good, bad}
+	plan, _ := manager.CreatePlan(context.Background(), item.ID)
+	task, _ := manager.Start(context.Background(), plan.ID, "", 0)
+	finished := awaitTask(t, manager, task.ID)
+	if finished.Phase != "failed" {
+		t.Fatalf("task = %#v", finished)
+	}
+	content, _ := os.ReadFile(good)
+	if string(content) != "export EDITOR=vim\n" {
+		t.Fatalf("earlier profile not restored: %q", content)
+	}
+	toolRoot := filepath.Join(manager.home, ".local", "share", "osverse", "tools", item.ID)
+	if _, err := os.Lstat(filepath.Join(toolRoot, "current")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("current remains after profile rollback: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(manager.home, ".local", "bin", item.Command)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("shim remains after profile rollback: %v", err)
+	}
+}
+
 type tarEntry struct {
 	name string
 	body []byte

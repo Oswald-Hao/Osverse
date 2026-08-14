@@ -61,3 +61,42 @@ export interface ProxyResult {
   attempts: ProxyAttempt[]
   checkedAt: string
 }
+
+export interface InstallChange {
+  kind: string
+  path: string
+  description: string
+}
+
+export interface InstallPlan {
+  id: string
+  componentId: string
+  name: string
+  command: string
+  version: string
+  downloadBytes: number
+  changes: InstallChange[]
+  createdAt: string
+  expiresAt: string
+}
+
+export type InstallTaskPhase =
+  | 'queued'
+  | 'downloading'
+  | 'verifying'
+  | 'committing'
+  | 'completed'
+  | 'failed'
+  | 'canceled'
+
+export interface InstallTask {
+  id: string
+  planId: string
+  componentId: string
+  phase: InstallTaskPhase
+  progress: number
+  message: string
+  errorCode: string
+  startedAt: string
+  finishedAt: string
+}

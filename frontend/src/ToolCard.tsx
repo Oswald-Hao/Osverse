@@ -13,8 +13,13 @@ const actionLabels: Record<Component['status'], string> = {
   failed: '配置',
 }
 
-function ToolCard({ component }: { component: Component }) {
+const installableCLI = new Set(['claude-code', 'codex-cli', 'opencode-cli'])
+
+function ToolCard({ component, onInstall }: { component: Component; onInstall?: (id: string) => void }) {
   const action = actionLabels[component.status]
+  const canInstall = component.category === 'Core CLI' &&
+    installableCLI.has(component.id) &&
+    ['missing', 'broken', 'failed', 'update_available'].includes(component.status)
 
   return (
     <li>
@@ -60,9 +65,9 @@ function ToolCard({ component }: { component: Component }) {
 
         <div className="tool-card__footer">
           <span>最低要求：{component.minimumOS}</span>
-          <button type="button" disabled>
+          <button type="button" disabled={!canInstall} onClick={() => canInstall && onInstall?.(component.id)}>
             {action}
-            <span>将在下一阶段开放</span>
+            <span>{canInstall ? '官方校验安装' : component.status === 'installed' ? '当前已可用' : '暂不可用'}</span>
           </button>
         </div>
       </article>

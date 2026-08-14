@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,6 +69,7 @@ type Manager struct {
 	runner      platform.CommandRunner
 	client      func(proxyservice.Protocol, int) (*http.Client, error)
 	replaceLink func(string, string) error
+	profiles    []string
 }
 
 // NewManager creates the production installer planner for one absolute home.
@@ -91,6 +93,7 @@ func NewManager(home string) (*Manager, error) {
 	manager.runner = platformlinux.NewExecRunner()
 	manager.client = proxyservice.NewHTTPClient
 	manager.replaceLink = replaceSymlink
+	manager.profiles = shellProfiles(manager.home, os.Getenv("SHELL"))
 	return manager, nil
 }
 
@@ -153,9 +156,35 @@ func (manager *Manager) CreatePlan(ctx context.Context, componentID string) (Pla
 			{Kind: "command", Path: filepath.Join(manager.home, ".local", "bin", item.Command), Description: "创建 Osverse 管理的命令入口"},
 		},
 	}
+	for _, profile := range manager.profiles {
+		plan.Changes = append(plan.Changes, PlannedChange{
+			Kind: "profile", Path: profile,
+			Description: "备份并确保新终端可找到 ~/.local/bin",
+		})
+		plan.Changes = append(plan.Changes, PlannedChange{
+			Kind: "backup", Path: manager.profileBackupPath(profile),
+			Description: "保留修改前的 Shell 配置备份",
+		})
+	}
 	manager.prunePlansLocked(created)
 	manager.plans[id] = &storedPlan{public: clonePlan(plan), artifact: item}
 	return clonePlan(plan), nil
+}
+
+func (manager *Manager) profileBackupPath(profile string) string {
+	name := strings.TrimPrefix(filepath.Base(profile), ".")
+	return filepath.Join(manager.home, ".local", "share", "osverse", "state", "profile-backups", name+".before-osverse")
+}
+
+func shellProfiles(home, shell string) []string {
+	profiles := []string{filepath.Join(home, ".profile")}
+	switch filepath.Base(shell) {
+	case "bash":
+		profiles = append(profiles, filepath.Join(home, ".bashrc"))
+	case "zsh":
+		profiles = append(profiles, filepath.Join(home, ".zprofile"), filepath.Join(home, ".zshrc"))
+	}
+	return profiles
 }
 
 func (manager *Manager) consumePlan(id string) (storedPlan, error) {

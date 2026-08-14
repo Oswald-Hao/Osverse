@@ -4,7 +4,9 @@ import Sidebar from './Sidebar'
 import SummaryCards from './SummaryCards'
 import ToolSection from './ToolSection'
 import ProxyPanel from './ProxyPanel'
+import InstallDialog from './InstallDialog'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
+import { useInstallFlow } from './hooks/useInstallFlow'
 
 const sections = [
   {
@@ -89,6 +91,7 @@ function formatScanTime(scannedAt: string) {
 
 function App() {
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
+  const install = useInstallFlow(refresh)
   const isScanning = phase === 'scanning'
 
   if (!snapshot && phase === 'error') {
@@ -207,10 +210,12 @@ function App() {
               components={snapshot.components.filter(
                 (component) => component.category === section.category,
               )}
+              onInstall={install.prepare}
             />
           ))}
         </div>
       </main>
+      <InstallDialog flow={install} />
     </div>
   )
 }
