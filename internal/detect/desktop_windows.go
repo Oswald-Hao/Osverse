@@ -71,6 +71,7 @@ func (RegistryPackageQuery) Evidence(ctx context.Context, spec WindowsDesktopSpe
 	if err := ctx.Err(); err != nil {
 		return WindowsPackageEvidence{}, err
 	}
+	found := WindowsPackageEvidence{}
 	for _, location := range uninstallRegistryLocations() {
 		key, err := registry.OpenKey(location.root, location.path, registry.ENUMERATE_SUB_KEYS|location.view)
 		if err != nil {
@@ -99,13 +100,39 @@ func (RegistryPackageQuery) Evidence(ctx context.Context, spec WindowsDesktopSpe
 				installLocation, _, _ := entry.GetStringValue("InstallLocation")
 				displayIcon, _, _ := entry.GetStringValue("DisplayIcon")
 				_ = entry.Close()
-				return WindowsPackageEvidence{Installed: true, Version: cleanVersion(version), Source: "registry",
-					ExecutablePaths: registryExecutablePaths(spec, installLocation, displayIcon)}, nil
+				found.Installed, found.Source = true, "registry"
+				if candidateVersion := cleanVersion(version); found.Version == "" || found.Version == "unknown" {
+					found.Version = candidateVersion
+				}
+				found.ExecutablePaths = appendUniqueWindowsPaths(found.ExecutablePaths,
+					registryExecutablePaths(spec, installLocation, displayIcon)...)
+				continue
 			}
 			_ = entry.Close()
 		}
 	}
+	if found.Installed {
+		if found.Version == "" {
+			found.Version = "unknown"
+		}
+		return found, nil
+	}
 	return appModelEvidence(ctx, spec)
+}
+
+func appendUniqueWindowsPaths(existing []string, candidates ...string) []string {
+	seen := make(map[string]bool, len(existing)+len(candidates))
+	for _, candidate := range existing {
+		seen[strings.ToLower(filepath.Clean(candidate))] = true
+	}
+	for _, candidate := range candidates {
+		key := strings.ToLower(filepath.Clean(candidate))
+		if !seen[key] {
+			seen[key] = true
+			existing = append(existing, candidate)
+		}
+	}
+	return existing
 }
 
 func registryExecutablePaths(spec WindowsDesktopSpec, installLocation, displayIcon string) []string {
