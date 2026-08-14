@@ -1,0 +1,68 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Osverse
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Osverse. Do not include API keys or private URLs. Security issues belong in a private advisory.
+  - type: input
+    id: version
+    attributes:
+      label: Osverse version
+      placeholder: v0.1.1-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: ubuntu
+    attributes:
+      label: Ubuntu version
+      options:
+        - Ubuntu 20.04 x86_64
+        - Ubuntu 22.04 x86_64
+        - Unsupported or other environment
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Installation format
+      options:
+        - AppImage
+        - Debian package
+        - Portable tar
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the exact action, expected result, and actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open …
+        2. Enter …
+        3. Click …
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Screenshots or logs with keys, tokens, private endpoints, and personal paths removed.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials and private data.
+          required: true
+        - label: This is not a vulnerability report.
+          required: true
