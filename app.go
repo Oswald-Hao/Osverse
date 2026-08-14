@@ -570,15 +570,6 @@ func (app *App) CancelInstallTask(taskID string) error {
 	return nil
 }
 
-func isUserDesktopComponent(id string) bool {
-	switch id {
-	case "opencode-desktop", "cc-switch", "cockpit-tools":
-		return true
-	default:
-		return false
-	}
-}
-
 // LaunchComponent rescans a fixed component ID and starts only the exact
 // backend-verified installation. No filesystem path is accepted from the UI.
 func (app *App) LaunchComponent(componentID, installationPath string) error {
