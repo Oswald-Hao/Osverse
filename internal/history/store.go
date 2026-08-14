@@ -78,7 +78,7 @@ func NewStore(home string) (*Store, error) {
 
 func ensureStateDirectory(home string) (string, error) {
 	current := home
-	for _, part := range []string{".local", "share", "osverse", "state"} {
+	for _, part := range historyStateComponents() {
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
@@ -259,5 +259,5 @@ func (store *Store) writeLocked(value document) error {
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.Rename(name, store.path)
+	return replaceHistoryFile(name, store.path)
 }
