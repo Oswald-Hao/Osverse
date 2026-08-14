@@ -1,93 +1,78 @@
 # Osverse
 
-Osverse 是面向 Linux AI 开发环境的桌面状态面板。它把系统兼容性、CLI、桌面应用和管理工具的检测结果集中到一个界面中，帮助你在开始工作前看清本机环境。Osverse is a desktop dashboard for understanding the state of a Linux AI-development environment.
+Osverse 是面向 Ubuntu AI 开发环境的本地优先桌面管理器。它在一个面板中检测 CLI、桌面应用和 API 接入状态，并在用户确认后完成受校验、可回滚的安装与配置。
 
-## Phase 1：只读环境扫描 / Read-only scan
+## Linux 功能
 
-当前版本只检测，不安装、不更新，也不修改工具配置。面板会显示：
+- 检测 PATH 中现有的 Claude Code、Codex CLI、OpenCode CLI，不要求工具位于 Osverse 目录；
+- 检测 Claude Desktop、OpenCode Desktop、CC Switch、Cockpit Tools 等桌面与管理工具；
+- 探测一个本机代理端口的 HTTP、HTTPS CONNECT 和 SOCKS5 能力，代理只用于 Osverse 的网络请求；
+- 使用固定版本、下载长度和 SHA-256 清单事务式安装或更新三个核心 CLI；
+- 在用户目录事务式安装、更新并启动 OpenCode Desktop、CC Switch 和 Cockpit Tools AppImage；
+- 在 Ubuntu 22.04 上验证 Anthropic 官方签名密钥后，通过 APT 安装或升级 Claude Desktop；
+- 加密保存第三方 API 档案，探测 Anthropic/OpenAI 协议兼容性，并在二次确认后更新 CLI 配置；
+- 在权限为 `0600` 的本地文件中保留最多 200 条脱敏操作记录。
 
-- Ubuntu 版本、CPU 架构和当前 Shell；
-- Claude Code、Codex CLI 和 OpenCode CLI 的安装路径与版本状态；
-- Claude Desktop、ChatGPT Desktop、OpenCode Desktop、CC Switch 和 Cockpit Tools 的本机安装证据；
-- 缺失、冲突、版本输出异常或不受支持等需要注意的状态。
+支持范围为 **Ubuntu 20.04 或 22.04、x86_64（amd64）**。Claude Desktop 的官方 Linux 最低要求是 Ubuntu 22.04，因此在 Ubuntu 20.04 上会显示为不支持。ChatGPT Desktop 没有官方 Linux 客户端，本版本不会提供非官方安装包。
 
-支持范围为 **Ubuntu 20.04 或 22.04、x86_64（amd64）**。其他发行版、Ubuntu 版本和架构会显示为不受支持；这不代表应用已经在这些平台上通过验证。
+## 安装
 
-截图：尚未提供公开截图资源，后续版本补充。
+从 [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) 下载与你的 Ubuntu 版本匹配的 `.deb` 与 `SHA256SUMS`：
 
-## 安全边界 / Security boundaries
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+sudo apt install ./osverse_*_amd64_ubuntuXX.XX.deb
+osverse
+```
 
-Phase 1 的扫描范围有意保持狭窄：
+也可以解压对应的便携 tar 包后直接运行 `./osverse`。默认窗口为 1280×800，与 Cockpit Tools 的默认桌面尺寸一致。
 
-- 不使用 shell 执行命令，也不执行 shell 配置文件；只从进程环境和固定名称的 Bash/Zsh 配置文件中解析受限的绝对 PATH 条目。
-- 仅在已发现的固定 CLI 候选路径上直接执行 `--version`，单次执行有 3 秒超时和 64 KiB 输出上限。
-- 桌面应用只查询固定的 dpkg 包名、固定位置的 `.desktop` 文件是否存在，以及对应可执行文件；不会读取或执行 `.desktop` 文件内容。
-- 扫描不会安装、卸载、更新、重命名或写入任何被检测工具，也不包含网络探测。
-- 外部可执行文件的行为不由 Osverse 控制；请只把可信目录加入 PATH。
+## 安全边界
 
-## 开发 / Development
+- 扫描不会执行 shell 或 `.desktop` 文件；PATH 配置只解析受限的绝对路径语法。
+- 已发现 CLI 的版本命令具有超时、输出上限、文件身份固定或执行前后重验。
+- 所有安装都先展示后端生成的固定变更计划，只有用户确认后才写入。
+- CLI 与 AppImage 下载只接受内置来源，并同时校验长度和 SHA-256；外部同名命令或桌面文件不会被覆盖。
+- Claude Desktop 的提权助手只接受一个固定动作和经过验证的 loopback 代理参数，不能执行用户提供的命令。
+- API 探测禁止重定向并默认阻止私网、链路本地与保留地址；私网端点必须由用户明确确认。
+- API Key 不会返回到前端列表、历史记录或日志；本地档案采用 AES-256-GCM 加密。
+- Osverse 不包含遥测。代理设置不会修改终端或系统的全局代理。
 
-开发工具版本：
+## 开发
 
-- Go 1.25.x（CI 使用 1.25.12）
-- Node.js 22.x（CI 使用 22.23.2）与 npm
-- Wails CLI 2.13.0（通过 `go run` 固定版本调用）
-- Ubuntu 原生依赖：GTK 3、WebKitGTK 4.0、pkg-config 和 C/C++ 构建工具
-
-在 Ubuntu 20.04/22.04 上安装原生依赖：
+固定工具链：Go 1.25.12、Node.js 22.23.2、Wails 2.13.0。
 
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config
-```
-
-安装依赖并运行自动化检查：
-
-```bash
 npm --prefix frontend ci
 npm --prefix frontend test
 npm --prefix frontend run typecheck
 npm --prefix frontend run build
 go test ./...
-go test -race ./internal/scan ./internal/detect ./internal/platform/...
+go test -race ./...
 go vet ./...
 npm --prefix frontend audit --audit-level=high
 ```
 
-Wails 的标签表示 WebKitGTK **库版本下限**，不是 4.0/4.1 ABI 名称。Ubuntu 20.04 当前公开更新提供 WebKitGTK 2.38，因此使用 `webkit2_36`；已更新的 Ubuntu 22.04 提供 2.40 以上版本，因此使用 `webkit2_40`。
-
-启动 Wails 开发模式：
+Ubuntu 20.04 的 WebKitGTK 为 2.38，使用 Wails `webkit2_36` 标签；Ubuntu 22.04 更新后的 WebKitGTK 为 2.40 以上，使用 `webkit2_40`：
 
 ```bash
 # Ubuntu 20.04
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
 
-# Updated Ubuntu 22.04
+# Ubuntu 22.04
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
 ```
 
-生成生产二进制：
+打包脚本接受已构建二进制并生成可复现 tar、无 maintainer script 的 `.deb` 及 SHA-256 清单：
 
 ```bash
-# Ubuntu 20.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_36
-
-# Updated Ubuntu 22.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_40
-
-test -x build/bin/osverse
+build/linux/package.sh 0.1.0 build/bin/osverse ubuntu22.04 build/release/ubuntu22.04
 ```
 
-详细的人工验收矩阵见 [`docs/testing/phase-1-acceptance.md`](docs/testing/phase-1-acceptance.md)。
+完整 Linux v1 验收矩阵见 [`docs/testing/linux-v1-acceptance.md`](docs/testing/linux-v1-acceptance.md)。
 
-## 分支策略 / Branch policy
+## 分支策略
 
-变更按 `dev` → `beta` → `main` 单向推进：`dev` 用于日常集成，`beta` 用于候选版本验收，`main` 保持已验收的稳定版本。每次晋级都应通过代码审查、CI 和目标 Ubuntu 版本的人工验收，不直接跳过阶段。
-
-## 公开路线图 / Public roadmap
-
-- Phase 1：只读环境状态扫描与响应式桌面面板。
-- Phase 2：在明确确认和可回滚边界内提供安装与配置引导。
-- Phase 3：扩展工具生命周期管理、诊断和更多 Linux 环境支持。
-
-后续阶段不会改变 Phase 1 的默认安全原则：先展示证据，再由用户决定是否执行修改。
+变更按 `dev` → `beta` → `main` 单向推进：`dev` 用于开发集成，`beta` 用于候选版本验收，`main` 只接收已通过门禁的版本。Linux 发布工作流只接受指向 `main` 历史的语义版本标签，并为发布文件生成 SHA-256 和 GitHub 构建来源证明。

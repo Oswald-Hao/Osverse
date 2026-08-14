@@ -1,0 +1,173 @@
+name: Release Linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Verify release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a main-branch semantic version tag
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+
+  ubuntu22:
+    name: Build Ubuntu 22.04 packages
+    needs: guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.12'
+          cache: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes build-essential file libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Test tagged source
+        run: |
+          go test ./...
+          npm --prefix frontend test
+          npm --prefix frontend run typecheck
+          npm --prefix frontend audit --audit-level=high
+      - name: Build and package
+        env:
+          SOURCE_DATE_EPOCH: '0'
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_40
+          test -x build/bin/osverse
+          build/linux/package.sh "$version" build/bin/osverse ubuntu22.04 build/release/ubuntu22.04
+      - name: Upload Ubuntu 22.04 packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-ubuntu22.04
+          path: build/release/ubuntu22.04/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ubuntu20:
+    name: Build Ubuntu 20.04 packages
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    container:
+      image: ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+    steps:
+      - name: Install container and build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends --yes build-essential ca-certificates curl file git gzip libgtk-3-dev libstdc++6 libwebkit2gtk-4.0-dev pkg-config xz-utils
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.12'
+          cache: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Test tagged source
+        run: |
+          go test ./...
+          npm --prefix frontend test
+          npm --prefix frontend run typecheck
+      - name: Build and package
+        env:
+          SOURCE_DATE_EPOCH: '0'
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_36
+          test -x build/bin/osverse
+          build/linux/package.sh "$version" build/bin/osverse ubuntu20.04 build/release/ubuntu20.04
+      - name: Upload Ubuntu 20.04 packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-ubuntu20.04
+          path: build/release/ubuntu20.04/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Attest and publish GitHub release
+    needs: [ubuntu20, ubuntu22]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download release packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-ubuntu*
+          path: release
+          merge-multiple: true
+      - name: Create unified checksums
+        shell: bash
+        run: |
+          cd release
+          rm SHA256SUMS-ubuntu20.04 SHA256SUMS-ubuntu22.04
+          sha256sum osverse-*.tar.gz osverse_*.deb > SHA256SUMS
+      - name: Attest release packages
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'release/*'
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          flags=(--verify-tag --title "Osverse Linux ${GITHUB_REF_NAME}" --notes-file docs/release/linux.md)
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
+          gh release create "$GITHUB_REF_NAME" release/* "${flags[@]}"

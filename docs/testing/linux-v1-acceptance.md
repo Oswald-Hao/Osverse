@@ -1,0 +1,46 @@
+# Linux v1 release acceptance
+
+此清单是 Osverse Linux v1 从 `dev` 晋级 `beta`、再晋级 `main` 的发布门禁。自动化测试、Ubuntu 20.04/22.04 构建、包结构检查和至少一次 Ubuntu 22.04 真实 Wails 冒烟测试必须全部通过。
+
+## 自动化门禁
+
+- [ ] `go test ./...`
+- [ ] `go test -race ./...`
+- [ ] `go vet ./...`
+- [ ] 前端全部测试、TypeScript 检查、生产构建、依赖审计和响应式审计
+- [ ] Ubuntu 20.04 `webkit2_36` 原生构建及动态库解析
+- [ ] Ubuntu 22.04 `webkit2_40` 原生构建及动态库解析
+- [ ] 两种构建均成功生成 `.deb`、tar 和 SHA-256 清单
+- [ ] `.deb` 只包含声明的二进制、图标、desktop entry、文档和 control 元数据，无 maintainer script
+- [ ] 发布工作流语法通过 actionlint，所有第三方 Action 使用完整提交 SHA
+
+## 真实界面与扫描
+
+- [ ] 窗口以 1280×800 打开，320/650/900/901/960/1024/1053/1440 宽度无横向溢出
+- [ ] 扫描结果与 `command -v`、对应绝对路径的 `--version`、`dpkg-query` 一致
+- [ ] PATH 中任意正常位置的 Claude Code 都显示已安装，不要求放入 Osverse 目录
+- [ ] 刷新保留旧快照直到新扫描完成，时间戳随后更新
+- [ ] 总览、API 配置、安装记录和设置四个导航页均可访问
+
+## 安装与回滚
+
+- [ ] 三个核心 CLI 都先展示固定计划，再安装到 `~/.local/share/osverse/tools`
+- [ ] 取消、下载截断、SHA 不匹配、版本校验失败时当前命令不改变
+- [ ] 外部同名命令存在时不覆盖，并显示安全错误
+- [ ] OpenCode Desktop、CC Switch、Cockpit Tools AppImage 安装后可扫描、启动和更新
+- [ ] AppImage 被篡改后 Osverse 拒绝启动
+- [ ] Ubuntu 20.04 不提供 Claude Desktop 安装；Ubuntu 22.04 计划明确显示管理员授权与 APT 变更
+- [ ] Claude 官方密钥指纹为 `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`
+
+## 代理与 API
+
+- [ ] 直连与本机 HTTP、HTTPS CONNECT、SOCKS5 代理探测行为正确
+- [ ] 更换或失败的代理探测不会继续使用旧端口
+- [ ] API Key 保存后立即从表单清除，列表和历史中仅出现掩码
+- [ ] 公网 API 协议探测不产生付费生成请求；重定向和私网 SSRF 默认被拒绝
+- [ ] 用户明确确认私网端点后才允许探测
+- [ ] Claude/Codex/OpenCode 配置在二次确认后原子写入，非 Osverse 字段保持不变且保留备份
+
+## 发布证据
+
+记录候选提交、CI URL、两个二进制及包的 SHA-256、运行系统版本、WebKitGTK 版本、截图和测试日期。预发布可用于收集额外反馈；只有所有阻断项关闭后才把同一候选提交晋级 `main` 并创建稳定标签。
