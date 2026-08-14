@@ -1,6 +1,6 @@
 import './App.css'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import Sidebar from './Sidebar'
 import SummaryCards from './SummaryCards'
@@ -10,10 +10,12 @@ import InstallDialog from './InstallDialog'
 import APIProfilesPage from './APIProfilesPage'
 import HistoryPage from './HistoryPage'
 import SettingsPage from './SettingsPage'
+import UpdateDialog from './UpdateDialog'
 import type { AppView } from './Sidebar'
 import type { RemovalPlan } from './domain'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 import { useInstallFlow } from './hooks/useInstallFlow'
+import { useAppUpdate } from './hooks/useAppUpdate'
 import { createRemovalPlan, launchComponent, removeComponent } from './services/osverse'
 
 const sections = [
@@ -101,49 +103,53 @@ function App() {
   const [view, setView] = useState<AppView>('overview')
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
   const install = useInstallFlow(refresh)
+  const update = useAppUpdate()
   const [launchNotice, setLaunchNotice] = useState<string | null>(null)
   const [removalPlan, setRemovalPlan] = useState<RemovalPlan | null>(null)
   const [removalBusy, setRemovalBusy] = useState(false)
   const isScanning = phase === 'scanning'
+  const scanned = useMemo(() => snapshot ? formatScanTime(snapshot.scannedAt) : null, [snapshot?.scannedAt])
 
   if (view === 'api') {
-    return <div className="app-shell"><Sidebar active={view} onNavigate={setView} /><main className="dashboard-main"><APIProfilesPage /></main></div>
+    return <><div className="app-shell"><Sidebar active={view} onNavigate={setView} /><main className="dashboard-main"><APIProfilesPage /></main></div><UpdateDialog update={update} /></>
   }
 
   if (view === 'history' || view === 'settings') {
-    return (
+    return (<>
       <div className="app-shell">
         <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main">
-          {view === 'history' ? <HistoryPage /> : <SettingsPage />}
+          {view === 'history' ? <HistoryPage /> : <SettingsPage update={update} />}
         </main>
       </div>
-    )
+      <UpdateDialog update={update} />
+    </>)
   }
 
   if (!snapshot && phase === 'error') {
-    return (
+    return (<>
       <div className="app-shell">
         <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main">
           <EmptyState error={error ?? '环境扫描失败，请重试'} onRetry={refresh} />
         </main>
       </div>
-    )
+      <UpdateDialog update={update} />
+    </>)
   }
 
   if (!snapshot) {
-    return (
+    return (<>
       <div className="app-shell">
         <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main dashboard-main--centered">
           <ScanNotice hasSnapshot={false} />
         </main>
       </div>
-    )
+      <UpdateDialog update={update} />
+    </>)
   }
 
-  const scanned = formatScanTime(snapshot.scannedAt)
   const systemSupport = snapshot.system.supported ? '支持' : '不支持'
 
   return (
@@ -186,8 +192,8 @@ function App() {
               <h3 id="system-title">{snapshot.system.distribution}</h3>
               <p className="scan-time">
                 上次扫描：
-                <time dateTime={scanned.dateTime}>{scanned.date}</time>
-                {scanned.time && <span>{scanned.time}</span>}
+                <time dateTime={scanned?.dateTime}>{scanned?.date}</time>
+                {scanned?.time && <span>{scanned.time}</span>}
               </p>
             </div>
           </div>
@@ -258,6 +264,7 @@ function App() {
         </div>
       </main>
       <InstallDialog flow={install} />
+      <UpdateDialog update={update} />
       {removalPlan && (
         <div className="dialog-backdrop" role="presentation">
           <section className="install-dialog" role="dialog" aria-modal="true" aria-labelledby="removal-plan-title">

@@ -17,7 +17,7 @@ Every change reaches a protected branch through a pull request. Use this fixed p
 3. After beta acceptance, open a `beta` → `main` pull request.
 4. Create release tags only from `main`.
 
-The CI workflow runs on each pull request and validates the proposed merge with tests, static analysis, supply-chain checks, and Ubuntu builds. It intentionally does not run the same validation again after the pull request is merged. GitHub performs the branch update when the pull request is merged; CI never pushes or synchronizes branches. A maintainer can still start a manual diagnostic run with `workflow_dispatch`, but it does not replace a required pull-request run.
+Feature pull requests into `dev` run the complete CI suite: tests, static analysis, supply-chain checks, and native Linux and Windows builds. Promotion pull requests (`dev` → `beta` and `beta` → `main`) run only the required promotion-path gate because they reuse the source branch content that already passed the complete suite. They never rebuild, push, or synchronize branches. GitHub performs the branch update only when a maintainer merges the pull request. A maintainer can still start a complete manual diagnostic run with `workflow_dispatch`, but it does not replace a required feature pull-request run.
 
 The `Validate promotion path` required check enforces that chain. Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
 

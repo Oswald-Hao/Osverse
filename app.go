@@ -13,6 +13,8 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
+	"github.com/Oswald-Hao/Osverse/internal/selfupdate"
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Scanner is the narrow read-only operation used by the Wails application.
@@ -65,6 +67,11 @@ type HistoryService interface {
 	Clear(context.Context) error
 }
 
+type AppUpdateService interface {
+	Check(context.Context, proxyservice.Protocol, int) (selfupdate.Info, error)
+	Apply(context.Context, string, proxyservice.Protocol, int) (selfupdate.ApplyResult, error)
+}
+
 type proxySelection struct {
 	Protocol proxyservice.Protocol
 	Port     int
@@ -92,6 +99,8 @@ type App struct {
 	history           HistoryService
 	recordedTasks     map[string]bool
 	removalPlans      map[string]string
+	updater           AppUpdateService
+	quitApplication   func(context.Context)
 }
 
 func NewApp(scanner Scanner) *App {
@@ -108,6 +117,8 @@ func NewApp(scanner Scanner) *App {
 	}
 	if err == nil && app != nil {
 		configurePlatformServices(app, home)
+		app.updater = selfupdate.NewService(home, appVersion)
+		app.quitApplication = wruntime.Quit
 	}
 	return app
 }
@@ -658,6 +669,58 @@ func (app *App) currentProxy() proxySelection {
 	app.mu.RLock()
 	defer app.mu.RUnlock()
 	return app.proxySelection
+}
+
+// CheckForAppUpdate checks only the fixed Osverse GitHub repository. Any
+// selected loopback proxy is scoped to this request and is never persisted as
+// a system setting.
+func (app *App) CheckForAppUpdate() (selfupdate.Info, error) {
+	if app == nil {
+		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, "更新服务不可用", nil)
+	}
+	app.mu.RLock()
+	updater := app.updater
+	selection := app.proxySelection
+	app.mu.RUnlock()
+	if updater == nil {
+		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, "更新服务不可用", nil)
+	}
+	ctx, cancel := context.WithTimeout(app.appContext(), 45*time.Second)
+	defer cancel()
+	info, err := updater.Check(ctx, selection.Protocol, selection.Port)
+	if err != nil {
+		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, "无法检查更新，请检查网络或代理设置", err)
+	}
+	return info, nil
+}
+
+// StartAppUpdate consumes one backend-owned update plan. The frontend cannot
+// provide an artifact URL, file path, digest, or command.
+func (app *App) StartAppUpdate(planID string) (selfupdate.ApplyResult, error) {
+	if app == nil {
+		return selfupdate.ApplyResult{}, domain.NewPublicError(domain.ErrUpdateFailed, "更新服务不可用", nil)
+	}
+	app.mu.RLock()
+	updater := app.updater
+	selection := app.proxySelection
+	quit := app.quitApplication
+	app.mu.RUnlock()
+	if updater == nil {
+		return selfupdate.ApplyResult{}, domain.NewPublicError(domain.ErrUpdateFailed, "更新服务不可用", nil)
+	}
+	result, err := updater.Apply(app.appContext(), planID, selection.Protocol, selection.Port)
+	if err != nil {
+		message := "更新失败，请重新检查后再试"
+		if errors.Is(err, selfupdate.ErrNoPlan) {
+			message = "更新计划已过期，请重新检查"
+		}
+		return selfupdate.ApplyResult{}, domain.NewPublicError(domain.ErrUpdateFailed, message, err)
+	}
+	if result.ShouldQuit && quit != nil {
+		ctx := app.appContext()
+		time.AfterFunc(500*time.Millisecond, func() { quit(ctx) })
+	}
+	return result, nil
 }
 
 func (app *App) startup(ctx context.Context) {

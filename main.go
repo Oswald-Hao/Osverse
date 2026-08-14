@@ -11,6 +11,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// appVersion is replaced by release builds using -ldflags. Local developer
+// builds deliberately do not contact the release update service.
+var appVersion = "dev"
+
 const (
 	defaultWindowWidth  = 1280
 	defaultWindowHeight = 800

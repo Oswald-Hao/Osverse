@@ -14,6 +14,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
+	"github.com/Oswald-Hao/Osverse/internal/selfupdate"
 )
 
 func TestNewAppRejectsNilScanner(t *testing.T) {
@@ -99,13 +100,13 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 	}
 }
 
-func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
+func TestAppExposesOnlyFixedWailsOperations(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
-		"ApplyAPIPlan", "CancelInstallTask", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan", "CreateRemovalPlan",
+		"ApplyAPIPlan", "CancelInstallTask", "CheckForAppUpdate", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan", "CreateRemovalPlan",
 		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchComponent",
 		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "RemoveComponent", "SaveAPIProfile", "ScanEnvironment",
-		"StartInstall", "UseDirectConnection",
+		"StartAppUpdate", "StartInstall", "UseDirectConnection",
 	}
 	if typeOfApp.NumMethod() != len(want) {
 		t.Fatalf("exported App methods = %d, want %d fixed operations", typeOfApp.NumMethod(), len(want))
@@ -657,6 +658,38 @@ func TestDefaultWindowMatchesCockpitTools(t *testing.T) {
 	if defaultWindowWidth != 1280 || defaultWindowHeight != 800 {
 		t.Fatalf("default window = %dx%d, want Cockpit Tools 1280x800",
 			defaultWindowWidth, defaultWindowHeight)
+	}
+}
+
+type fakeAppUpdater struct {
+	checkedProtocol proxyservice.Protocol
+	checkedPort     int
+	appliedPlan     string
+	result          selfupdate.ApplyResult
+}
+
+func (updater *fakeAppUpdater) Check(_ context.Context, protocol proxyservice.Protocol, port int) (selfupdate.Info, error) {
+	updater.checkedProtocol, updater.checkedPort = protocol, port
+	return selfupdate.Info{Available: true, CanInstall: true, PlanID: "update-plan", CurrentVersion: "1.0.0", LatestVersion: "1.1.0"}, nil
+}
+
+func (updater *fakeAppUpdater) Apply(_ context.Context, planID string, protocol proxyservice.Protocol, port int) (selfupdate.ApplyResult, error) {
+	updater.appliedPlan, updater.checkedProtocol, updater.checkedPort = planID, protocol, port
+	return updater.result, nil
+}
+
+func TestAppUpdateBridgeUsesSelectedProxyAndOpaquePlan(t *testing.T) {
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) { return domain.EnvironmentSnapshot{}, nil }}, &fakeProxyProber{})
+	updater := &fakeAppUpdater{result: selfupdate.ApplyResult{Started: true, Message: "started"}}
+	app.updater = updater
+	app.proxySelection = proxySelection{Protocol: proxyservice.ProtocolSOCKS5, Port: 7890}
+	info, err := app.CheckForAppUpdate()
+	if err != nil || info.PlanID != "update-plan" || updater.checkedProtocol != proxyservice.ProtocolSOCKS5 || updater.checkedPort != 7890 {
+		t.Fatalf("CheckForAppUpdate() = (%#v, %v), proxy=(%q,%d)", info, err, updater.checkedProtocol, updater.checkedPort)
+	}
+	result, err := app.StartAppUpdate(info.PlanID)
+	if err != nil || !result.Started || updater.appliedPlan != "update-plan" {
+		t.Fatalf("StartAppUpdate() = (%#v, %v), plan=%q", result, err, updater.appliedPlan)
 	}
 }
 

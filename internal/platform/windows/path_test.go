@@ -18,6 +18,7 @@ func TestDiscoverPathsIncludesEffectiveAndKnownUserLocations(t *testing.T) {
 	want := []string{
 		`C:\Tools`, `C:\Windows\System32`, `C:\Users\Alice\.local\bin`,
 		`C:\Users\Alice\AppData\Roaming\npm`, `C:\Users\Alice\.bun\bin`,
+		`C:\Users\Alice\.opencode\bin`, `C:\Users\Alice\bin`,
 		`C:\Users\Alice\AppData\Local\Microsoft\WindowsApps`,
 	}
 	if got := DiscoverPaths(inputs); !reflect.DeepEqual(got, want) {
@@ -27,7 +28,7 @@ func TestDiscoverPathsIncludesEffectiveAndKnownUserLocations(t *testing.T) {
 
 func TestDiscoverPathsDeduplicatesCaseInsensitively(t *testing.T) {
 	got := DiscoverPaths(PathInputs{ProcessPath: `C:\Tools;c:\tools`, Home: `C:\Users\Alice`})
-	if len(got) != 3 || got[0] != `C:\Tools` {
+	if len(got) != 5 || got[0] != `C:\Tools` {
 		t.Fatalf("DiscoverPaths() = %#v", got)
 	}
 }

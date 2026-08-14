@@ -10,6 +10,10 @@ export function CancelInstallTask(arg1) {
   return window['go']['main']['App']['CancelInstallTask'](arg1);
 }
 
+export function CheckForAppUpdate() {
+  return window['go']['main']['App']['CheckForAppUpdate']();
+}
+
 export function ClearHistory() {
   return window['go']['main']['App']['ClearHistory']();
 }
@@ -68,6 +72,10 @@ export function SaveAPIProfile(arg1) {
 
 export function ScanEnvironment() {
   return window['go']['main']['App']['ScanEnvironment']();
+}
+
+export function StartAppUpdate(arg1) {
+  return window['go']['main']['App']['StartAppUpdate'](arg1);
 }
 
 export function StartInstall(arg1) {
