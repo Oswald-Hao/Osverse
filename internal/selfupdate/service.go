@@ -44,6 +44,7 @@ type Service struct {
 	platform     string
 	architecture string
 	plans        map[string]plan
+	applier      artifactApplier
 }
 
 func NewService(home, currentVersion string) *Service {
@@ -51,6 +52,7 @@ func NewService(home, currentVersion string) *Service {
 		home: home, currentRaw: currentVersion, endpoint: releasesEndpoint,
 		client: proxyservice.NewHTTPClient, now: time.Now, platform: runtime.GOOS,
 		architecture: runtime.GOARCH, plans: make(map[string]plan),
+		applier: applyArtifact,
 	}
 }
 
