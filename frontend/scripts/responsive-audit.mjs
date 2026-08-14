@@ -35,6 +35,9 @@ const chrome = spawn(
     '--headless=new',
     '--no-sandbox',
     '--disable-gpu',
+    '--disable-dev-shm-usage',
+    '--no-first-run',
+    '--no-default-browser-check',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank',
@@ -57,7 +60,7 @@ function delay(milliseconds) {
 }
 
 async function waitFor(check, description) {
-  const deadline = Date.now() + 10_000
+  const deadline = Date.now() + 20_000
   let lastError
   while (Date.now() < deadline) {
     try {

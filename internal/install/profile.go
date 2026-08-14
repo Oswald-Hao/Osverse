@@ -23,6 +23,14 @@ esac
 )
 
 func ensureProfilePATH(profilePath, backupPath string) (profileState, error) {
+	state, err := inspectProfileState(profilePath)
+	if err != nil {
+		return profileState{}, err
+	}
+	return ensureProfilePATHFromState(state, backupPath)
+}
+
+func inspectProfileState(profilePath string) (profileState, error) {
 	state := profileState{path: profilePath, mode: 0o600}
 	info, err := os.Lstat(profilePath)
 	switch {
@@ -42,6 +50,10 @@ func ensureProfilePATH(profilePath, backupPath string) (profileState, error) {
 			return profileState{}, err
 		}
 	}
+	return state, nil
+}
+
+func ensureProfilePATHFromState(state profileState, backupPath string) (profileState, error) {
 	startCount := bytes.Count(state.content, []byte(pathBlockStart))
 	endCount := bytes.Count(state.content, []byte(pathBlockEnd))
 	if startCount != endCount || startCount > 1 {
@@ -65,11 +77,25 @@ func ensureProfilePATH(profilePath, backupPath string) (profileState, error) {
 	if err := ensureProfileBackup(backupPath, state.content); err != nil {
 		return profileState{}, err
 	}
-	if err := atomicWriteProfile(profilePath, next, state.mode); err != nil {
+	if err := confirmProfileState(state); err != nil {
+		return profileState{}, err
+	}
+	if err := atomicWriteProfile(state.path, next, state.mode); err != nil {
 		return profileState{}, err
 	}
 	state.changed = true
 	return state, nil
+}
+
+func confirmProfileState(expected profileState) error {
+	actual, err := inspectProfileState(expected.path)
+	if err != nil {
+		return err
+	}
+	if actual.exists != expected.exists || actual.mode.Perm() != expected.mode.Perm() || !bytes.Equal(actual.content, expected.content) {
+		return errors.New("shell profile changed during installation")
+	}
+	return nil
 }
 
 func ensureProfileBackup(backupPath string, content []byte) error {
@@ -112,8 +138,11 @@ func restoreProfile(state profileState) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		if err != nil || !info.Mode().IsRegular() {
+		if err != nil {
 			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("shell profile recovery path is unsafe")
 		}
 		return os.Remove(state.path)
 	}

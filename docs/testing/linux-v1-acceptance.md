@@ -10,8 +10,11 @@
 - [ ] 前端全部测试、TypeScript 检查、生产构建、依赖审计和响应式审计
 - [ ] Ubuntu 20.04 `webkit2_36` 原生构建及动态库解析
 - [ ] Ubuntu 22.04 `webkit2_40` 原生构建及动态库解析
-- [ ] 两种构建均成功生成 `.deb`、tar 和 SHA-256 清单
+- [ ] 两种构建均成功生成 `.deb`、AppImage、tar 和 SHA-256 清单
 - [ ] `.deb` 只包含声明的二进制、图标、desktop entry、文档和 control 元数据，无 maintainer script
+- [ ] 两种 `.deb` 均完成真实安装/卸载；两种 AppImage 均在 Xvfb 中出现可见 Osverse 窗口
+- [ ] OSV 可达性漏洞扫描、许可证白名单、Gitleaks 历史扫描和 SPDX SBOM 校验通过
+- [ ] Release 更新元数据、SBOM、校验和及全部安装包均包含 GitHub OIDC 构建来源证明
 - [ ] 发布工作流语法通过 actionlint，所有第三方 Action 使用完整提交 SHA
 
 ## 真实界面与扫描
@@ -26,6 +29,7 @@
 
 - [ ] 三个核心 CLI 都先展示固定计划，再安装到 `~/.local/share/osverse/tools`
 - [ ] 取消、下载截断、SHA 不匹配、版本校验失败时当前命令不改变
+- [ ] 进程在链接/配置提交中断后，下次启动从权限为 `0600` 的事务日志恢复旧状态
 - [ ] 外部同名命令存在时不覆盖，并显示安全错误
 - [ ] OpenCode Desktop、CC Switch、Cockpit Tools AppImage 安装后可扫描、启动和更新
 - [ ] AppImage 被篡改后 Osverse 拒绝启动

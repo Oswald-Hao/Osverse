@@ -1,5 +1,6 @@
 build/bin
 build/release
+build/tools
 node_modules
 frontend/dist/*
 !frontend/dist/gitkeep
