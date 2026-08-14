@@ -67,7 +67,7 @@ jobs:
           SOURCE_DATE_EPOCH: '0'
         run: |
           version=${GITHUB_REF_NAME#v}
-          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_40
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_40 -ldflags "-X main.appVersion=$version"
           test -x build/bin/osverse
           build/linux/fetch-appimage-tools.sh build/tools/appimage
           build/linux/package.sh "$version" build/bin/osverse ubuntu22.04 build/release/ubuntu22.04 build/tools/appimage
@@ -122,7 +122,7 @@ jobs:
           SOURCE_DATE_EPOCH: '0'
         run: |
           version=${GITHUB_REF_NAME#v}
-          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_36
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -tags webkit2_36 -ldflags "-X main.appVersion=$version"
           test -x build/bin/osverse
           build/linux/fetch-appimage-tools.sh build/tools/appimage
           build/linux/package.sh "$version" build/bin/osverse ubuntu20.04 build/release/ubuntu20.04 build/tools/appimage
@@ -177,7 +177,9 @@ jobs:
           npm --prefix frontend audit --audit-level=high
       - name: Build user-scoped NSIS installer
         shell: pwsh
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+        run: |
+          $version = '${{ github.ref_name }}'.Substring(1)
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath -ldflags "-X main.appVersion=$version"
       - name: Package and verify Windows release candidates
         shell: pwsh
         run: |
@@ -248,7 +250,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          flags=(--verify-tag --title "Osverse ${GITHUB_REF_NAME}" --notes-file docs/release/v0.3.md)
+          flags=(--verify-tag --title "Osverse ${GITHUB_REF_NAME}" --notes-file docs/release/v0.4.md)
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           else

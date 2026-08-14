@@ -18,7 +18,8 @@ func TestWindowsDesktopCatalogUsesExactPinnedSources(t *testing.T) {
 	}
 	for id, item := range catalog {
 		if item.Kind == "store" {
-			if item.StoreID != "9PLM9XGG6VKS" {
+			want := map[string]string{"chatgpt-desktop": "9NT1R1C2HH7J", "codex-desktop": "9PLM9XGG6VKS"}[id]
+			if item.StoreID != want {
 				t.Fatalf("store artifact %s = %#v", id, item)
 			}
 			continue

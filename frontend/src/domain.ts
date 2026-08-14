@@ -62,6 +62,26 @@ export interface ProxyResult {
   checkedAt: string
 }
 
+export interface AppUpdateInfo {
+	available: boolean
+	canInstall: boolean
+	planId: string
+	currentVersion: string
+	latestVersion: string
+	releaseName: string
+	releaseNotes: string
+	publishedAt: string
+	downloadBytes: number
+	platform: string
+	format: string
+	message: string
+}
+
+export interface AppUpdateResult {
+	started: boolean
+	message: string
+}
+
 export interface InstallChange {
   kind: string
   path: string

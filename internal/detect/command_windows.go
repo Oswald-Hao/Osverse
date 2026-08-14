@@ -24,6 +24,7 @@ const (
 	installedMessage                  = "已安装"
 	multipleInstalledMessage          = "已安装，检测到多个安装位置"
 	partiallyVerifiedInstalledMessage = "已安装，另有安装位置无法验证"
+	installedUnverifiedMessage        = "已安装，版本暂时无法读取"
 	brokenVersionMessage              = "版本检测失败"
 )
 
@@ -49,7 +50,7 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 	if ctx.Err() != nil {
 		return commandComponent(spec, domain.StatusBroken, nil, brokenVersionMessage)
 	}
-	candidates, canceled := windowsCommandCandidates(ctx, spec.ExecutableNames, paths)
+	candidates, canceled := windowsCommandCandidates(ctx, spec, paths)
 	defer closeWindowsCandidates(candidates)
 	if canceled || ctx.Err() != nil {
 		return commandComponent(spec, domain.StatusBroken, nil, brokenVersionMessage)
@@ -59,7 +60,7 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 	}
 	managedRoot, managedOK := windowsManagedToolsRoot()
 	installations := make([]domain.Installation, 0, len(candidates))
-	valid, broken := 0, false
+	valid, present, broken := 0, 0, false
 	for _, candidate := range candidates {
 		installation := domain.Installation{Path: candidate.path, ResolvedPath: candidate.resolved, Source: "path"}
 		if managedOK && (pathWithinWindows(managedRoot, candidate.resolved) || managedWindowsShim(candidate.path, managedRoot, spec.ID)) {
@@ -81,9 +82,11 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 			installations = append(installations, installation)
 			continue
 		}
+		present++
 		version, parsed := parseCommandVersion(spec.VersionPattern, result)
 		if err != nil || result.TimedOut || result.Truncated || result.ExitCode != 0 || !parsed || ctx.Err() != nil {
 			broken = true
+			installation.Version = "unknown"
 		} else {
 			installation.Version = version
 			valid++
@@ -100,6 +103,8 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 		return commandComponent(spec, domain.StatusInstalled, installations, multipleInstalledMessage)
 	case valid == 1:
 		return commandComponent(spec, domain.StatusInstalled, installations, installedMessage)
+	case present > 0:
+		return commandComponent(spec, domain.StatusInstalled, installations, installedUnverifiedMessage)
 	default:
 		return commandComponent(spec, domain.StatusBroken, installations, brokenVersionMessage)
 	}
@@ -110,7 +115,7 @@ type windowsCommandCandidate struct {
 	evidence       *platformwindows.ExecutableEvidence
 }
 
-func windowsCommandCandidates(ctx context.Context, names, paths []string) ([]windowsCommandCandidate, bool) {
+func windowsCommandCandidates(ctx context.Context, spec CommandSpec, paths []string) ([]windowsCommandCandidate, bool) {
 	seenPaths, seenTargets := map[string]bool{}, map[string]bool{}
 	result := make([]windowsCommandCandidate, 0)
 	for _, directory := range paths {
@@ -120,7 +125,7 @@ func windowsCommandCandidates(ctx context.Context, names, paths []string) ([]win
 		if !filepath.IsAbs(directory) {
 			continue
 		}
-		for _, name := range names {
+		for _, name := range spec.ExecutableNames {
 			if ctx.Err() != nil {
 				return result, true
 			}
@@ -128,6 +133,9 @@ func windowsCommandCandidates(ctx context.Context, names, paths []string) ([]win
 				continue
 			}
 			path := filepath.Join(filepath.Clean(directory), name)
+			if excludedWindowsCLICandidate(spec.ID, path) {
+				continue
+			}
 			pathKey := strings.ToLower(path)
 			if seenPaths[pathKey] {
 				continue
@@ -148,6 +156,24 @@ func windowsCommandCandidates(ctx context.Context, names, paths []string) ([]win
 		}
 	}
 	return result, ctx.Err() != nil
+}
+
+func excludedWindowsCLICandidate(componentID, path string) bool {
+	canonical := strings.ToLower(filepath.ToSlash(filepath.Clean(path)))
+	if strings.Contains(canonical, "/appdata/local/microsoft/windowsapps/") {
+		return true
+	}
+	switch componentID {
+	case "claude-code":
+		return strings.Contains(canonical, "/appdata/local/programs/claude/") ||
+			strings.Contains(canonical, "/appdata/local/anthropicclaude/")
+	case "opencode-cli":
+		return strings.Contains(canonical, "/appdata/local/programs/opencode/") ||
+			strings.Contains(canonical, "/appdata/local/programs/@opencode-aidesktop/") ||
+			strings.Contains(canonical, "/program files/opencode/")
+	default:
+		return false
+	}
 }
 
 func validWindowsExecutableName(name string) bool {

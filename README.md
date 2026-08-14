@@ -42,17 +42,19 @@
 - **API Key 留在本地。** 第三方 API 档案使用 AES-256-GCM 加密，支持安全编辑，先探测协议兼容性，再由用户二次确认写入目标 CLI。
 - **代理只服务 Osverse。** 只需输入 `127.0.0.1` 上的端口，软件自动识别 HTTP、HTTPS CONNECT、SOCKS5，不改终端或系统全局代理。
 - **桌面生态统一管理。** 支持的桌面客户端与 API 切换工具可以在同一面板安装、更新和启动。
+- **Osverse 自身也能原地更新。** 启动时检查官方 Release，先展示版本与更新说明，再按当前安装方式下载、校验并启动更新，不必卸载或重新去 GitHub 找安装包。
 
 ## 能管理什么
 
 | 范围 | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
 | 核心 CLI | Claude Code、Codex CLI、OpenCode CLI 的检测与事务式安装/更新 | Claude Code、Codex CLI、OpenCode CLI 的检测与固定来源安装/更新 |
-| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT（含 Codex） |
+| 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT Desktop、Codex Desktop（分别识别） |
 | API 管理工具 | CC Switch、Cockpit Tools | CC Switch、Cockpit Tools |
 | API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key | 同左；主密钥由当前 Windows 用户的 DPAPI 保护 |
 | 组件控制 | 启动所有已验证安装、按位置处理冲突、预览并安全移除 | 同左；受管 CLI 移入 Osverse 恢复区 |
 | 网络 | 直连或本机 HTTP / HTTPS CONNECT / SOCKS5 代理 | 同左 |
+| Osverse 更新 | AppImage 原子替换并重启；便携包安全解包后原子替换；`.deb` 交给系统安装器确认 | 校验 NSIS 安装包后启动并自动退出旧版本 |
 | 可审计性 | 脱敏操作历史、校验和、SPDX SBOM、构建来源证明 | 同左 |
 
 Claude Desktop 官方 Linux 包的最低要求是 Ubuntu 22.04，所以在 Ubuntu 20.04 上会明确显示为不支持。ChatGPT Desktop 没有官方 Linux 版本，Osverse 不会提供来源不明的替代安装包。
@@ -96,6 +98,8 @@ Release 还提供便携 `.tar.gz`、统一 `SHA256SUMS`、SPDX 2.3 SBOM、结构
 gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 ```
 
+安装一次之后，Osverse 会在启动时静默检查新版本；发现更新时显示 Release 更新说明并等待确认。更新同样使用当前已验证的本机代理，前端不能指定下载地址、文件路径或摘要。
+
 ## 安全边界
 
 - 扫描不会执行 Shell 启动文件或 `.desktop` 文件。
@@ -104,6 +108,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 - 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
 - Windows 上受管 CLI 使用锁定文件身份移入 `%LOCALAPPDATA%\Osverse\recovery`，卸载桌面应用只允许固定的 WinGet ID、Microsoft Store ID、MSI ProductCode 或受信任卸载器路径。
 - 安装源来自内置白名单，并同时校验文件长度与 SHA-256。
+- Osverse 自更新只接受固定仓库的语义化版本、匹配平台的结构化清单和精确发布路径；稳定版默认不接收预发布版，测试版可升级到更新的测试版或稳定版。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
 - API Key 不会出现在档案列表、历史或日志中；Linux 使用权限受限的 AES-256-GCM 密钥，Windows 再以当前用户 DPAPI 保护主密钥；私网和保留地址必须明确确认。
 - Claude Desktop 的提权助手只能执行固定动作，不能运行用户输入的命令。

@@ -18,6 +18,7 @@ const (
 	ErrHistoryFailed      ErrorCode = "HISTORY_FAILED"
 	ErrRemovalPlanFailed  ErrorCode = "REMOVAL_PLAN_FAILED"
 	ErrRemovalTaskFailed  ErrorCode = "REMOVAL_TASK_FAILED"
+	ErrUpdateFailed       ErrorCode = "UPDATE_FAILED"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause

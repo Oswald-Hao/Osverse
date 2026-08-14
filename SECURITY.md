@@ -19,6 +19,8 @@ Remove real API keys, access tokens, private URLs, usernames, and unrelated pers
 
 Osverse is local-first and has no telemetry. The frontend cannot choose download URLs or digests: installers use backend-owned allowlists and plans. API secrets are encrypted at rest and are not returned in lists or operation history. On Windows, the profile master key is additionally protected with current-user DPAPI. Privileged Linux Claude Desktop installation is restricted to a fixed PolicyKit helper action; Windows installs and removals use backend-owned artifact identities, Store/WinGet IDs, MSI ProductCodes, or trusted uninstaller paths.
 
+Application self-update reads only the fixed `Oswald-Hao/Osverse` GitHub Release feed. It requires a valid semantic version, an exact repository/tag/channel manifest, a known platform filename and release path, a bounded byte length, and a lowercase SHA-256 digest. The frontend receives an opaque, short-lived, one-use plan ID and cannot replace any of those values. Windows and macOS hand off to a visible platform installer; Linux `.deb` updates require system confirmation, while AppImage and portable updates keep one rollback copy and restore it if restart fails. Release HTTPS and the GitHub repository account remain part of this trust boundary; GitHub provenance attestations provide an additional verification path for users and reviewers.
+
 Release consumers should verify `SHA256SUMS` and GitHub build provenance:
 
 ```bash
