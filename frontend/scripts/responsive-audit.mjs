@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const widths = [901, 960, 1024, 1053]
-const expectedLabels = ['环境概览', '工具状态', '系统信息']
+const expectedLabels = ['总览', 'API 配置', '安装记录', '设置']
 const previewPort = 4178
 
 const chromeCandidates = [

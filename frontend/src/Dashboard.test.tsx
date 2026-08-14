@@ -323,31 +323,22 @@ describe('environment status dashboard', () => {
     expect(screen.queryByText('not-a-date')).not.toBeInTheDocument()
   })
 
-  it('exposes static sidebar labels without navigation or decorative icons', () => {
+  it('exposes accessible sidebar navigation without decorative images', () => {
     render(<App />)
 
-    const overview = screen.getByRole('region', { name: '状态概览' })
-    for (const label of ['环境概览', '工具状态', '系统信息']) {
-      expect(
-        within(overview).getByRole('listitem', { name: label }),
-      ).toBeVisible()
+    const navigation = screen.getByRole('navigation', { name: '主导航' })
+    for (const label of ['总览', 'API 配置', '安装记录', '设置']) {
+      expect(within(navigation).getByRole('button', { name: label })).toBeVisible()
     }
-    expect(within(overview).queryByRole('navigation')).not.toBeInTheDocument()
-    expect(within(overview).queryByRole('img')).not.toBeInTheDocument()
-    for (const glyph of ['⌁', '⌘', '◈']) {
-      expect(within(overview).getByText(glyph)).toHaveAttribute(
-        'aria-hidden',
-        'true',
-      )
-    }
+    expect(within(navigation).getByRole('button', { name: '总览' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).queryByRole('img')).not.toBeInTheDocument()
   })
 
   it('keeps desktop-width sidebar labels in normal layout', () => {
     render(<App />)
 
-    for (const label of ['环境概览', '工具状态', '系统信息']) {
-      const item = screen.getByRole('listitem', { name: label })
-      const visibleLabel = within(item).getByText(label)
+    for (const label of ['总览', 'API 配置', '安装记录', '设置']) {
+      const visibleLabel = screen.getByRole('button', { name: label }).querySelector('.sidebar__label')
       expect(visibleLabel).toBeVisible()
       expect(visibleLabel).toHaveStyle({ position: '' })
     }

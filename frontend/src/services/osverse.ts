@@ -1,4 +1,10 @@
 import {
+  ApplyAPIPlan,
+  CreateAPIApplyPlan,
+  DeleteAPIProfile,
+  GetAPICompatibility,
+  ListAPIProfiles,
+  ProbeAPIProfile,
   ProbeProxy,
   CancelInstallTask,
   CreateInstallPlan,
@@ -6,9 +12,16 @@ import {
   ScanEnvironment,
   UseDirectConnection,
   StartInstall,
+  SaveAPIProfile,
 } from '../../wailsjs/go/main/App'
 import type { domain as generated } from '../../wailsjs/go/models'
 import type {
+  APIApplyBatchResult,
+  APIApplyPlan,
+  APIProbeResult,
+  APIProfile,
+  APIProfileInput,
+  APITargetCompatibility,
   ComponentStatus,
   EnvironmentSnapshot,
   InstallPlan,
@@ -37,6 +50,7 @@ type PlanFunction = (componentId: string) => Promise<unknown>
 type StartFunction = (planId: string) => Promise<unknown>
 type TaskFunction = (taskId: string) => Promise<unknown>
 type CancelFunction = (taskId: string) => Promise<void>
+type ProfileOperation = (...args: never[]) => Promise<unknown>
 
 const componentStatuses = new Set<string>([
   'detecting',
@@ -57,6 +71,13 @@ let createPlan: PlanFunction = CreateInstallPlan
 let startInstall: StartFunction = StartInstall
 let getTask: TaskFunction = GetInstallTask
 let cancelTask: CancelFunction = CancelInstallTask
+let saveProfile = SaveAPIProfile as unknown as ProfileOperation
+let listProfiles = ListAPIProfiles as unknown as ProfileOperation
+let deleteProfile = DeleteAPIProfile as unknown as ProfileOperation
+let probeProfile = ProbeAPIProfile as unknown as ProfileOperation
+let getCompatibility = GetAPICompatibility as unknown as ProfileOperation
+let createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
+let applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
 
 const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
@@ -213,6 +234,99 @@ export async function cancelInstall(taskId: string): Promise<void> {
   await cancelTask(taskId)
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('API 配置服务返回了无效的数据')
+  }
+  return value as Record<string, unknown>
+}
+
+function booleanValue(value: unknown): boolean {
+  if (typeof value !== 'boolean') throw new Error('API 配置服务返回了无效的状态')
+  return value
+}
+
+function normalizeAPIProfile(raw: unknown): APIProfile {
+  const value = recordValue(raw)
+  return {
+    id: stringValue(value.id), name: stringValue(value.name), keyHint: stringValue(value.keyHint),
+    baseUrl: stringValue(value.baseUrl), model: stringValue(value.model),
+    allowPrivateNetwork: booleanValue(value.allowPrivateNetwork),
+    protection: stringValue(value.protection), createdAt: stringValue(value.createdAt),
+    updatedAt: stringValue(value.updatedAt),
+  }
+}
+
+export async function saveAPIProfile(input: APIProfileInput): Promise<APIProfile> {
+  return normalizeAPIProfile(await saveProfile(input as never))
+}
+
+export async function listAPIProfiles(): Promise<APIProfile[]> {
+  const value = await listProfiles()
+  if (!Array.isArray(value)) throw new Error('API 配置服务返回了无效的档案列表')
+  return value.map(normalizeAPIProfile)
+}
+
+export async function deleteAPIProfile(id: string): Promise<void> {
+  await deleteProfile(id as never)
+}
+
+export async function probeAPIProfile(id: string): Promise<APIProbeResult> {
+  const value = recordValue(await probeProfile(id as never))
+  const protocols = Array.isArray(value.protocols) ? value.protocols : []
+  return {
+    profileId: stringValue(value.profileId), reachable: booleanValue(value.reachable),
+    authenticated: booleanValue(value.authenticated),
+    protocols: protocols.map((raw) => {
+      const protocol = recordValue(raw)
+      return {
+        protocol: stringValue(protocol.protocol), status: stringValue(protocol.status),
+        message: stringValue(protocol.message),
+      }
+    }),
+    message: stringValue(value.message), checkedAt: stringValue(value.checkedAt),
+  }
+}
+
+export async function getAPICompatibility(id: string): Promise<APITargetCompatibility[]> {
+  const value = await getCompatibility(id as never)
+  if (!Array.isArray(value)) throw new Error('API 配置服务返回了无效的兼容矩阵')
+  return value.map((raw) => {
+    const item = recordValue(raw)
+    return { target: stringValue(item.target), compatible: booleanValue(item.compatible), reason: stringValue(item.reason) }
+  })
+}
+
+export async function createAPIApplyPlan(profileId: string, targets: string[]): Promise<APIApplyPlan> {
+  const value = recordValue(await createApplyPlan(profileId as never, targets as never))
+  const effects = Array.isArray(value.effects) ? value.effects : []
+  return {
+    id: stringValue(value.id), profileId: stringValue(value.profileId),
+    profileName: stringValue(value.profileName), keyHint: stringValue(value.keyHint),
+    effects: effects.map((raw) => {
+      const effect = recordValue(raw)
+      return { target: stringValue(effect.target), path: stringValue(effect.path), description: stringValue(effect.description) }
+    }),
+    warning: stringValue(value.warning), createdAt: stringValue(value.createdAt), expiresAt: stringValue(value.expiresAt),
+  }
+}
+
+export async function applyProfilePlan(id: string): Promise<APIApplyBatchResult> {
+  const value = recordValue(await applyAPIPlan(id as never))
+  const results = Array.isArray(value.results) ? value.results : []
+  return {
+    planId: stringValue(value.planId), profileId: stringValue(value.profileId),
+    results: results.map((raw) => {
+      const item = recordValue(raw)
+      return {
+        target: stringValue(item.target), applied: booleanValue(item.applied), path: stringValue(item.path),
+        backupPath: stringValue(item.backupPath), message: stringValue(item.message),
+      }
+    }),
+    succeeded: numberValue(value.succeeded), failed: numberValue(value.failed),
+  }
+}
+
 // These guarded exports provide a resettable Vitest seam without making a
 // runtime bridge or replaceable scanner available in production builds.
 export function setScanEnvironmentForTests(testScan: ScanFunction): void {
@@ -271,4 +385,34 @@ export function resetInstallOperationsForTests(): void {
   startInstall = StartInstall
   getTask = GetInstallTask
   cancelTask = CancelInstallTask
+}
+
+export function setProfileOperationsForTests(operations: {
+  save: (...args: unknown[]) => Promise<unknown>
+  list: (...args: unknown[]) => Promise<unknown>
+  delete: (...args: unknown[]) => Promise<unknown>
+  probe: (...args: unknown[]) => Promise<unknown>
+  compatibility: (...args: unknown[]) => Promise<unknown>
+  createPlan: (...args: unknown[]) => Promise<unknown>
+  apply: (...args: unknown[]) => Promise<unknown>
+}): void {
+  if (!testSeamEnabled()) throw new Error('The profile test seam is unavailable outside tests')
+  saveProfile = operations.save as ProfileOperation
+  listProfiles = operations.list as ProfileOperation
+  deleteProfile = operations.delete as ProfileOperation
+  probeProfile = operations.probe as ProfileOperation
+  getCompatibility = operations.compatibility as ProfileOperation
+  createApplyPlan = operations.createPlan as ProfileOperation
+  applyAPIPlan = operations.apply as ProfileOperation
+}
+
+export function resetProfileOperationsForTests(): void {
+  if (!testSeamEnabled()) throw new Error('The profile test seam is unavailable outside tests')
+  saveProfile = SaveAPIProfile as unknown as ProfileOperation
+  listProfiles = ListAPIProfiles as unknown as ProfileOperation
+  deleteProfile = DeleteAPIProfile as unknown as ProfileOperation
+  probeProfile = ProbeAPIProfile as unknown as ProfileOperation
+  getCompatibility = GetAPICompatibility as unknown as ProfileOperation
+  createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
+  applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
 }

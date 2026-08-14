@@ -100,3 +100,72 @@ export interface InstallTask {
   startedAt: string
   finishedAt: string
 }
+
+export interface APIProfileInput {
+  id: string
+  name: string
+  apiKey: string
+  baseUrl: string
+  model: string
+  allowPrivateNetwork: boolean
+}
+
+export interface APIProfile {
+  id: string
+  name: string
+  keyHint: string
+  baseUrl: string
+  model: string
+  allowPrivateNetwork: boolean
+  protection: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface APIProtocolResult {
+  protocol: string
+  status: string
+  message: string
+}
+
+export interface APIProbeResult {
+  profileId: string
+  reachable: boolean
+  authenticated: boolean
+  protocols: APIProtocolResult[]
+  message: string
+  checkedAt: string
+}
+
+export interface APITargetCompatibility {
+  target: string
+  compatible: boolean
+  reason: string
+}
+
+export interface APIApplyPlan {
+  id: string
+  profileId: string
+  profileName: string
+  keyHint: string
+  effects: Array<{ target: string; path: string; description: string }>
+  warning: string
+  createdAt: string
+  expiresAt: string
+}
+
+export interface APIApplyResult {
+  target: string
+  applied: boolean
+  path: string
+  backupPath: string
+  message: string
+}
+
+export interface APIApplyBatchResult {
+  planId: string
+  profileId: string
+  results: APIApplyResult[]
+  succeeded: number
+  failed: number
+}

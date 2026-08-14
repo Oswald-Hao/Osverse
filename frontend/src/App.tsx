@@ -1,10 +1,14 @@
 import './App.css'
 
+import { useState } from 'react'
+
 import Sidebar from './Sidebar'
 import SummaryCards from './SummaryCards'
 import ToolSection from './ToolSection'
 import ProxyPanel from './ProxyPanel'
 import InstallDialog from './InstallDialog'
+import APIProfilesPage from './APIProfilesPage'
+import type { AppView } from './Sidebar'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 import { useInstallFlow } from './hooks/useInstallFlow'
 
@@ -90,14 +94,32 @@ function formatScanTime(scannedAt: string) {
 }
 
 function App() {
+  const [view, setView] = useState<AppView>('overview')
   const { snapshot, phase, error, refresh } = useEnvironmentScan()
   const install = useInstallFlow(refresh)
   const isScanning = phase === 'scanning'
 
+  if (view === 'api') {
+    return <div className="app-shell"><Sidebar active={view} onNavigate={setView} /><main className="dashboard-main"><APIProfilesPage /></main></div>
+  }
+
+  if (view === 'history' || view === 'settings') {
+    const isHistory = view === 'history'
+    return (
+      <div className="app-shell">
+        <Sidebar active={view} onNavigate={setView} />
+        <main className="dashboard-main">
+          <header className="dashboard-header"><div><p className="eyebrow">OSVERSE</p><h2>{isHistory ? '安装记录' : '设置'}</h2><p>{isHistory ? '安装和配置事务的脱敏结果。' : '本地存储、网络和更新策略。'}</p></div></header>
+          <section className="system-card placeholder-page"><div><h3>{isHistory ? '记录功能正在接入持久化任务日志' : '所有设置均保持本地优先'}</h3><p>{isHistory ? '当前会话的安装进度已可追踪；持久记录将在 Linux 发布门禁前完成。' : '代理仅作用于 Osverse；API 档案使用本地 AES-256-GCM 加密。'}</p></div></section>
+        </main>
+      </div>
+    )
+  }
+
   if (!snapshot && phase === 'error') {
     return (
       <div className="app-shell">
-        <Sidebar />
+        <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main">
           <EmptyState error={error ?? '环境扫描失败，请重试'} onRetry={refresh} />
         </main>
@@ -108,7 +130,7 @@ function App() {
   if (!snapshot) {
     return (
       <div className="app-shell">
-        <Sidebar />
+        <Sidebar active={view} onNavigate={setView} />
         <main className="dashboard-main dashboard-main--centered">
           <ScanNotice hasSnapshot={false} />
         </main>
@@ -121,7 +143,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar active={view} onNavigate={setView} />
       <main className="dashboard-main">
         <header className="dashboard-header">
           <div>

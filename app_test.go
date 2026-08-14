@@ -10,6 +10,7 @@ import (
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/install"
+	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
@@ -98,7 +99,12 @@ func TestScanEnvironmentReturnsRedactedUnavailableErrorForNilState(t *testing.T)
 
 func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
-	want := []string{"CancelInstallTask", "CreateInstallPlan", "GetInstallTask", "ProbeProxy", "ScanEnvironment", "StartInstall", "UseDirectConnection"}
+	want := []string{
+		"ApplyAPIPlan", "CancelInstallTask", "CreateAPIApplyPlan", "CreateInstallPlan",
+		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "ListAPIProfiles",
+		"ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
+		"StartInstall", "UseDirectConnection",
+	}
 	if typeOfApp.NumMethod() != len(want) {
 		t.Fatalf("exported App methods = %d, want %d fixed operations", typeOfApp.NumMethod(), len(want))
 	}
@@ -106,6 +112,69 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 		if method := typeOfApp.Method(index); method.Name != name {
 			t.Fatalf("exported App method %d = %q, want %q", index, method.Name, name)
 		}
+	}
+}
+
+func TestAPIProfileBridgeUsesOnlyRedactedResultsAndPublicErrors(t *testing.T) {
+	service := &fakeProfileService{}
+	service.save = func(ctx context.Context, input profiles.Input) (profiles.Profile, error) {
+		if ctx == nil || input.APIKey != "secret-value" {
+			t.Fatalf("Save context/input = (%v, %#v)", ctx, input)
+		}
+		return profiles.Profile{ID: "profile", Name: input.Name, KeyHint: "••••alue"}, nil
+	}
+	service.list = func(context.Context) ([]profiles.Profile, error) {
+		return []profiles.Profile{{ID: "profile", KeyHint: "••••alue"}}, nil
+	}
+	service.probe = func(context.Context, string) (profiles.ProbeResult, error) {
+		return profiles.ProbeResult{ProfileID: "profile", Reachable: true}, nil
+	}
+	service.compatibility = func(string) ([]profiles.TargetCompatibility, error) {
+		return []profiles.TargetCompatibility{{Target: profiles.TargetCodex, Compatible: true}}, nil
+	}
+	service.createPlan = func(context.Context, string, []string) (profiles.ApplyPlan, error) {
+		return profiles.ApplyPlan{ID: "apply-plan"}, nil
+	}
+	service.apply = func(context.Context, string) (profiles.ApplyBatchResult, error) {
+		return profiles.ApplyBatchResult{PlanID: "apply-plan", Succeeded: 1}, nil
+	}
+	service.delete = func(context.Context, string) error { return nil }
+	app := newAppWithServiceBundle(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, nil, service)
+
+	profile, err := app.SaveAPIProfile(profiles.Input{Name: "Work", APIKey: "secret-value", BaseURL: "https://api.example", Model: "model"})
+	if err != nil || profile.KeyHint != "••••alue" {
+		t.Fatalf("SaveAPIProfile() = (%#v, %v)", profile, err)
+	}
+	listed, err := app.ListAPIProfiles()
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("ListAPIProfiles() = (%#v, %v)", listed, err)
+	}
+	if result, err := app.ProbeAPIProfile("profile"); err != nil || !result.Reachable {
+		t.Fatalf("ProbeAPIProfile() = (%#v, %v)", result, err)
+	}
+	if result, err := app.GetAPICompatibility("profile"); err != nil || !result[0].Compatible {
+		t.Fatalf("GetAPICompatibility() = (%#v, %v)", result, err)
+	}
+	plan, err := app.CreateAPIApplyPlan("profile", []string{profiles.TargetCodex})
+	if err != nil || plan.ID != "apply-plan" {
+		t.Fatalf("CreateAPIApplyPlan() = (%#v, %v)", plan, err)
+	}
+	if result, err := app.ApplyAPIPlan(plan.ID); err != nil || result.Succeeded != 1 {
+		t.Fatalf("ApplyAPIPlan() = (%#v, %v)", result, err)
+	}
+	if err := app.DeleteAPIProfile("profile"); err != nil {
+		t.Fatalf("DeleteAPIProfile() error = %v", err)
+	}
+
+	service.save = func(context.Context, profiles.Input) (profiles.Profile, error) {
+		return profiles.Profile{}, errors.New("secret backend diagnostic")
+	}
+	_, err = app.SaveAPIProfile(profiles.Input{})
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Code != domain.ErrProfileFailed || strings.Contains(public.Error(), "secret") {
+		t.Fatalf("profile public error = %v", err)
 	}
 }
 
@@ -325,6 +394,38 @@ type fakeInstallManager struct {
 	start  func(context.Context, string, proxyservice.Protocol, int) (install.Task, error)
 	task   func(string) (install.Task, error)
 	cancel func(string) error
+}
+
+type fakeProfileService struct {
+	save          func(context.Context, profiles.Input) (profiles.Profile, error)
+	list          func(context.Context) ([]profiles.Profile, error)
+	delete        func(context.Context, string) error
+	probe         func(context.Context, string) (profiles.ProbeResult, error)
+	compatibility func(string) ([]profiles.TargetCompatibility, error)
+	createPlan    func(context.Context, string, []string) (profiles.ApplyPlan, error)
+	apply         func(context.Context, string) (profiles.ApplyBatchResult, error)
+}
+
+func (service *fakeProfileService) Save(ctx context.Context, input profiles.Input) (profiles.Profile, error) {
+	return service.save(ctx, input)
+}
+func (service *fakeProfileService) List(ctx context.Context) ([]profiles.Profile, error) {
+	return service.list(ctx)
+}
+func (service *fakeProfileService) Delete(ctx context.Context, id string) error {
+	return service.delete(ctx, id)
+}
+func (service *fakeProfileService) Probe(ctx context.Context, id string) (profiles.ProbeResult, error) {
+	return service.probe(ctx, id)
+}
+func (service *fakeProfileService) Compatibility(id string) ([]profiles.TargetCompatibility, error) {
+	return service.compatibility(id)
+}
+func (service *fakeProfileService) CreateApplyPlan(ctx context.Context, id string, targets []string) (profiles.ApplyPlan, error) {
+	return service.createPlan(ctx, id, targets)
+}
+func (service *fakeProfileService) Apply(ctx context.Context, id string) (profiles.ApplyBatchResult, error) {
+	return service.apply(ctx, id)
 }
 
 func (manager *fakeInstallManager) Start(ctx context.Context, id string, protocol proxyservice.Protocol, port int) (install.Task, error) {
