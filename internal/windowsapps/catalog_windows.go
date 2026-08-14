@@ -35,7 +35,7 @@ func builtInCatalog() (map[string]artifact, error) {
 		{ID: "opencode-desktop", Name: "OpenCode Desktop", Version: "1.18.18", Kind: "exe",
 			URL:    "https://github.com/anomalyco/opencode/releases/download/v1.18.18/opencode-desktop-win-x64.exe",
 			SHA256: "f46c9420df889483d64fcb96637adfced89e9b3a1895fb6cc913caa0d6ee1962", DownloadBytes: 126_257_464,
-			SilentArgs: []string{"/S"}, ExpectedPaths: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`}},
+			SilentArgs: []string{"/S"}, ExpectedPaths: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`}},
 		{ID: "cc-switch", Name: "CC Switch", Version: "3.19.2", Kind: "msi",
 			URL:    "https://github.com/farion1231/cc-switch/releases/download/v3.19.2/CC-Switch-v3.19.2-Windows.msi",
 			SHA256: "60ae15c9230240283b7184c6d98624c0fdd26f7b52bde67160f923196813dac6", DownloadBytes: 13_082_624,

@@ -64,3 +64,34 @@ func TestWindowsDesktopSpecsIncludeCodexAndFixedCategories(t *testing.T) {
 		t.Fatal("Codex Desktop missing from Windows catalog")
 	}
 }
+
+func TestDetectWindowsOpenCodeDesktopUsesRegistryInstallLocation(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(t.TempDir(), "Custom OpenCode", "OpenCode.exe")
+	if err := os.MkdirAll(filepath.Dir(custom), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(custom, []byte("MZ fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := WindowsDesktopSpecs()[3]
+	component, err := DetectWindowsDesktop(context.Background(), spec, domain.SystemInfo{Supported: true}, nil,
+		fakeWindowsPackageQuery{evidence: WindowsPackageEvidence{Installed: true, Version: "1.14.48", Source: "registry", ExecutablePaths: []string{custom}}}, home)
+	if err != nil || component.Status != domain.StatusInstalled || len(component.Installations) != 1 || component.Installations[0].Path != custom {
+		t.Fatalf("DetectWindowsDesktop() = (%#v, %v)", component, err)
+	}
+}
+
+func TestRegistryExecutablePathsAcceptsInstallLocationAndDisplayIcon(t *testing.T) {
+	spec := WindowsDesktopSpecs()[3]
+	paths := registryExecutablePaths(spec, `C:\Program Files\OpenCode`, `"D:\Apps\OpenCode\OpenCode.exe",0`)
+	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %#v", paths)
+	}
+	for index := range want {
+		if paths[index] != want[index] {
+			t.Fatalf("paths = %#v", paths)
+		}
+	}
+}

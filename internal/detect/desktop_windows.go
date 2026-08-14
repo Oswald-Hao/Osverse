@@ -5,6 +5,7 @@ package detect
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -39,9 +40,9 @@ func WindowsDesktopSpecs() []WindowsDesktopSpec {
 			ExecutableNames: []string{"Codex.exe", "ChatGPT.exe"}, RegistryNames: []string{"Codex", "ChatGPT"}, AppModelPrefixes: []string{"OpenAI.Codex", "OpenAI.ChatGPT"},
 			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\Codex.exe`, `AppData\Local\Microsoft\WindowsApps\ChatGPT.exe`}, MinimumOS: "Windows 10 1809"},
 		{ID: "opencode-desktop", Name: "OpenCode Desktop", Category: "Desktop Applications",
-			ExecutableNames: []string{"OpenCode.exe", "opencode-desktop.exe"}, RegistryNames: []string{"OpenCode"},
-			RelativeExecutables: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`},
-			MinimumOS:           "Windows 10 1809", LatestVersion: "1.18.18"},
+			ExecutableNames: []string{"OpenCode.exe", "opencode-desktop.exe"}, RegistryNames: []string{"OpenCode", "opencode", "@opencode/aidesktop", "@opencode-aidesktop"},
+			RelativeExecutables: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
+			MinimumOS:           "Windows 10 1809"},
 		{ID: "cc-switch", Name: "CC Switch", Category: "Management Tools",
 			ExecutableNames: []string{"CC Switch.exe", "cc-switch.exe"}, RegistryNames: []string{"CC Switch"},
 			RelativeExecutables: []string{`AppData\Local\Programs\CC Switch\CC Switch.exe`, `AppData\Local\Programs\CC Switch\cc-switch.exe`},
@@ -54,9 +55,10 @@ func WindowsDesktopSpecs() []WindowsDesktopSpec {
 }
 
 type WindowsPackageEvidence struct {
-	Installed bool
-	Version   string
-	Source    string
+	Installed       bool
+	Version         string
+	Source          string
+	ExecutablePaths []string
 }
 
 type WindowsPackageQuery interface {
@@ -92,14 +94,46 @@ func (RegistryPackageQuery) Evidence(ctx context.Context, spec WindowsDesktopSpe
 				continue
 			}
 			display, _, displayErr := entry.GetStringValue("DisplayName")
-			version, _, _ := entry.GetStringValue("DisplayVersion")
-			_ = entry.Close()
 			if displayErr == nil && containsFold(spec.RegistryNames, strings.TrimSpace(display)) {
-				return WindowsPackageEvidence{Installed: true, Version: cleanVersion(version), Source: "registry"}, nil
+				version, _, _ := entry.GetStringValue("DisplayVersion")
+				installLocation, _, _ := entry.GetStringValue("InstallLocation")
+				displayIcon, _, _ := entry.GetStringValue("DisplayIcon")
+				_ = entry.Close()
+				return WindowsPackageEvidence{Installed: true, Version: cleanVersion(version), Source: "registry",
+					ExecutablePaths: registryExecutablePaths(spec, installLocation, displayIcon)}, nil
 			}
+			_ = entry.Close()
 		}
 	}
 	return appModelEvidence(ctx, spec)
+}
+
+func registryExecutablePaths(spec WindowsDesktopSpec, installLocation, displayIcon string) []string {
+	result, seen := make([]string, 0, len(spec.ExecutableNames)+1), make(map[string]bool)
+	add := func(candidate string) {
+		candidate = strings.Trim(strings.TrimSpace(candidate), `"`)
+		if !filepath.IsAbs(candidate) || strings.ContainsAny(candidate, "\x00\r\n") {
+			return
+		}
+		candidate = filepath.Clean(candidate)
+		key := strings.ToLower(candidate)
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, candidate)
+		}
+	}
+	location := strings.Trim(strings.TrimSpace(installLocation), `"`)
+	if filepath.IsAbs(location) {
+		for _, name := range spec.ExecutableNames {
+			add(filepath.Join(location, name))
+		}
+	}
+	icon := strings.TrimSpace(displayIcon)
+	if comma := strings.LastIndex(icon, ","); comma > 0 {
+		icon = icon[:comma]
+	}
+	add(icon)
+	return result
 }
 
 type registryLocation struct {
@@ -232,6 +266,16 @@ func windowsDesktopExecutables(ctx context.Context, spec WindowsDesktopSpec, pat
 	}
 	for _, relative := range spec.RelativeExecutables {
 		add(filepath.Join(home, filepath.FromSlash(strings.ReplaceAll(relative, `\`, `/`))))
+	}
+	for _, candidate := range packageEvidence.ExecutablePaths {
+		add(candidate)
+	}
+	if spec.ID == "opencode-desktop" {
+		for _, root := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
+			if filepath.IsAbs(root) {
+				add(filepath.Join(root, "OpenCode", "OpenCode.exe"))
+			}
+		}
 	}
 	for _, directory := range paths {
 		for _, name := range spec.ExecutableNames {

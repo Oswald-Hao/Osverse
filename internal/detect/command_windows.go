@@ -24,6 +24,7 @@ const (
 	installedMessage                  = "已安装"
 	multipleInstalledMessage          = "已安装，检测到多个安装位置"
 	partiallyVerifiedInstalledMessage = "已安装，另有安装位置无法验证"
+	installedUnverifiedMessage        = "已安装，版本暂时无法读取"
 	brokenVersionMessage              = "版本检测失败"
 )
 
@@ -59,7 +60,7 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 	}
 	managedRoot, managedOK := windowsManagedToolsRoot()
 	installations := make([]domain.Installation, 0, len(candidates))
-	valid, broken := 0, false
+	valid, present, broken := 0, 0, false
 	for _, candidate := range candidates {
 		installation := domain.Installation{Path: candidate.path, ResolvedPath: candidate.resolved, Source: "path"}
 		if managedOK && (pathWithinWindows(managedRoot, candidate.resolved) || managedWindowsShim(candidate.path, managedRoot, spec.ID)) {
@@ -81,9 +82,11 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 			installations = append(installations, installation)
 			continue
 		}
+		present++
 		version, parsed := parseCommandVersion(spec.VersionPattern, result)
 		if err != nil || result.TimedOut || result.Truncated || result.ExitCode != 0 || !parsed || ctx.Err() != nil {
 			broken = true
+			installation.Version = "unknown"
 		} else {
 			installation.Version = version
 			valid++
@@ -100,6 +103,8 @@ func (detector CommandDetector) Detect(ctx context.Context, spec CommandSpec, pa
 		return commandComponent(spec, domain.StatusInstalled, installations, multipleInstalledMessage)
 	case valid == 1:
 		return commandComponent(spec, domain.StatusInstalled, installations, installedMessage)
+	case present > 0:
+		return commandComponent(spec, domain.StatusInstalled, installations, installedUnverifiedMessage)
 	default:
 		return commandComponent(spec, domain.StatusBroken, installations, brokenVersionMessage)
 	}
