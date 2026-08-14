@@ -84,6 +84,7 @@ export type InstallTaskPhase =
   | 'queued'
   | 'downloading'
   | 'verifying'
+  | 'installing'
   | 'committing'
   | 'completed'
   | 'failed'
