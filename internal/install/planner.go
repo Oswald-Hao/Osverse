@@ -21,34 +21,6 @@ import (
 
 const planLifetime = 10 * time.Minute
 
-var (
-	ErrUnknownComponent  = errors.New("unknown install component")
-	ErrUnsupportedTarget = errors.New("unsupported install target")
-	ErrInvalidHome       = errors.New("invalid user home")
-	ErrPlanUnavailable   = errors.New("install plan unavailable")
-)
-
-// PlannedChange is one user-visible effect of an install plan.
-type PlannedChange struct {
-	Kind        string `json:"kind"`
-	Path        string `json:"path"`
-	Description string `json:"description"`
-}
-
-// Plan is a frontend-safe immutable preview. Network URLs and hashes remain
-// backend-owned so the frontend cannot turn the installer into a downloader.
-type Plan struct {
-	ID            string          `json:"id"`
-	ComponentID   string          `json:"componentId"`
-	Name          string          `json:"name"`
-	Command       string          `json:"command"`
-	Version       string          `json:"version"`
-	DownloadBytes int64           `json:"downloadBytes"`
-	Changes       []PlannedChange `json:"changes"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	ExpiresAt     time.Time       `json:"expiresAt"`
-}
-
 type storedPlan struct {
 	public   Plan
 	artifact artifact

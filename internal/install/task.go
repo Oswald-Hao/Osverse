@@ -4,28 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
-
-var (
-	ErrTaskUnavailable = errors.New("install task unavailable")
-	ErrInstallActive   = errors.New("component install already active")
-)
-
-// Task is the redacted frontend snapshot for one asynchronous install.
-type Task struct {
-	ID          string    `json:"id"`
-	PlanID      string    `json:"planId"`
-	ComponentID string    `json:"componentId"`
-	Phase       string    `json:"phase"`
-	Progress    int       `json:"progress"`
-	Message     string    `json:"message"`
-	ErrorCode   string    `json:"errorCode"`
-	StartedAt   time.Time `json:"startedAt"`
-	FinishedAt  time.Time `json:"finishedAt"`
-}
 
 type taskState struct {
 	public Task

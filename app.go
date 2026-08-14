@@ -7,16 +7,12 @@ import (
 	"sync"
 	"time"
 
-	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	historyservice "github.com/Oswald-Hao/Osverse/internal/history"
 	"github.com/Oswald-Hao/Osverse/internal/install"
-	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
-	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
-	"github.com/Oswald-Hao/Osverse/internal/systeminstall"
 )
 
 // Scanner is the narrow read-only operation used by the Wails application.
@@ -115,25 +111,7 @@ func NewApp(scanner Scanner) *App {
 		app.history = history
 	}
 	if err == nil && app != nil {
-		if appManager, managerErr := appservice.NewManager(home); managerErr == nil {
-			app.appPlanner = appManager
-			app.appExecutor = appManager
-			app.appLauncher = appManager
-		}
-	}
-	var systemRemover interface {
-		Remove(context.Context, string) error
-	}
-	if app != nil {
-		if systemManager, managerErr := systeminstall.NewManager(); managerErr == nil {
-			app.systemPlanner = systemManager
-			app.systemExecutor = systemManager
-			systemRemover = systemManager
-		}
-		app.componentLauncher = launchservice.NewManager(platformlinux.NewDetachedStarter(), app.appLauncher)
-	}
-	if err == nil && app != nil {
-		app.removal, _ = removal.NewManager(home, systemRemover)
+		configurePlatformServices(app, home)
 	}
 	return app
 }
@@ -307,9 +285,7 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 		app.mu.Unlock()
 		return plan, nil
 	}
-	if errors.Is(err, install.ErrUnknownComponent) || errors.Is(err, install.ErrUnsupportedTarget) ||
-		errors.Is(err, appservice.ErrUnknownComponent) || errors.Is(err, appservice.ErrUnsupportedTarget) ||
-		errors.Is(err, systeminstall.ErrUnknownComponent) || errors.Is(err, systeminstall.ErrUnsupportedTarget) {
+	if isUnsupportedInstallError(err) {
 		return install.Plan{}, domain.NewPublicError(
 			domain.ErrInstallPlanFailed, "该工具暂不支持在当前系统安装", err,
 		)
