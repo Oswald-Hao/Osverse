@@ -14,6 +14,7 @@ func TestVersionOrdering(t *testing.T) {
 		{"1.0.0-beta.10", "1.0.0-beta.2", 1},
 		{"1.0.0-beta.2", "1.0.0", -1},
 		{"1.0.0-alpha", "1.0.0-beta", -1},
+		{"1.0.0-beta.999999999999999999999999999999", "1.0.0-beta.10", 1},
 	}
 	for _, test := range tests {
 		left, leftErr := parseVersion(test.left)

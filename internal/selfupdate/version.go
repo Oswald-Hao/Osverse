@@ -96,9 +96,13 @@ func compareVersions(left, right version) int {
 		}
 		leftNumeric, rightNumeric := numeric(leftPart), numeric(rightPart)
 		if leftNumeric && rightNumeric {
-			leftValue, _ := strconv.Atoi(leftPart)
-			rightValue, _ := strconv.Atoi(rightPart)
-			if leftValue < rightValue {
+			if len(leftPart) < len(rightPart) {
+				return -1
+			}
+			if len(leftPart) > len(rightPart) {
+				return 1
+			}
+			if leftPart < rightPart {
 				return -1
 			}
 			return 1
