@@ -34,8 +34,8 @@ export function GetInstallTask(arg1) {
   return window['go']['main']['App']['GetInstallTask'](arg1);
 }
 
-export function LaunchManagedApp(arg1) {
-  return window['go']['main']['App']['LaunchManagedApp'](arg1);
+export function LaunchComponent(arg1) {
+  return window['go']['main']['App']['LaunchComponent'](arg1);
 }
 
 export function ListAPIProfiles() {

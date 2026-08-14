@@ -13,7 +13,7 @@ import SettingsPage from './SettingsPage'
 import type { AppView } from './Sidebar'
 import { useEnvironmentScan } from './hooks/useEnvironmentScan'
 import { useInstallFlow } from './hooks/useInstallFlow'
-import { launchManagedApp } from './services/osverse'
+import { launchComponent } from './services/osverse'
 
 const sections = [
   {
@@ -239,7 +239,7 @@ function App() {
               onInstall={install.prepare}
               onLaunch={(id) => {
                 setLaunchNotice(null)
-                void launchManagedApp(id).catch((reason: unknown) => {
+                void launchComponent(id).catch((reason: unknown) => {
                   setLaunchNotice(reason instanceof Error ? reason.message : '无法启动应用')
                 })
               }}

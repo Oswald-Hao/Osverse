@@ -651,6 +651,13 @@ button:focus-visible {
   font-size: 0.7rem;
 }
 
+.tool-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .tool-card button {
   flex: none;
   padding: 7px 10px;

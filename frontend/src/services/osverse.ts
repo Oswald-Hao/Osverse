@@ -6,7 +6,7 @@ import {
   GetAPICompatibility,
   ListAPIProfiles,
 	ListHistory,
-	LaunchManagedApp,
+	LaunchComponent,
   ProbeAPIProfile,
   ProbeProxy,
   CancelInstallTask,
@@ -56,6 +56,7 @@ type TaskFunction = (taskId: string) => Promise<unknown>
 type CancelFunction = (taskId: string) => Promise<void>
 type ProfileOperation = (...args: never[]) => Promise<unknown>
 type HistoryOperation = (...args: never[]) => Promise<unknown>
+type LaunchOperation = (componentId: string) => Promise<void>
 
 const componentStatuses = new Set<string>([
   'detecting',
@@ -85,6 +86,7 @@ let createApplyPlan = CreateAPIApplyPlan as unknown as ProfileOperation
 let applyAPIPlan = ApplyAPIPlan as unknown as ProfileOperation
 let readHistory = ListHistory as unknown as HistoryOperation
 let clearHistoryOperation = ClearHistory as unknown as HistoryOperation
+let launchOperation: LaunchOperation = LaunchComponent
 
 const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
@@ -334,8 +336,8 @@ export async function applyProfilePlan(id: string): Promise<APIApplyBatchResult>
   }
 }
 
-export async function launchManagedApp(componentId: string): Promise<void> {
-	await LaunchManagedApp(componentId)
+export async function launchComponent(componentId: string): Promise<void> {
+	await launchOperation(componentId)
 }
 
 export async function listHistory(): Promise<HistoryEntry[]> {
@@ -457,4 +459,14 @@ export function resetHistoryOperationsForTests(): void {
 	if (!testSeamEnabled()) throw new Error('The history test seam is unavailable outside tests')
 	readHistory = ListHistory as unknown as HistoryOperation
 	clearHistoryOperation = ClearHistory as unknown as HistoryOperation
+}
+
+export function setLaunchOperationForTests(operation: LaunchOperation): void {
+	if (!testSeamEnabled()) throw new Error('The launch test seam is unavailable outside tests')
+	launchOperation = operation
+}
+
+export function resetLaunchOperationForTests(): void {
+	if (!testSeamEnabled()) throw new Error('The launch test seam is unavailable outside tests')
+	launchOperation = LaunchComponent
 }

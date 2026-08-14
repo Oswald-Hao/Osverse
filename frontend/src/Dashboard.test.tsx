@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentSnapshot } from './domain'
 import type { EnvironmentScanState } from './hooks/useEnvironmentScan'
 import App from './App'
-import { resetHistoryOperationsForTests, setHistoryOperationsForTests } from './services/osverse'
+import {
+  resetHistoryOperationsForTests,
+  resetLaunchOperationForTests,
+  setHistoryOperationsForTests,
+  setLaunchOperationForTests,
+} from './services/osverse'
 
 const mockUseEnvironmentScan = vi.fn<() => EnvironmentScanState>()
 
@@ -147,6 +152,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   resetHistoryOperationsForTests()
+  resetLaunchOperationForTests()
 })
 
 describe('environment status dashboard', () => {
@@ -381,7 +387,7 @@ describe('environment status dashboard', () => {
     const openCodeCard = screen.getByRole('heading', { name: 'OpenCode CLI' }).closest('article')
     expect(within(openCodeCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
     const claudeCard = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
-    expect(within(claudeCard as HTMLElement).getByRole('button', { name: /配置/ })).toBeDisabled()
+    expect(within(claudeCard as HTMLElement).getByRole('button', { name: /启动/ })).toBeEnabled()
     const desktopCard = screen.getByRole('heading', { name: 'Claude Desktop' }).closest('article')
     expect(within(desktopCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeDisabled()
     const openCodeDesktop = screen.getByRole('heading', { name: 'OpenCode Desktop' }).closest('article')
@@ -389,6 +395,38 @@ describe('environment status dashboard', () => {
     const ccSwitch = screen.getByRole('heading', { name: 'CC Switch' }).closest('article')
     expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
     expect(screen.getAllByText('官方校验安装')).toHaveLength(3)
+  })
+
+  it('starts detected CLI and external desktop installations through Osverse', () => {
+    const launch = vi.fn().mockResolvedValue(undefined)
+    setLaunchOperationForTests(launch)
+    mockUseEnvironmentScan.mockReturnValue(scanState({
+      snapshot: {
+        ...snapshot,
+        components: snapshot.components.map((component) => component.id === 'opencode-desktop' ? {
+          ...component,
+          status: 'installed',
+          installations: [{
+            path: '/opt/opencode/opencode-desktop',
+            resolvedPath: '/opt/opencode/opencode-desktop',
+            version: '1.18.18',
+            source: 'desktop',
+            managed: false,
+          }],
+        } : component),
+      },
+    }))
+    render(<App />)
+
+    const claude = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
+    fireEvent.click(within(claude as HTMLElement).getByRole('button', { name: /启动/ }))
+    const openCode = screen.getByRole('heading', { name: 'OpenCode Desktop' }).closest('article')
+    fireEvent.click(within(openCode as HTMLElement).getByRole('button', { name: /启动/ }))
+
+    expect(launch).toHaveBeenNthCalledWith(1, 'claude-code')
+    expect(launch).toHaveBeenNthCalledWith(2, 'opencode-desktop')
+    expect(within(claude as HTMLElement).getByText('在终端中启动')).toBeVisible()
+    expect(within(openCode as HTMLElement).getByText('启动已检测应用')).toBeVisible()
   })
 
   it('announces an initial scan without rendering a stale dashboard', () => {

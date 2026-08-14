@@ -102,7 +102,7 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
 		"ApplyAPIPlan", "CancelInstallTask", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan",
-		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchManagedApp",
+		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchComponent",
 		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "SaveAPIProfile", "ScanEnvironment",
 		"StartInstall", "UseDirectConnection",
 	}
@@ -113,6 +113,33 @@ func TestAppExposesOnlyScanEnvironmentAsWailsOperation(t *testing.T) {
 		if method := typeOfApp.Method(index); method.Name != name {
 			t.Fatalf("exported App method %d = %q, want %q", index, method.Name, name)
 		}
+	}
+}
+
+func TestLaunchComponentUsesOnlyFreshBackendScanEvidence(t *testing.T) {
+	want := domain.Component{
+		ID: "claude-code", Name: "Claude Code", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: "/home/test/.local/bin/claude", ResolvedPath: "/home/test/.local/share/claude/versions/2.1.232"}},
+	}
+	launcher := &fakeComponentLauncher{}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{Components: []domain.Component{want}}, nil
+	}}, &fakeProxyProber{})
+	app.componentLauncher = launcher
+
+	if err := app.LaunchComponent("claude-code"); err != nil {
+		t.Fatalf("LaunchComponent() error = %v", err)
+	}
+	if !reflect.DeepEqual(launcher.component, want) || launcher.context == nil {
+		t.Fatalf("launcher received (%#v, %v)", launcher.component, launcher.context)
+	}
+
+	if err := app.LaunchComponent("unknown"); err == nil {
+		t.Fatal("unknown component launch succeeded")
+	}
+	launcher.err = errors.New("private launch diagnostic")
+	if err := app.LaunchComponent("claude-code"); err == nil || strings.Contains(err.Error(), "private") {
+		t.Fatalf("launch failure was not redacted: %v", err)
 	}
 }
 
@@ -507,6 +534,17 @@ type fakeHistoryService struct {
 	appended []historyservice.Input
 	entries  []historyservice.Entry
 	cleared  bool
+}
+
+type fakeComponentLauncher struct {
+	context   context.Context
+	component domain.Component
+	err       error
+}
+
+func (launcher *fakeComponentLauncher) Launch(ctx context.Context, component domain.Component) error {
+	launcher.context, launcher.component = ctx, component
+	return launcher.err
 }
 
 func (service *fakeHistoryService) Append(_ context.Context, input historyservice.Input) (historyservice.Entry, error) {

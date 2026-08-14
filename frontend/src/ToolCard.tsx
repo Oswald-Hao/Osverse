@@ -26,8 +26,8 @@ function ToolCard({ component, onInstall, onLaunch }: {
   const action = actionLabels[component.status]
   const canInstall = installableComponents.has(component.id) &&
     ['missing', 'broken', 'failed', 'update_available'].includes(component.status)
-  const canLaunch = component.category !== 'Core CLI' && component.status === 'installed' &&
-    component.installations.some((installation) => installation.managed)
+  const canLaunch = ['installed', 'update_available'].includes(component.status) &&
+    component.installations.length === 1
 
   return (
     <li>
@@ -73,14 +73,11 @@ function ToolCard({ component, onInstall, onLaunch }: {
 
         <div className="tool-card__footer">
           <span>最低要求：{component.minimumOS}</span>
-          <button
-            type="button"
-            disabled={!canInstall && !canLaunch}
-            onClick={() => canInstall ? onInstall?.(component.id) : canLaunch ? onLaunch?.(component.id) : undefined}
-          >
-            {canLaunch ? '启动' : action}
-            <span>{canInstall ? '官方校验安装' : canLaunch ? 'Osverse 管理的应用' : component.status === 'installed' ? '当前已可用' : '暂不可用'}</span>
-          </button>
+          <div className="tool-card__actions">
+            {canInstall && <button type="button" onClick={() => onInstall?.(component.id)}>{action}<span>官方校验安装</span></button>}
+            {canLaunch && <button type="button" onClick={() => onLaunch?.(component.id)}>启动<span>{component.category === 'Core CLI' ? '在终端中启动' : component.installations[0].managed ? '校验后启动' : '启动已检测应用'}</span></button>}
+            {!canInstall && !canLaunch && <button type="button" disabled>{action}<span>{component.status === 'installed' ? '存在多个安装位置' : '暂不可用'}</span></button>}
+          </div>
         </div>
       </article>
     </li>

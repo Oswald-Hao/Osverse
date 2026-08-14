@@ -11,6 +11,8 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	historyservice "github.com/Oswald-Hao/Osverse/internal/history"
 	"github.com/Oswald-Hao/Osverse/internal/install"
+	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
+	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
 	"github.com/Oswald-Hao/Osverse/internal/profiles"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 	"github.com/Oswald-Hao/Osverse/internal/systeminstall"
@@ -41,6 +43,10 @@ type AppLauncher interface {
 	Launch(string) error
 }
 
+type ComponentLauncher interface {
+	Launch(context.Context, domain.Component) error
+}
+
 type ProfileService interface {
 	Save(context.Context, profiles.Input) (profiles.Profile, error)
 	List(context.Context) ([]profiles.Profile, error)
@@ -63,24 +69,25 @@ type proxySelection struct {
 }
 
 type App struct {
-	mu              sync.RWMutex
-	ctx             context.Context
-	scanner         Scanner
-	proxyProber     ProxyProber
-	proxySelection  proxySelection
-	proxyGeneration uint64
-	installPlanner  InstallPlanner
-	installExecutor InstallExecutor
-	appPlanner      InstallPlanner
-	appExecutor     InstallExecutor
-	appLauncher     AppLauncher
-	systemPlanner   InstallPlanner
-	systemExecutor  InstallExecutor
-	planOwners      map[string]string
-	taskOwners      map[string]string
-	profiles        ProfileService
-	history         HistoryService
-	recordedTasks   map[string]bool
+	mu                sync.RWMutex
+	ctx               context.Context
+	scanner           Scanner
+	proxyProber       ProxyProber
+	proxySelection    proxySelection
+	proxyGeneration   uint64
+	installPlanner    InstallPlanner
+	installExecutor   InstallExecutor
+	appPlanner        InstallPlanner
+	appExecutor       InstallExecutor
+	appLauncher       AppLauncher
+	componentLauncher ComponentLauncher
+	systemPlanner     InstallPlanner
+	systemExecutor    InstallExecutor
+	planOwners        map[string]string
+	taskOwners        map[string]string
+	profiles          ProfileService
+	history           HistoryService
+	recordedTasks     map[string]bool
 }
 
 func NewApp(scanner Scanner) *App {
@@ -111,6 +118,7 @@ func NewApp(scanner Scanner) *App {
 			app.systemPlanner = systemManager
 			app.systemExecutor = systemManager
 		}
+		app.componentLauncher = launchservice.NewManager(platformlinux.NewDetachedStarter(), app.appLauncher)
 	}
 	return app
 }
@@ -403,6 +411,8 @@ func componentDisplayName(id string) string {
 		return "OpenCode CLI"
 	case "claude-desktop":
 		return "Claude Desktop"
+	case "chatgpt-desktop":
+		return "ChatGPT Desktop"
 	case "opencode-desktop":
 		return "OpenCode Desktop"
 	case "cc-switch":
@@ -411,6 +421,16 @@ func componentDisplayName(id string) string {
 		return "Cockpit Tools"
 	default:
 		return "Osverse 组件"
+	}
+}
+
+func knownComponentID(id string) bool {
+	switch id {
+	case "claude-code", "codex-cli", "opencode-cli", "claude-desktop", "chatgpt-desktop",
+		"opencode-desktop", "cc-switch", "cockpit-tools":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -482,20 +502,43 @@ func isUserDesktopComponent(id string) bool {
 	}
 }
 
-// LaunchManagedApp starts only an AppImage installed and verified by Osverse.
-func (app *App) LaunchManagedApp(componentID string) error {
-	if app == nil || !isUserDesktopComponent(componentID) {
+// LaunchComponent rescans a fixed component ID and starts only the exact
+// backend-verified installation. No filesystem path is accepted from the UI.
+func (app *App) LaunchComponent(componentID string) error {
+	if app == nil || !knownComponentID(componentID) {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "该应用不能由 Osverse 启动", nil)
 	}
 	app.mu.RLock()
-	launcher := app.appLauncher
+	launcher := app.componentLauncher
+	scanner := app.scanner
 	app.mu.RUnlock()
-	if launcher == nil {
+	if launcher == nil || scanner == nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "应用启动服务不可用", nil)
 	}
-	if err := launcher.Launch(componentID); err != nil {
+	ctx := app.appContext()
+	snapshot, err := scanner.Scan(ctx)
+	if err != nil {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "启动前重新扫描失败", err)
+	}
+	var component domain.Component
+	found := false
+	for _, candidate := range snapshot.Components {
+		if candidate.ID == componentID {
+			component, found = candidate, true
+			break
+		}
+	}
+	if !found {
+		return domain.NewPublicError(domain.ErrInstallTaskFailed, "重新扫描后未找到该工具", nil)
+	}
+	if err := launcher.Launch(ctx, component); err != nil {
 		return domain.NewPublicError(domain.ErrInstallTaskFailed, "无法启动应用，请重新扫描或安装", err)
 	}
+	app.appendHistory(historyservice.Input{
+		OperationID: "launch-" + componentID + "-" + time.Now().UTC().Format(time.RFC3339Nano),
+		ComponentID: componentID, Name: componentDisplayName(componentID), Action: "launch",
+		Status: "completed", Message: "已启动",
+	})
 	return nil
 }
 
