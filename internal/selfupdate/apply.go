@@ -83,7 +83,8 @@ func (service *Service) download(ctx context.Context, client *http.Client, artif
 	if response.ContentLength >= 0 && response.ContentLength != artifact.Size {
 		return "", errors.New("update artifact length mismatch")
 	}
-	file, err := os.CreateTemp(root, ".osverse-update-*")
+	suffix := filepath.Ext(artifact.Filename)
+	file, err := os.CreateTemp(root, ".osverse-update-*"+suffix)
 	if err != nil {
 		return "", err
 	}
@@ -146,7 +147,7 @@ func updateDownloadRoot(home string) (string, error) {
 	if clean == filepath.VolumeName(clean)+string(os.PathSeparator) {
 		return "", errors.New("home directory is unsafe")
 	}
-	return filepath.Join(clean, ".osverse", "updates"), nil
+	return filepath.Join(append([]string{clean}, updatePathComponents()...)...), nil
 }
 
 func executableFile(path string) (os.FileInfo, error) {

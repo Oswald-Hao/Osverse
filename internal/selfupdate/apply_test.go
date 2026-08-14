@@ -34,6 +34,9 @@ func TestApplyDownloadsVerifiesAndUsesOpaquePlan(t *testing.T) {
 	}
 	applied := false
 	service.applier = func(path string, artifact Artifact) (ApplyResult, error) {
+		if !strings.HasSuffix(path, ".exe") {
+			t.Fatalf("staged installer lost executable suffix: %q", path)
+		}
 		got, err := os.ReadFile(path)
 		if err != nil {
 			return ApplyResult{}, err
