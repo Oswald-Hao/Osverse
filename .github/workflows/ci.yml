@@ -127,6 +127,28 @@ jobs:
           go mod verify
           go test ./...
 
+      - name: Run Go coverage regression
+        shell: bash
+        run: |
+          coverage_profile="$RUNNER_TEMP/osverse-coverage.out"
+          coverage_summary="$RUNNER_TEMP/osverse-coverage.txt"
+          minimum_coverage=60.0
+          go test -coverprofile="$coverage_profile" ./...
+          go tool cover -func="$coverage_profile" | tee "$coverage_summary"
+          coverage_total="$(awk '$1 == "total:" {gsub(/%/, "", $3); print $3}' "$coverage_summary")"
+          test -n "$coverage_total"
+          python3 - "$coverage_total" "$minimum_coverage" <<'PY'
+          import sys
+
+          coverage_total = float(sys.argv[1])
+          minimum_coverage = float(sys.argv[2])
+          if coverage_total < minimum_coverage:
+              raise SystemExit(
+                  f"Go statement coverage {coverage_total:.1f}% is below "
+                  f"the required {minimum_coverage:.1f}% floor"
+              )
+          PY
+
       - name: Run race tests
         run: go test -race ./...
 

@@ -28,6 +28,8 @@ Use the pinned versions in the README. Before submitting, run:
 ```bash
 go mod verify
 go test ./...
+go test -coverprofile=/tmp/osverse-coverage.out ./...
+go tool cover -func=/tmp/osverse-coverage.out
 go test -race ./...
 go vet ./...
 npm --prefix frontend ci
@@ -37,6 +39,8 @@ npm --prefix frontend run build
 npm --prefix frontend audit --audit-level=high
 npm --prefix frontend run audit:responsive
 ```
+
+CI requires total Go statement coverage to remain at or above 60%. The floor is deliberately below the current baseline so it catches broad regressions without rewarding low-value tests written only to increase a number.
 
 Keep commits small and descriptive. Conventional prefixes such as `feat:`, `fix:`, `test:`, `docs:`, and `ci:` are preferred.
 
