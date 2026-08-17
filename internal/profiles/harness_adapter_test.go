@@ -120,6 +120,41 @@ agent-default-model:
 	}
 }
 
+func TestHarnessAdapterVersionsUnversionedOpenAIBaseURLsOnly(t *testing.T) {
+	home := t.TempDir()
+	adapters, err := NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := adapterInput()
+	input.BaseURL = "https://api.example/gateway"
+
+	for _, protocol := range []string{"openai-chat", "openai-responses"} {
+		input.Protocol = protocol
+		if _, err := adapters.Apply(context.Background(), TargetHarness, input); err != nil {
+			t.Fatalf("Apply(%q) error = %v", protocol, err)
+		}
+		settingsPath, _ := adapters.TargetPath(TargetHarness)
+		root := readYAMLMap(t, settingsPath)
+		provider := root["llm-pi-ai"].(map[string]any)["providers"].(map[string]any)["osverse"].(map[string]any)
+		if provider["baseURL"] != "https://api.example/gateway/v1" {
+			t.Fatalf("%s Base URL = %#v", protocol, provider["baseURL"])
+		}
+	}
+
+	input.Protocol = "anthropic-messages"
+	input.BaseURL = "https://anthropic.example/gateway"
+	if _, err := adapters.Apply(context.Background(), TargetHarness, input); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath, _ := adapters.TargetPath(TargetHarness)
+	root := readYAMLMap(t, settingsPath)
+	provider := root["llm-pi-ai"].(map[string]any)["providers"].(map[string]any)["osverse"].(map[string]any)
+	if provider["baseURL"] != input.BaseURL {
+		t.Fatalf("Anthropic Base URL = %#v, want %#v", provider["baseURL"], input.BaseURL)
+	}
+}
+
 func TestHarnessAdapterUpdatesOwnedConfigurationIdempotently(t *testing.T) {
 	home := t.TempDir()
 	adapters, err := NewAdapterSet(home)
