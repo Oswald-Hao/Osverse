@@ -9,7 +9,7 @@ import (
 
 func TestWindowsCoreCLICatalogUsesExecutableAndShimNames(t *testing.T) {
 	specs := CoreCLISpecs()
-	if len(specs) != 6 {
+	if len(specs) != 7 {
 		t.Fatalf("spec count = %d", len(specs))
 	}
 	for _, spec := range specs {
