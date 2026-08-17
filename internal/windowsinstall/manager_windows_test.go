@@ -30,7 +30,7 @@ func TestWindowsCatalogPinsVerifiedOfficialArtifacts(t *testing.T) {
 }
 
 func TestWindowsPlanContainsOnlyUserScopedEffects(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedWindowsTestHome(t)
 	manager, err := NewManager(home)
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +54,15 @@ func TestWindowsPlanContainsOnlyUserScopedEffects(t *testing.T) {
 			t.Fatalf("effect escapes home: %#v", change)
 		}
 	}
+}
+
+func resolvedWindowsTestHome(t *testing.T) string {
+	t.Helper()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return home
 }
 
 func TestSafeArchiveNameRejectsWindowsTraversalAndDevices(t *testing.T) {

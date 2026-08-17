@@ -27,6 +27,7 @@ dsh web
 使用 Osverse 应用档案时：
 
 - OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 任一协议确认后即可使用；多个协议同时可用时优先选择 Chat Completions，其次 Responses，最后 Anthropic Messages。
+- OpenAI 兼容服务可以填写带 `/v1` 的完整 API Base URL，也可以只填写网关根地址；对于后者，Osverse 会在写入 Harness 前补上且仅补上一个 `/v1`。Anthropic Messages 地址保持服务商给出的原样语义。
 - Osverse 在 `$DSH_HOME/settings.yaml` 的 `llm-pi-ai.providers` 下维护唯一的 `osverse` Provider，并把模型设为 `agent-default-model`，因此新会话会直接使用它；已经发送过请求的既有会话仍保留自己的模型。
 - Key 只写入 `$DSH_HOME/.credentials.yaml` 的 `OSVERSE_API_KEY`，`settings.yaml` 只保存凭据引用。模型 ID 不会添加 `osverse/` 前缀；Harness 界面显示的 `osverse/<模型 ID>` 只是 Provider 路由表示。
 - 两份文件会在确认前展示，原内容打包备份到 Osverse 的当前用户私有备份目录。写入使用 Harness 官方的同名 `.lock` 文件约定、原子替换和失败回滚；目标、备份和凭据均限制为当前用户访问。
@@ -64,6 +65,8 @@ Find **DeepSeek Harness** under Core CLI, preview and confirm the install plan, 
 ### Configure a provider
 
 Configure a provider in Harness's Models page, or save and probe an Osverse API profile and then select **DeepSeek Harness** in the compatibility matrix. Osverse accepts a confirmed OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages route, preferring them in that order when more than one is available. It transactionally updates `$DSH_HOME/settings.yaml` and `$DSH_HOME/.credentials.yaml`, owns only the `llm-pi-ai.providers.osverse` route and `OSVERSE_API_KEY`, and selects the exact model for new sessions. Existing sessions keep the model recorded in their logs.
+
+For OpenAI-compatible routes, the Base URL may already end in `/v1` or may be the gateway origin; Osverse appends exactly one `/v1` to an unversioned OpenAI URL before writing Harness settings. Anthropic Messages URLs retain the vendor-provided semantics.
 
 The key is stored only in Harness's credential document; settings carry its reference. Unrelated providers, comments, and credentials are preserved. Osverse coordinates with a running Harness through the same `.lock` files used by the pinned release, writes atomically, rolls the first file back if the second commit fails, and refuses an unowned `osverse` route or credential. A configured `DSH_HOME` must resolve inside the current user's home. Harness removal continues to preserve provider settings, credentials, and sessions.
 

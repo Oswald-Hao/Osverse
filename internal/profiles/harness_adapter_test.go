@@ -15,7 +15,7 @@ import (
 )
 
 func TestHarnessAdapterWritesOfficialProviderCredentialAndDefault(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	adapters, err := NewAdapterSet(home)
 	if err != nil {
 		t.Fatal(err)
@@ -120,8 +120,43 @@ agent-default-model:
 	}
 }
 
-func TestHarnessAdapterUpdatesOwnedConfigurationIdempotently(t *testing.T) {
+func TestHarnessAdapterVersionsUnversionedOpenAIBaseURLsOnly(t *testing.T) {
 	home := t.TempDir()
+	adapters, err := NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := adapterInput()
+	input.BaseURL = "https://api.example/gateway"
+
+	for _, protocol := range []string{"openai-chat", "openai-responses"} {
+		input.Protocol = protocol
+		if _, err := adapters.Apply(context.Background(), TargetHarness, input); err != nil {
+			t.Fatalf("Apply(%q) error = %v", protocol, err)
+		}
+		settingsPath, _ := adapters.TargetPath(TargetHarness)
+		root := readYAMLMap(t, settingsPath)
+		provider := root["llm-pi-ai"].(map[string]any)["providers"].(map[string]any)["osverse"].(map[string]any)
+		if provider["baseURL"] != "https://api.example/gateway/v1" {
+			t.Fatalf("%s Base URL = %#v", protocol, provider["baseURL"])
+		}
+	}
+
+	input.Protocol = "anthropic-messages"
+	input.BaseURL = "https://anthropic.example/gateway"
+	if _, err := adapters.Apply(context.Background(), TargetHarness, input); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath, _ := adapters.TargetPath(TargetHarness)
+	root := readYAMLMap(t, settingsPath)
+	provider := root["llm-pi-ai"].(map[string]any)["providers"].(map[string]any)["osverse"].(map[string]any)
+	if provider["baseURL"] != input.BaseURL {
+		t.Fatalf("Anthropic Base URL = %#v, want %#v", provider["baseURL"], input.BaseURL)
+	}
+}
+
+func TestHarnessAdapterUpdatesOwnedConfigurationIdempotently(t *testing.T) {
+	home := resolvedTestHome(t)
 	adapters, err := NewAdapterSet(home)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +210,7 @@ func TestHarnessAdapterRejectsMalformedOrDuplicateYAMLWithoutWriting(t *testing.
 	}
 	for name, fixture := range fixtures {
 		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
+			home := resolvedTestHome(t)
 			adapters, _ := NewAdapterSet(home)
 			settingsPath, _ := adapters.TargetPath(TargetHarness)
 			credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -210,7 +245,7 @@ func TestHarnessAdapterRejectsMalformedOrDuplicateYAMLWithoutWriting(t *testing.
 func TestHarnessAdapterRejectsSymlinkConfigurationFiles(t *testing.T) {
 	for _, name := range []string{"settings", "credentials"} {
 		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
+			home := resolvedTestHome(t)
 			adapters, _ := NewAdapterSet(home)
 			settingsPath, _ := adapters.TargetPath(TargetHarness)
 			credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -272,7 +307,7 @@ func TestHarnessAdapterRefusesUnownedProviderOrCredential(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			settings, credentials := fixture.settings, fixture.credentials
-			home := t.TempDir()
+			home := resolvedTestHome(t)
 			adapters, _ := NewAdapterSet(home)
 			settingsPath, _ := adapters.TargetPath(TargetHarness)
 			credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -305,7 +340,7 @@ func TestHarnessAdapterRefusesUnownedProviderOrCredential(t *testing.T) {
 }
 
 func TestHarnessAdapterRollsBackCredentialWhenSettingsCommitFails(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	adapters, _ := NewAdapterSet(home)
 	settingsPath, _ := adapters.TargetPath(TargetHarness)
 	credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -338,7 +373,7 @@ func TestHarnessAdapterRollsBackCredentialWhenSettingsCommitFails(t *testing.T) 
 func TestHarnessAdapterRollsBackFilesWhenWriterReportsAfterCommit(t *testing.T) {
 	for _, failedPath := range []string{"credentials", "settings"} {
 		t.Run(failedPath, func(t *testing.T) {
-			home := t.TempDir()
+			home := resolvedTestHome(t)
 			adapters, _ := NewAdapterSet(home)
 			settingsPath, _ := adapters.TargetPath(TargetHarness)
 			credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -378,7 +413,7 @@ func TestHarnessAdapterRollsBackFilesWhenWriterReportsAfterCommit(t *testing.T) 
 }
 
 func TestHarnessAdapterReportsIncompleteRollbackWithoutClaimingPreservation(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	adapters, _ := NewAdapterSet(home)
 	settingsPath, _ := adapters.TargetPath(TargetHarness)
 	credentialsPath := filepath.Join(home, ".dsh", ".credentials.yaml")
@@ -405,7 +440,7 @@ func TestHarnessAdapterReportsIncompleteRollbackWithoutClaimingPreservation(t *t
 }
 
 func TestHarnessAdapterRespectsOfficialCrossProcessLocks(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	adapters, _ := NewAdapterSet(home)
 	settingsPath, _ := adapters.TargetPath(TargetHarness)
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
@@ -431,7 +466,7 @@ func TestHarnessAdapterRespectsOfficialCrossProcessLocks(t *testing.T) {
 }
 
 func TestHarnessTargetPathHonorsOnlySafeDSHHome(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	custom := filepath.Join(home, "private", "harness")
 	t.Setenv("DSH_HOME", custom)
 	adapters, err := NewAdapterSet(home)
@@ -460,7 +495,7 @@ func TestHarnessTargetPathHonorsOnlySafeDSHHome(t *testing.T) {
 }
 
 func TestHarnessAdapterSupportsHomeAsDSHHomeWithoutChangingItsMode(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	t.Setenv("DSH_HOME", "~")
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(home, 0o750); err != nil {
