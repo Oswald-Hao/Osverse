@@ -23,6 +23,7 @@ const targetNames: Record<string, string> = {
   'codex-cli': 'Codex CLI',
   'opencode-cli': 'OpenCode CLI',
   'qwen-code': 'Qwen Code',
+  'deepseek-harness': 'DeepSeek Harness',
 }
 
 const protocolNames: Record<string, string> = {
