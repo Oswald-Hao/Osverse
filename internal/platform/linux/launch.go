@@ -51,13 +51,14 @@ func (starter *detachedStarter) Start(request platform.LaunchRequest) error {
 	if starter == nil || starter.start == nil || !ok {
 		return errDetachedLaunch
 	}
-	command := exec.Command(request.Path)
+	command := exec.Command(request.Path, request.Args...)
 	if request.Terminal {
 		terminal, found := firstTerminal(starter.terminals)
 		if !found {
 			return errDetachedLaunch
 		}
-		command = exec.Command(terminal.path, terminal.arguments(request.Path)...)
+		arguments := append(terminal.arguments(request.Path), request.Args...)
+		command = exec.Command(terminal.path, arguments...)
 	}
 	command.Env = launchEnvironment()
 	if home, err := os.UserHomeDir(); err == nil && filepath.IsAbs(home) {

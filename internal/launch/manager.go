@@ -34,12 +34,14 @@ func NewManager(starter platform.ProcessStarter, managed managedLauncher) *Manag
 type componentKind struct {
 	category       string
 	managedDesktop bool
+	launchArgs     []string
 }
 
 var fixedComponents = map[string]componentKind{
 	"claude-code":      {category: "Core CLI"},
 	"codex-cli":        {category: "Core CLI"},
 	"opencode-cli":     {category: "Core CLI"},
+	"deepseek-harness": {category: "Core CLI", launchArgs: []string{"web"}},
 	"claude-desktop":   {category: "Desktop Applications"},
 	"chatgpt-desktop":  {category: "Desktop Applications"},
 	"codex-desktop":    {category: "Desktop Applications"},
@@ -91,6 +93,7 @@ func (manager *Manager) Launch(ctx context.Context, component domain.Component, 
 	if err := manager.starter.Start(platform.LaunchRequest{
 		Path:                 installation.Path,
 		ExpectedResolvedPath: installation.ResolvedPath,
+		Args:                 append([]string(nil), kind.launchArgs...),
 		Terminal:             component.Category == "Core CLI",
 	}); err != nil {
 		return ErrLaunchFailed

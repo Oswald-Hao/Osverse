@@ -73,7 +73,7 @@ jobs:
       - name: Scan dependency vulnerabilities and licenses
         run: |
           "$RUNNER_TEMP/osverse-security-tools/osv-scanner" scan source --recursive --call-analysis=go \
-            --licenses='0BSD,Apache-2.0,BlueOak-1.0.0,BSD-2-Clause,BSD-3-Clause,CC-BY-4.0,CC0-1.0,ISC,MIT,MIT-0,MPL-2.0,Unlicense' \
+            --licenses='0BSD,Apache-2.0,BlueOak-1.0.0,BSD-2-Clause,BSD-3-Clause,CC-BY-4.0,CC0-1.0,ISC,LGPL-3.0-or-later,MIT,MIT-0,MPL-2.0,Python-2.0,Unlicense' \
             .
 
       - name: Generate and validate SPDX SBOM
@@ -133,6 +133,11 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
 
+      - name: Compile Harness installer for future macOS targets
+        run: |
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/harnessinstall-darwin-amd64.test ./internal/harnessinstall
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/harnessinstall-darwin-arm64.test ./internal/harnessinstall
+
   frontend:
     name: Frontend tests and build
     if: github.event_name != 'pull_request' || github.base_ref == 'dev'
@@ -167,7 +172,9 @@ jobs:
         run: npm --prefix frontend run build
 
       - name: Audit dependency graph
-        run: npm --prefix frontend audit --audit-level=high
+        run: |
+          npm --prefix frontend audit --audit-level=high
+          npm --prefix internal/harnessinstall/assets audit --omit=dev --package-lock-only --audit-level=high
 
       - name: Audit responsive desktop breakpoints
         run: npm --prefix frontend run audit:responsive
@@ -219,6 +226,7 @@ jobs:
           npm --prefix frontend test
           npm --prefix frontend run typecheck
           npm --prefix frontend audit --audit-level=high
+          npm --prefix internal/harnessinstall/assets audit --omit=dev --package-lock-only --audit-level=high
 
       - name: Build user-scoped NSIS installer
         shell: pwsh
