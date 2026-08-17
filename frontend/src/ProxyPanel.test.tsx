@@ -51,8 +51,64 @@ describe('ProxyPanel', () => {
     expect(within(results).getByText('5 ms')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: '使用直连' }))
-    expect(screen.getByText('直连', { selector: '.connection-state' })).toBeVisible()
+    await waitFor(() => expect(screen.getByText('直连', { selector: '.connection-state' })).toBeVisible())
     expect(screen.queryByLabelText('代理探测结果')).not.toBeInTheDocument()
     expect(direct).toHaveBeenCalledTimes(1)
   })
+
+  it('restores the backend selection after navigation without probing again', async () => {
+    const current = vi.fn().mockResolvedValue({ protocol: 'socks5', port: 7897 })
+    const probe = vi.fn()
+    setProxyOperationsForTests(probe, () => Promise.resolve(), current)
+    const first = render(<ProxyPanel />)
+
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897')
+    expect(screen.getByText('SOCKS5 · 127.0.0.1:7897')).toBeVisible()
+    expect(probe).not.toHaveBeenCalled()
+
+    first.unmount()
+    render(<ProxyPanel />)
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+    await waitFor(() => expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897'))
+    expect(current).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the active selection visible when persistent clear fails', async () => {
+    setProxyOperationsForTests(
+      vi.fn(),
+      () => Promise.reject(new Error('无法清除已保存的代理选择')),
+      () => Promise.resolve({ protocol: 'https-connect', port: 2080 }),
+    )
+    render(<ProxyPanel />)
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+
+    fireEvent.click(screen.getByRole('button', { name: '使用直连' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('无法清除'))
+    expect(screen.getByText('代理已启用')).toBeVisible()
+    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('2080')
+  })
+
+  it('colors latency at the 500ms and 1000ms boundaries', async () => {
+    setProxyOperationsForTests(() => Promise.resolve({
+      port: 7890,
+      reachable: true,
+      recommended: 'https-connect',
+      checkedAt: '2026-08-17T06:00:00Z',
+      attempts: [
+        { protocol: 'http', available: true, latencyMillis: 500, message: 'HTTP 可用' },
+        { protocol: 'https-connect', available: true, latencyMillis: 1000, message: 'CONNECT 可用' },
+        { protocol: 'socks5', available: true, latencyMillis: 1001, message: 'SOCKS5 可用' },
+      ],
+    }))
+    render(<ProxyPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '探测并使用' }))
+
+    await waitFor(() => expect(screen.getByText('500 ms')).toBeVisible())
+    expect(screen.getByText('500 ms')).toHaveClass('proxy-latency--good')
+    expect(screen.getByText('1000 ms')).toHaveClass('proxy-latency--warning')
+    expect(screen.getByText('1001 ms')).toHaveClass('proxy-latency--bad')
+  })
+
 })

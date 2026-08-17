@@ -62,6 +62,11 @@ export interface ProxyResult {
   checkedAt: string
 }
 
+export interface ProxySelection {
+  protocol: ProxyProtocol
+  port: number
+}
+
 export interface AppUpdateInfo {
 	available: boolean
 	canInstall: boolean

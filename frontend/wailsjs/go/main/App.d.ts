@@ -4,8 +4,8 @@ import {profiles} from '../models';
 import {selfupdate} from '../models';
 import {install} from '../models';
 import {removal} from '../models';
-import {history} from '../models';
 import {proxy} from '../models';
+import {history} from '../models';
 import {domain} from '../models';
 
 export function ApplyAPIPlan(arg1:string):Promise<profiles.ApplyBatchResult>;
@@ -21,6 +21,8 @@ export function CreateAPIApplyPlan(arg1:string,arg2:Array<string>):Promise<profi
 export function CreateInstallPlan(arg1:string):Promise<install.Plan>;
 
 export function CreateRemovalPlan(arg1:string):Promise<removal.Plan>;
+
+export function CurrentProxySelection():Promise<proxy.Selection>;
 
 export function DeleteAPIProfile(arg1:string):Promise<void>;
 
