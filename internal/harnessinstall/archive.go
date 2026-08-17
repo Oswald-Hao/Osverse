@@ -278,18 +278,32 @@ func bytesEqual(first, second []byte) bool {
 
 func safeArchivePath(name string) bool {
 	trimmed := strings.TrimSuffix(name, "/")
-	if trimmed == "" || !utf8.ValidString(name) || strings.ContainsAny(name, "\\\x00") || strings.HasPrefix(name, "/") {
+	if trimmed == "" || !utf8.ValidString(name) || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") {
 		return false
 	}
 	for _, component := range strings.Split(trimmed, "/") {
 		if component == "." {
 			continue
 		}
-		if component == "" || component == ".." || strings.TrimRight(component, ". ") != component {
+		for _, value := range component {
+			if value < 0x20 {
+				return false
+			}
+		}
+		if component == "" || component == ".." || strings.TrimRight(component, ". ") != component || reservedWindowsName(component) {
 			return false
 		}
 	}
 	return true
+}
+
+func reservedWindowsName(component string) bool {
+	trimmed := strings.TrimRight(component, ". ")
+	base := strings.ToUpper(strings.TrimSuffix(trimmed, path.Ext(trimmed)))
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CLOCK$" {
+		return true
+	}
+	return len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9'
 }
 
 func pathWithin(root, candidate string) bool {

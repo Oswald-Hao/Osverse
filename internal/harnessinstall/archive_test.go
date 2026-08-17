@@ -15,6 +15,8 @@ func TestExtractPackageRejectsTraversalAndLinks(t *testing.T) {
 	for _, header := range []tar.Header{
 		{Name: "package/../escape", Mode: 0o644, Size: 1, Typeflag: tar.TypeReg},
 		{Name: "package/link", Linkname: "/tmp/out", Typeflag: tar.TypeSymlink},
+		{Name: "package/escape:stream", Mode: 0o644, Size: 1, Typeflag: tar.TypeReg},
+		{Name: "package/CON.txt", Mode: 0o644, Size: 1, Typeflag: tar.TypeReg},
 	} {
 		t.Run(header.Name, func(t *testing.T) {
 			body := []byte(nil)
