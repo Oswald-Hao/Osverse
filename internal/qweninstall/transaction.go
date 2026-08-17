@@ -17,6 +17,7 @@ import (
 	"time"
 
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"github.com/Oswald-Hao/Osverse/internal/releaseasset"
 )
 
 const versionTimeout = 30 * time.Second
@@ -157,7 +158,7 @@ func downloadArtifact(ctx context.Context, client *http.Client, item artifact, d
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("User-Agent", "Osverse-Qwen-Installer")
 	copyClient := *client
-	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("redirects disabled") }
+	copyClient.CheckRedirect = releaseasset.GitHubRedirectPolicy(item.URL)
 	response, err := copyClient.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
