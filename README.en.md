@@ -179,7 +179,7 @@ All screenshots above are from a real Osverse session on Ubuntu 22.04, not desig
 
 ## Build from source
 
-The pinned toolchain is Go 1.25.12, Node.js 22.23.2, and Wails 2.13.0.
+The pinned toolchain is Go 1.25.12, Node.js 22.23.2, and Wails 2.14.0.
 
 ```bash
 sudo apt-get update
@@ -192,10 +192,10 @@ go test -race ./...
 go vet ./...
 
 # Ubuntu 22.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_40
 
 # Ubuntu 20.04 (WebKitGTK 2.38 baseline)
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_36
 ```
 
 On Windows 10/11 x64 (PowerShell, with Go, Node.js, WebView2, and the Wails build environment):
@@ -205,10 +205,10 @@ npm --prefix frontend ci
 go test ./...
 go test -race ./...
 go vet ./...
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev
 
 # Build a per-user NSIS installer
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 ```
 
 Release packaging is checksum-pinned and produces Windows NSIS/portable artifacts plus Linux `.deb`, `.AppImage`, portable tar, checksums, SBOM, and update metadata:

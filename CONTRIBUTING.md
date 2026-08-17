@@ -51,6 +51,6 @@ Keep commits small and descriptive. Conventional prefixes such as `feat:`, `fix:
 
 ## Generated files and UI
 
-Wails bindings under `frontend/wailsjs` are generated from the Go API. Regenerate them with Wails 2.13.0 when the public backend contract changes, and include only intentional output. Keep the 1280×800 default layout usable at every breakpoint covered by the responsive audit.
+Wails bindings under `frontend/wailsjs` are generated from the Go API. Regenerate them with Wails 2.14.0 when the public backend contract changes, and include only intentional output. Keep the 1280×800 default layout usable at every breakpoint covered by the responsive audit.
 
 By contributing, you agree that your contribution is licensed under Apache-2.0 and that you will follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
