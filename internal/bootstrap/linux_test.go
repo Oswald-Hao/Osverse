@@ -13,18 +13,18 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 )
 
-func TestNewLinuxScannerHasExactlyNineComponentsWithoutScanningHost(t *testing.T) {
+func TestNewLinuxScannerHasExactlyTenComponentsWithoutScanningHost(t *testing.T) {
 	service := NewLinuxScanner()
 
 	if service == nil {
 		t.Fatal("NewLinuxScanner() returned nil")
 	}
-	if got := service.ComponentCount(); got != 9 {
-		t.Fatalf("ComponentCount() = %d, want 9", got)
+	if got := service.ComponentCount(); got != 10 {
+		t.Fatalf("ComponentCount() = %d, want 10", got)
 	}
 }
 
-func TestLinuxComponentProbesPreserveThreePlusFiveCatalogOrderAndDependencies(t *testing.T) {
+func TestLinuxComponentProbesPreserveCatalogOrderAndDependencies(t *testing.T) {
 	runner := &inertRunner{}
 	fsys := inertFS{}
 	const home = "/home/test-user"
@@ -44,7 +44,7 @@ func TestLinuxComponentProbesPreserveThreePlusFiveCatalogOrderAndDependencies(t 
 		gotIDs[index] = component.Descriptor().ID
 	}
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Fatalf("component IDs = %v, want 3+5 catalog order %v", gotIDs, wantIDs)
+		t.Fatalf("component IDs = %v, want catalog order %v", gotIDs, wantIDs)
 	}
 
 	for index := range coreSpecs {

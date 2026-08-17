@@ -33,7 +33,7 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 		t.Fatalf("Probe() = (%#v, %v), secret %#v", probe, err, prober.got)
 	}
 	matrix, err := service.Compatibility(profile.ID)
-	if err != nil || len(matrix) != 3 {
+	if err != nil || len(matrix) != 4 {
 		t.Fatalf("Compatibility() = (%#v, %v)", matrix, err)
 	}
 	for _, item := range matrix {
@@ -41,21 +41,21 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 			t.Errorf("target compatibility = %#v", item)
 		}
 	}
-	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex})
+	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex, TargetQwen})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 3 || plan.Warning == "" {
+	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 4 || plan.Warning == "" {
 		t.Fatalf("plan = %#v", plan)
 	}
-	wantOrder := []string{TargetClaude, TargetCodex, TargetOpenCode}
-	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target}
+	wantOrder := []string{TargetClaude, TargetCodex, TargetOpenCode, TargetQwen}
+	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target, plan.Effects[3].Target}
 	if !reflect.DeepEqual(gotOrder, wantOrder) {
 		t.Fatalf("effect order = %#v", gotOrder)
 	}
 
 	result, err := service.Apply(context.Background(), plan.ID)
-	if err != nil || result.Succeeded != 3 || result.Failed != 0 || len(result.Results) != 3 {
+	if err != nil || result.Succeeded != 4 || result.Failed != 0 || len(result.Results) != 4 {
 		t.Fatalf("Apply() = (%#v, %v)", result, err)
 	}
 	for _, target := range wantOrder {

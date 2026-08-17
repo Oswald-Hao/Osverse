@@ -36,18 +36,20 @@ function operations(overrides: Partial<Parameters<typeof setProfileOperationsFor
       { target: 'claude-code', compatible: true, reason: '凭据和协议均已确认' },
       { target: 'codex-cli', compatible: true, reason: '凭据和协议均已确认' },
       { target: 'opencode-cli', compatible: false, reason: 'API 未确认所需协议' },
+	  { target: 'qwen-code', compatible: true, reason: '凭据和协议均已确认' },
     ]),
     createPlan: vi.fn().mockResolvedValue({
       id: 'apply-plan', profileId: profile.id, profileName: profile.name, keyHint: profile.keyHint,
       effects: [
         { target: 'claude-code', path: '/home/test/.claude/settings.json', description: '备份并原子更新' },
         { target: 'codex-cli', path: '/home/test/.codex/config.toml', description: '备份并原子更新' },
+		{ target: 'qwen-code', path: '/home/test/.qwen/settings.json', description: '备份并原子更新' },
       ],
       warning: '目标文件和备份均强制为 0600。', createdAt: '', expiresAt: '',
     }),
     apply: vi.fn().mockResolvedValue({
       planId: 'apply-plan', profileId: profile.id,
-      results: [], succeeded: 2, failed: 0,
+      results: [], succeeded: 3, failed: 0,
     }),
     ...overrides,
   }
@@ -92,16 +94,18 @@ describe('APIProfilesPage', () => {
     expect(protocolDetails).toHaveTextContent('已识别协议路由')
     expect(screen.getByLabelText(/OpenCode CLI/)).toBeDisabled()
     expect(screen.getByLabelText(/Claude Code/)).toBeChecked()
+	expect(screen.getByLabelText(/Qwen Code/)).toBeChecked()
 
     fireEvent.click(screen.getByRole('button', { name: '预览应用变更' }))
     const dialog = await screen.findByRole('dialog', { name: /确认应用 工作网关/ })
     expect(within(dialog).getByText('/home/test/.claude/settings.json')).toBeVisible()
+	expect(within(dialog).getByText('/home/test/.qwen/settings.json')).toBeVisible()
     expect(within(dialog).getByText(/0600/)).toBeVisible()
     expect(api.apply).not.toHaveBeenCalled()
 
     fireEvent.click(within(dialog).getByRole('button', { name: '确认写入' }))
     await waitFor(() => expect(api.apply).toHaveBeenCalledWith('apply-plan'))
-    expect(await screen.findByRole('status')).toHaveTextContent('已完成 2 个目标')
+    expect(await screen.findByRole('status')).toHaveTextContent('已完成 3 个目标')
   })
 
   it('requires a second click before deleting an encrypted profile', async () => {

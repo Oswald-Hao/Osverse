@@ -19,6 +19,7 @@ const (
 	TargetClaude   = "claude-code"
 	TargetCodex    = "codex-cli"
 	TargetOpenCode = "opencode-cli"
+	TargetQwen     = "qwen-code"
 	configLimit    = 2 * 1024 * 1024
 )
 
@@ -65,6 +66,8 @@ func (adapters *AdapterSet) TargetPath(target string) (string, error) {
 		return filepath.Join(adapters.home, ".codex", "config.toml"), nil
 	case TargetOpenCode:
 		return filepath.Join(adapters.home, ".config", "opencode", "opencode.json"), nil
+	case TargetQwen:
+		return filepath.Join(adapters.home, ".qwen", "settings.json"), nil
 	default:
 		return "", ErrUnknownTarget
 	}
@@ -108,6 +111,8 @@ func (adapters *AdapterSet) Apply(ctx context.Context, target string, input Inpu
 		next, err = mergeCodexConfig(before, validated)
 	case TargetOpenCode:
 		next, err = mergeOpenCodeConfig(before, validated)
+	case TargetQwen:
+		next, err = mergeQwenConfig(before, validated)
 	default:
 		err = ErrUnknownTarget
 	}
@@ -251,6 +256,83 @@ func mergeOpenCodeConfig(raw []byte, input Input) ([]byte, error) {
 	}
 	root["model"] = "osverse/" + input.Model
 	return marshalConfigJSON(root)
+}
+
+func mergeQwenConfig(raw []byte, input Input) ([]byte, error) {
+	root, err := decodeJSONObject(raw)
+	if err != nil {
+		return nil, err
+	}
+	environment, err := jsonObjectField(root, "env")
+	if err != nil {
+		return nil, err
+	}
+	environment["OSVERSE_API_KEY"] = input.APIKey
+	providers, err := jsonObjectField(root, "modelProviders")
+	if err != nil {
+		return nil, err
+	}
+	if existing, exists := providers["osverse"]; exists && !ownedQwenProvider(existing) {
+		return nil, ErrConfigConflict
+	}
+	providers["osverse"] = []any{map[string]any{
+		"id": input.Model, "name": "Osverse: " + input.Name,
+		"envKey": "OSVERSE_API_KEY", "baseUrl": openAIBaseURL(input.BaseURL),
+	}}
+	protocols, err := jsonObjectField(root, "providerProtocol")
+	if err != nil {
+		return nil, err
+	}
+	if existing := protocols["osverse"]; existing != nil && existing != "openai" {
+		return nil, ErrConfigConflict
+	}
+	protocols["osverse"] = "openai"
+	security, err := jsonObjectField(root, "security")
+	if err != nil {
+		return nil, err
+	}
+	auth, err := jsonObjectField(security, "auth")
+	if err != nil {
+		return nil, err
+	}
+	model, err := jsonObjectField(root, "model")
+	if err != nil {
+		return nil, err
+	}
+	model["name"] = input.Model
+	model["baseUrl"] = openAIBaseURL(input.BaseURL)
+	// providerProtocol maps the Osverse catalogue group to the OpenAI SDK,
+	// but selectedType itself must remain a built-in SDK protocol. Qwen Code
+	// otherwise accepts the JSON and then fails when it tries to authenticate.
+	auth["selectedType"] = "openai"
+	return marshalConfigJSON(root)
+}
+
+func ownedQwenProvider(value any) bool {
+	models, ok := value.([]any)
+	if !ok || len(models) != 1 {
+		return false
+	}
+	model, ok := models[0].(map[string]any)
+	if !ok || model["envKey"] != "OSVERSE_API_KEY" {
+		return false
+	}
+	name, nameOK := model["name"].(string)
+	_, idOK := model["id"].(string)
+	_, baseOK := model["baseUrl"].(string)
+	return nameOK && strings.HasPrefix(name, "Osverse: ") && idOK && baseOK
+}
+
+func jsonObjectField(root map[string]any, key string) (map[string]any, error) {
+	value, ok := root[key].(map[string]any)
+	if !ok {
+		if root[key] != nil {
+			return nil, ErrConfigConflict
+		}
+		value = make(map[string]any)
+		root[key] = value
+	}
+	return value, nil
 }
 
 func openAIBaseURL(base string) string {
@@ -416,7 +498,7 @@ func verifyWrittenConfig(target, path string) error {
 		return err
 	}
 	switch target {
-	case TargetClaude, TargetOpenCode:
+	case TargetClaude, TargetOpenCode, TargetQwen:
 		_, err = decodeJSONObject(raw)
 	case TargetCodex:
 		text := string(raw)
