@@ -10,7 +10,7 @@ Thanks for helping make AI development environments easier to reproduce. Osverse
 
 ## Development flow
 
-Every change reaches a protected branch through a pull request. Use this fixed promotion path:
+Every change reaches a protected branch through a pull request. Before changing files, update `origin/dev` and create a new focused branch for that one bug, feature, related dependency upgrade, documentation change, or maintenance task. Never develop or commit directly on `dev`, `beta`, or `main`, and never reuse one feature branch for unrelated tasks. Use this fixed promotion path:
 
 1. Create a focused branch and open a pull request into `dev`.
 2. When a tested development set is ready, open a `dev` → `beta` pull request.
@@ -20,6 +20,8 @@ Every change reaches a protected branch through a pull request. Use this fixed p
 Feature pull requests into `dev` run the complete CI suite: tests, static analysis, supply-chain checks, and native Linux and Windows builds. Promotion pull requests (`dev` → `beta` and `beta` → `main`) run only the required promotion-path gate because they reuse the source branch content that already passed the complete suite. They never rebuild, push, or synchronize branches. GitHub performs the branch update only when a maintainer merges the pull request. A maintainer can still start a complete manual diagnostic run with `workflow_dispatch`, but it does not replace a required feature pull-request run.
 
 The `Validate promotion path` required check enforces that chain. Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
+
+The authoritative bilingual policy is [docs/governance/branch-policy.md](docs/governance/branch-policy.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
 
 Use the pinned versions in the README. Before submitting, run:
 
