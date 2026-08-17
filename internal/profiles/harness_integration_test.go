@@ -126,7 +126,9 @@ func TestHarnessAdapterRoutesPinnedHarnessRequestThroughProfile(t *testing.T) {
 	}
 	input := adapterInput()
 	input.Name = "Harness E2E"
-	input.BaseURL = server.URL + "/v1"
+	// Production users commonly paste the gateway origin. The adapter must
+	// version OpenAI-compatible URLs before Harness appends chat/completions.
+	input.BaseURL = server.URL
 	input.Model = "deepseek/deepseek-v4-flash"
 	input.AllowPrivateNetwork = true
 	input.Protocol = "openai-chat"
