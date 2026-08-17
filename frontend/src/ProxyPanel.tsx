@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 
 import type { ProxyProtocol } from './domain'
 import { useProxyProbe } from './hooks/useProxyProbe'
@@ -20,7 +20,7 @@ export default function ProxyPanel() {
   const [validation, setValidation] = useState<string | null>(null)
   const { phase, result, selection, error, probe, useDirect } = useProxyProbe()
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selection) setPortText(String(selection.port))
   }, [selection?.port])
 

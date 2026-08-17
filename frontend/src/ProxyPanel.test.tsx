@@ -70,7 +70,7 @@ describe('ProxyPanel', () => {
     first.unmount()
     render(<ProxyPanel />)
     await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
-    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897')
+    await waitFor(() => expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897'))
     expect(current).toHaveBeenCalledTimes(2)
   })
 
