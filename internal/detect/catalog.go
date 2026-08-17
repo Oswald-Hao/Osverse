@@ -45,5 +45,15 @@ func CoreCLISpecs() []CommandSpec {
 			),
 			MinimumOS: platformMinimumOS(),
 		},
+		{
+			ID:              "qwen-code",
+			Name:            "Qwen Code",
+			ExecutableNames: platformExecutableNames("qwen"),
+			VersionArgs:     []string{"--version"},
+			VersionPattern: regexp.MustCompile(
+				`^(?:(?i:qwen(?:[[:space:]-]+code)?)[[:space:]]+)?v?([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$`,
+			),
+			MinimumOS: platformMinimumOS(),
+		},
 	}
 }

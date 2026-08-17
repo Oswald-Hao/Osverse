@@ -90,6 +90,8 @@ type App struct {
 	appExecutor       InstallExecutor
 	harnessPlanner    InstallPlanner
 	harnessExecutor   InstallExecutor
+	qwenPlanner       InstallPlanner
+	qwenExecutor      InstallExecutor
 	appLauncher       AppLauncher
 	componentLauncher ComponentLauncher
 	removal           RemovalService
@@ -282,6 +284,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	} else if componentID == "deepseek-harness" && app.harnessPlanner != nil {
 		planner = app.harnessPlanner
 		owner = "harness"
+	} else if componentID == "qwen-code" && app.qwenPlanner != nil {
+		planner = app.qwenPlanner
+		owner = "qwen"
 	}
 	app.mu.RUnlock()
 	if planner == nil {
@@ -323,6 +328,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 		executor = app.systemExecutor
 	} else if owner == "harness" {
 		executor = app.harnessExecutor
+	} else if owner == "qwen" {
+		executor = app.qwenExecutor
 	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
@@ -358,6 +365,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 		executor = app.systemExecutor
 	} else if app.taskOwners[taskID] == "harness" {
 		executor = app.harnessExecutor
+	} else if app.taskOwners[taskID] == "qwen" {
+		executor = app.qwenExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {
@@ -421,6 +430,8 @@ func componentDisplayName(id string) string {
 		return "OpenCode CLI"
 	case "deepseek-harness":
 		return "DeepSeek Harness"
+	case "qwen-code":
+		return "Qwen Code"
 	case "claude-desktop":
 		return "Claude Desktop"
 	case "chatgpt-desktop":
@@ -438,7 +449,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
@@ -582,6 +593,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 		executor = app.systemExecutor
 	} else if app.taskOwners[taskID] == "harness" {
 		executor = app.harnessExecutor
+	} else if app.taskOwners[taskID] == "qwen" {
+		executor = app.qwenExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {

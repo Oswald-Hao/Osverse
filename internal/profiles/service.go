@@ -193,6 +193,7 @@ func compatibilityMatrix(result ProbeResult) []TargetCompatibility {
 		{target: TargetClaude, protocol: "anthropic-messages"},
 		{target: TargetCodex, protocol: "openai-responses"},
 		{target: TargetOpenCode, protocol: "openai-chat"},
+		{target: TargetQwen, protocol: "openai-chat"},
 	}
 	matrix := make([]TargetCompatibility, 0, len(checks))
 	for _, check := range checks {
@@ -210,7 +211,7 @@ func compatibilityMatrix(result ProbeResult) []TargetCompatibility {
 }
 
 func (service *Service) CreateApplyPlan(ctx context.Context, profileID string, targets []string) (ApplyPlan, error) {
-	if service == nil || len(targets) == 0 || len(targets) > 3 {
+	if service == nil || len(targets) == 0 || len(targets) > 4 {
 		return ApplyPlan{}, ErrApplyPlan
 	}
 	if ctx == nil {
