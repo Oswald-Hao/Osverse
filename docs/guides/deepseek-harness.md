@@ -37,6 +37,8 @@ Harness 将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`，普通
 - 不执行任何 npm `preinstall`、`install` 或 `postinstall` 脚本。Linux x64 的 `node-pty` 原生模块由 Osverse 在 Ubuntu 20.04 基线中预构建并固定哈希。
 - Linux/Windows 安装到当前用户目录，不要求管理员权限。已有外部 `dsh` 不会被删除；同名 Osverse 入口被其他程序占用时安装会停止。
 
+Harness 的锁定依赖中包含按平台下载的 `sharp-libvips`（LGPL-3.0-or-later）和 `argparse`（Python-2.0）。这些依赖不嵌入 Osverse Release，而是在用户确认 Harness 安装后从其固定 npm 制品直接获取；包名、版本、摘要和许可证仍会进入 Osverse 的依赖扫描与 SBOM。`sharp-libvips` 的对应源码和构建脚本位于 [lovell/sharp-libvips](https://github.com/lovell/sharp-libvips)，许可证条款见 [GNU LGPL v3](https://www.gnu.org/licenses/lgpl-3.0.html)。
+
 上游资料：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[Web UI](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/index.md)、[Providers](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md)。
 
 ## English
@@ -54,5 +56,7 @@ Harness stores keys write-only in `$DSH_HOME/.credentials.yaml`. Osverse deliber
 ### Verified installation model
 
 Osverse pins `@deepseek-ai/dsh@0.1.0-rc.6` and Node.js `22.23.2`. It downloads only from `registry.npmjs.org` and `nodejs.org`, verifies every package with the embedded lockfile's SHA-512 integrity, verifies the Node artifact's exact size and SHA-256, and runs no npm lifecycle scripts. The private runtime does not modify a global Node/npm installation.
+
+The locked graph includes platform-selected `sharp-libvips` (LGPL-3.0-or-later) and `argparse` (Python-2.0). They are fetched from their pinned npm artifacts only after installation confirmation rather than embedded in the Osverse release; they remain visible to dependency scanning and SBOM generation. Corresponding libvips source and build scripts are available from [lovell/sharp-libvips](https://github.com/lovell/sharp-libvips).
 
 Upstream references: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [Web UI guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/index.md), and [Provider guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md).
