@@ -9,6 +9,12 @@ const protocolLabels: Record<ProxyProtocol, string> = {
   socks5: 'SOCKS5',
 }
 
+function latencyTone(milliseconds: number): 'good' | 'warning' | 'bad' {
+  if (milliseconds <= 500) return 'good'
+  if (milliseconds <= 1000) return 'warning'
+  return 'bad'
+}
+
 export default function ProxyPanel() {
   const [portText, setPortText] = useState('7890')
   const [validation, setValidation] = useState<string | null>(null)
@@ -92,7 +98,11 @@ export default function ProxyPanel() {
                 <span>{attempt.available ? '可用' : '不可用'}</span>
               </div>
               <p>{attempt.message}</p>
-              {attempt.available && <small>{attempt.latencyMillis} ms</small>}
+              {attempt.available && (
+                <small className={`proxy-latency proxy-latency--${latencyTone(attempt.latencyMillis)}`}>
+                  {attempt.latencyMillis} ms
+                </small>
+              )}
             </article>
           ))}
         </div>

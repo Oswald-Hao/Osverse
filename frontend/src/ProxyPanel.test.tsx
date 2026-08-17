@@ -90,4 +90,25 @@ describe('ProxyPanel', () => {
     expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('2080')
   })
 
+  it('colors latency at the 500ms and 1000ms boundaries', async () => {
+    setProxyOperationsForTests(() => Promise.resolve({
+      port: 7890,
+      reachable: true,
+      recommended: 'https-connect',
+      checkedAt: '2026-08-17T06:00:00Z',
+      attempts: [
+        { protocol: 'http', available: true, latencyMillis: 500, message: 'HTTP 可用' },
+        { protocol: 'https-connect', available: true, latencyMillis: 1000, message: 'CONNECT 可用' },
+        { protocol: 'socks5', available: true, latencyMillis: 1001, message: 'SOCKS5 可用' },
+      ],
+    }))
+    render(<ProxyPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '探测并使用' }))
+
+    await waitFor(() => expect(screen.getByText('500 ms')).toBeVisible())
+    expect(screen.getByText('500 ms')).toHaveClass('proxy-latency--good')
+    expect(screen.getByText('1000 ms')).toHaveClass('proxy-latency--warning')
+    expect(screen.getByText('1001 ms')).toHaveClass('proxy-latency--bad')
+  })
+
 })

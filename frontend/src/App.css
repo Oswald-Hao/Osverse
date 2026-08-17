@@ -389,7 +389,17 @@ button:focus-visible {
 .proxy-attempts strong { font-size: 0.76rem; }
 .proxy-attempts span { color: var(--muted-aa); font-size: 0.68rem; }
 .proxy-attempts p { margin-top: 7px; line-height: 1.45; }
-.proxy-attempts small { display: block; margin-top: 5px; color: var(--success); }
+.proxy-latency {
+  display: inline-block;
+  padding: 3px 7px;
+  margin-top: 7px;
+  font-weight: 800;
+  border-radius: 999px;
+}
+
+.proxy-latency--good { color: #0d6246; background: #dff4eb; }
+.proxy-latency--warning { color: #7d430e; background: #fff0d8; }
+.proxy-latency--bad { color: #843732; background: #fde7e4; }
 
 .system-card {
   display: grid;
