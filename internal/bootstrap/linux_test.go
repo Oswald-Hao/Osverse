@@ -13,14 +13,14 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 )
 
-func TestNewLinuxScannerHasExactlyEightComponentsWithoutScanningHost(t *testing.T) {
+func TestNewLinuxScannerHasExactlyNineComponentsWithoutScanningHost(t *testing.T) {
 	service := NewLinuxScanner()
 
 	if service == nil {
 		t.Fatal("NewLinuxScanner() returned nil")
 	}
-	if got := service.ComponentCount(); got != 8 {
-		t.Fatalf("ComponentCount() = %d, want 8", got)
+	if got := service.ComponentCount(); got != 9 {
+		t.Fatalf("ComponentCount() = %d, want 9", got)
 	}
 }
 

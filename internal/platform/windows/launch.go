@@ -58,16 +58,21 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 
 func launchInvocation(request platform.LaunchRequest) (string, []string, uint32, error) {
 	if !request.Terminal {
-		return request.Path, nil, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.DETACHED_PROCESS, nil
+		return request.Path, append([]string(nil), request.Args...), xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.DETACHED_PROCESS, nil
 	}
 	shell := comspec()
 	if !safeExecutablePath(shell) {
 		return "", nil, 0, errors.New("Windows command processor unavailable")
 	}
-	if strings.ContainsAny(request.Path, "&|<>^%!") {
-		return "", nil, 0, errors.New("unsafe terminal launch path")
+	for _, value := range append([]string{request.Path}, request.Args...) {
+		if strings.ContainsAny(value, "\x00\r\n&|<>^%!") {
+			return "", nil, 0, errors.New("unsafe terminal launch argument")
+		}
 	}
 	line := quoteCMD(request.Path)
+	for _, argument := range request.Args {
+		line += " " + quoteCMD(argument)
+	}
 	local := os.Getenv("LOCALAPPDATA")
 	terminal := filepath.Join(local, "Microsoft", "WindowsApps", "wt.exe")
 	if validRegularFile(terminal) {

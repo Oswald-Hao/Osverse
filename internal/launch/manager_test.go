@@ -3,6 +3,7 @@ package launch
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
@@ -30,6 +31,19 @@ func TestManagerLaunchesDetectedCLIInTerminalAndExternalDesktopDirectly(t *testi
 	}
 	if got := starter.requests[1]; got.Path != desktop.Installations[0].Path || got.ExpectedResolvedPath != desktop.Installations[0].ResolvedPath || got.Terminal {
 		t.Fatalf("desktop request = %#v", got)
+	}
+}
+
+func TestManagerLaunchesDeepSeekHarnessWebProfile(t *testing.T) {
+	starter := &fakeStarter{}
+	manager := NewManager(starter, nil)
+	component := installedComponent("deepseek-harness", "Core CLI", "/home/test/.local/bin/dsh", "/home/test/.local/share/osverse/tools/deepseek-harness/current/bin/dsh", true)
+
+	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	if len(starter.requests) != 1 || !reflect.DeepEqual(starter.requests[0].Args, []string{"web"}) || !starter.requests[0].Terminal {
+		t.Fatalf("DeepSeek Harness launch request = %#v", starter.requests)
 	}
 }
 
