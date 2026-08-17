@@ -135,6 +135,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 - 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
 - Windows 上受管 CLI 使用锁定文件身份移入 `%LOCALAPPDATA%\Osverse\recovery`，卸载桌面应用只允许固定的 WinGet ID、Microsoft Store ID、MSI ProductCode 或受信任卸载器路径。
 - 安装源来自内置白名单，并同时校验文件长度与 SHA-256。Qwen Code 与 Copilot CLI 会拒绝归档路径穿越、链接、特殊文件和异常归档结构；DeepSeek Harness 额外使用嵌入式 npm lockfile 对每个包做 SHA-512 校验，且不会执行包内安装脚本。
+- 安装末段的运行时提交、命令入口和 PATH 激活属于同一事务；失败只回滚本次新写入的版本，保留重新校验通过的已有版本，并明确报告无法自动清理的残留。
 - Osverse 自更新只接受固定仓库的语义化版本、匹配平台的结构化清单和精确发布路径；稳定版默认不接收预发布版，测试版可升级到更新的测试版或稳定版。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
 - API Key 不会出现在档案列表、历史或日志中；Linux 使用权限受限的 AES-256-GCM 密钥，Windows 再以当前用户 DPAPI 保护主密钥；私网和保留地址必须明确确认。
