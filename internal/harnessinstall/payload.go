@@ -29,6 +29,7 @@ var (
 	errHashMismatch    = errors.New("Harness artifact hash mismatch")
 	errVersion         = errors.New("Harness version verification failed")
 	errExternalCommand = errors.New("Harness command is owned by another program")
+	errRollback        = errors.New("Harness activation rollback failed")
 )
 
 //go:embed assets/linux-x64/pty.node
