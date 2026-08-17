@@ -10,7 +10,7 @@ Thanks for helping make AI development environments easier to reproduce. Osverse
 
 ## Development flow
 
-Every change reaches a protected branch through a pull request. Use this fixed promotion path:
+Every change reaches a protected branch through a pull request. Before changing files, update `origin/dev` and create a new focused branch for that one bug, feature, related dependency upgrade, documentation change, or maintenance task. Never develop or commit directly on `dev`, `beta`, or `main`, and never reuse one feature branch for unrelated tasks. Use this fixed promotion path:
 
 1. Create a focused branch and open a pull request into `dev`.
 2. When a tested development set is ready, open a `dev` → `beta` pull request.
@@ -21,11 +21,15 @@ Feature pull requests into `dev` run the complete CI suite: tests, static analys
 
 The `Validate promotion path` required check enforces that chain. Do not open feature pull requests directly against `beta` or `main`, and do not push commits directly to `dev`, `beta`, or `main`.
 
+The authoritative bilingual policy is [docs/governance/branch-policy.md](docs/governance/branch-policy.md). Coding agents must also follow [AGENTS.md](AGENTS.md).
+
 Use the pinned versions in the README. Before submitting, run:
 
 ```bash
 go mod verify
 go test ./...
+go test -coverprofile=/tmp/osverse-coverage.out ./...
+go tool cover -func=/tmp/osverse-coverage.out
 go test -race ./...
 go vet ./...
 npm --prefix frontend ci
@@ -35,6 +39,8 @@ npm --prefix frontend run build
 npm --prefix frontend audit --audit-level=high
 npm --prefix frontend run audit:responsive
 ```
+
+CI requires total Go statement coverage to remain at or above 60%. The floor is deliberately below the current baseline so it catches broad regressions without rewarding low-value tests written only to increase a number.
 
 Keep commits small and descriptive. Conventional prefixes such as `feat:`, `fix:`, `test:`, `docs:`, and `ci:` are preferred.
 
@@ -49,6 +55,6 @@ Keep commits small and descriptive. Conventional prefixes such as `feat:`, `fix:
 
 ## Generated files and UI
 
-Wails bindings under `frontend/wailsjs` are generated from the Go API. Regenerate them with Wails 2.13.0 when the public backend contract changes, and include only intentional output. Keep the 1280×800 default layout usable at every breakpoint covered by the responsive audit.
+Wails bindings under `frontend/wailsjs` are generated from the Go API. Regenerate them with Wails 2.14.0 when the public backend contract changes, and include only intentional output. Keep the 1280×800 default layout usable at every breakpoint covered by the responsive audit.
 
 By contributing, you agree that your contribution is licensed under Apache-2.0 and that you will follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

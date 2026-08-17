@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,53 @@ func TestExtractPortableBinaryRejectsTraversal(t *testing.T) {
 	info, _ := os.Stat(archive)
 	if _, err := extractPortableBinary(archive, info.Size()); err == nil {
 		t.Fatal("traversal accepted")
+	}
+}
+
+func TestPrivateUpdateDirectoryRejectsLinkAndUsesPrivateMode(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "updates")
+	if err := ensurePrivateDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("update directory mode = %#o, want 0700", got)
+	}
+
+	outside := t.TempDir()
+	link := filepath.Join(t.TempDir(), "updates-link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensurePrivateDirectory(link); err == nil {
+		t.Fatal("symlink update directory accepted")
+	}
+}
+
+func TestExecutableFileRejectsDirectoryAndLink(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	regular := filepath.Join(directory, "osverse")
+	if err := os.WriteFile(regular, []byte("binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executableFile(regular); err != nil {
+		t.Fatalf("regular executable rejected: %v", err)
+	}
+	if _, err := executableFile(directory); err == nil {
+		t.Fatal("directory accepted as executable")
+	}
+	link := filepath.Join(directory, "osverse-link")
+	if err := os.Symlink(regular, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executableFile(link); err == nil {
+		t.Fatal("symlink accepted as executable")
 	}
 }

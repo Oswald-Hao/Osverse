@@ -205,7 +205,7 @@ func TestExecRunnerCallerCancellationKillsDescendantHoldingPipes(t *testing.T) {
 func TestClassifyCommandCompletionIndependentNonzeroExitWinsDeadline(t *testing.T) {
 	// Reap a real nonzero child first so its completed state is independent of
 	// the deadline supplied to the classifier below.
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "stderr-exit", "independent-exit", "17")
+	cmd := exec.Command(os.Args[0], helperProcessArgs(os.Args, "stderr-exit", "independent-exit", "17")...)
 	waitErr := cmd.Run()
 	if waitErr == nil {
 		t.Fatal("helper wait error = nil, want nonzero exit")
@@ -359,7 +359,7 @@ func TestHelperProcess(t *testing.T) {
 }
 
 func startPipeHoldingDescendant(marker string) *exec.Cmd {
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "hold-pipes")
+	cmd := exec.Command(os.Args[0], helperProcessArgs(os.Args, "hold-pipes")...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -407,11 +407,62 @@ func waitForPIDFDReady(t *testing.T, pidfd int) {
 }
 
 func helperRequest(mode string, args ...string) platform.CommandRequest {
-	requestArgs := []string{"-test.run=^TestHelperProcess$", "--", mode}
-	requestArgs = append(requestArgs, args...)
 	return platform.CommandRequest{
 		Path: os.Args[0],
-		Args: requestArgs,
+		Args: helperProcessArgs(os.Args, mode, args...),
+		Env:  helperCoverageEnvironment(os.Environ()),
+	}
+}
+
+func helperProcessArgs(processArgs []string, mode string, args ...string) []string {
+	requestArgs := []string{"-test.run=^TestHelperProcess$"}
+	for _, arg := range processArgs[1:] {
+		if strings.HasPrefix(arg, "-test.gocoverdir=") {
+			requestArgs = append(requestArgs, arg)
+			break
+		}
+	}
+	requestArgs = append(requestArgs, "--", mode)
+	return append(requestArgs, args...)
+}
+
+func helperCoverageEnvironment(processEnvironment []string) []string {
+	for _, entry := range processEnvironment {
+		name, value, found := strings.Cut(entry, "=")
+		if found && name == "GOCOVERDIR" && value != "" {
+			return []string{entry}
+		}
+	}
+	return nil
+}
+
+func TestHelperProcessArgsPropagateOnlyCoverageDirectory(t *testing.T) {
+	t.Parallel()
+
+	got := helperProcessArgs(
+		[]string{"linux.test", "-test.v", "-test.gocoverdir=/tmp/coverage", "-test.timeout=1s"},
+		"stdout",
+		"hello",
+	)
+	want := []string{
+		"-test.run=^TestHelperProcess$",
+		"-test.gocoverdir=/tmp/coverage",
+		"--",
+		"stdout",
+		"hello",
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("helper args = %q, want %q", got, want)
+	}
+
+	gotEnvironment := helperCoverageEnvironment([]string{
+		"TOKEN=must-not-leak",
+		"GOCOVERDIR=/tmp/coverage",
+		"PATH=/must-not-inherit",
+	})
+	wantEnvironment := []string{"GOCOVERDIR=/tmp/coverage"}
+	if fmt.Sprint(gotEnvironment) != fmt.Sprint(wantEnvironment) {
+		t.Fatalf("helper environment = %q, want %q", gotEnvironment, wantEnvironment)
 	}
 }
 
