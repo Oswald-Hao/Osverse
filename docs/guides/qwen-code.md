@@ -28,7 +28,7 @@ Qwen Code 原生支持 `modelProviders`。在 Osverse 中保存 API 档案并完
 
 ### 安全校验
 
-- 下载 URL、版本、精确字节数和 SHA-256 固定在应用内；不跟随 HTTP 重定向。
+- 下载 URL、版本、精确字节数和 SHA-256 固定在应用内；只允许 GitHub 下载所需的一次官方 HTTPS 资产跳转，其他重定向全部拒绝。
 - tar/zip 只允许固定的 `qwen-code/` 根目录，拒绝绝对路径、`..`、Windows 保留名、符号链接、硬链接和特殊文件。
 - 文件数与解压总量有上限，写入使用不可覆盖的新文件。
 - 提交前使用包内 Node 运行 `lib/cli-entry.js --version`，必须精确返回固定版本。
@@ -48,6 +48,6 @@ After an Osverse API profile confirms the OpenAI Chat Completions route, select 
 
 ### Verification model
 
-The artifact URL, version, exact length, and SHA-256 are built in, redirects are disabled, and extraction is confined to the fixed `qwen-code/` root with entry-count and expanded-size limits. Links, special files, traversal, and cross-platform hazardous names are rejected. Before commit, Osverse runs the bundled Node.js against `lib/cli-entry.js --version`; only the exact pinned version can activate the command.
+The artifact URL, version, exact length, and SHA-256 are built in. Only GitHub's required single HTTPS handoff to its dedicated release-asset host is accepted; every other redirect is rejected. Extraction is confined to the fixed `qwen-code/` root with entry-count and expanded-size limits. Links, special files, traversal, and cross-platform hazardous names are rejected. Before commit, Osverse runs the bundled Node.js against `lib/cli-entry.js --version`; only the exact pinned version can activate the command.
 
 Upstream references: [Qwen Code](https://github.com/QwenLM/qwen-code), [official installation guide](https://github.com/QwenLM/qwen-code/blob/main/scripts/installation/INSTALLATION_GUIDE.md), and [Model Providers](https://github.com/QwenLM/qwen-code/blob/main/docs/users/configuration/model-providers.md).
