@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 
 import type { ProxyProtocol } from './domain'
 import { useProxyProbe } from './hooks/useProxyProbe'
@@ -9,10 +9,20 @@ const protocolLabels: Record<ProxyProtocol, string> = {
   socks5: 'SOCKS5',
 }
 
+function latencyTone(milliseconds: number): 'good' | 'warning' | 'bad' {
+  if (milliseconds <= 500) return 'good'
+  if (milliseconds <= 1000) return 'warning'
+  return 'bad'
+}
+
 export default function ProxyPanel() {
   const [portText, setPortText] = useState('7890')
   const [validation, setValidation] = useState<string | null>(null)
-  const { phase, result, error, probe, useDirect } = useProxyProbe()
+  const { phase, result, selection, error, probe, useDirect } = useProxyProbe()
+
+  useLayoutEffect(() => {
+    if (selection) setPortText(String(selection.port))
+  }, [selection?.port])
 
   const submit = () => {
     const port = Number(portText)
@@ -38,7 +48,7 @@ export default function ProxyPanel() {
           <p>仅探测本机 127.0.0.1，不会修改系统代理。</p>
         </div>
         <span className={`connection-state connection-state--${phase}`}>
-          {phase === 'proxy' ? '代理已启用' : phase === 'probing' ? '探测中' : '直连'}
+          {phase === 'proxy' ? '代理已启用' : phase === 'probing' ? '处理中' : phase === 'error' ? '连接异常' : '直连'}
         </span>
       </div>
 
@@ -64,8 +74,14 @@ export default function ProxyPanel() {
         </button>
       </div>
       <p id="proxy-help" className="proxy-panel__help">
-        常见端口：Clash 7890、sing-box 2080。Osverse 会自动识别协议。
+        常见端口：Clash 7890、sing-box 2080。验证后的选择会为当前用户保存，直到你改用直连。
       </p>
+
+      {selection && !result && (
+        <div className="notice notice--progress proxy-panel__notice" role="status">
+          <div><strong>已恢复代理选择</strong><span>{protocolLabels[selection.protocol]} · 127.0.0.1:{selection.port}</span></div>
+        </div>
+      )}
 
       {(validation || error) && (
         <div className="notice notice--error proxy-panel__notice" role="alert">
@@ -82,7 +98,11 @@ export default function ProxyPanel() {
                 <span>{attempt.available ? '可用' : '不可用'}</span>
               </div>
               <p>{attempt.message}</p>
-              {attempt.available && <small>{attempt.latencyMillis} ms</small>}
+              {attempt.available && (
+                <small className={`proxy-latency proxy-latency--${latencyTone(attempt.latencyMillis)}`}>
+                  {attempt.latencyMillis} ms
+                </small>
+              )}
             </article>
           ))}
         </div>

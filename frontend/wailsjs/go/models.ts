@@ -626,6 +626,20 @@ export namespace proxy {
 		    return a;
 		}
 	}
+	export class Selection {
+	    protocol: string;
+	    port: number;
+
+	    static createFrom(source: any = {}) {
+	        return new Selection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.protocol = source["protocol"];
+	        this.port = source["port"];
+	    }
+	}
 
 }
 

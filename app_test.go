@@ -104,7 +104,7 @@ func TestAppExposesOnlyFixedWailsOperations(t *testing.T) {
 	typeOfApp := reflect.TypeOf((*App)(nil))
 	want := []string{
 		"ApplyAPIPlan", "CancelInstallTask", "CheckForAppUpdate", "ClearHistory", "CreateAPIApplyPlan", "CreateInstallPlan", "CreateRemovalPlan",
-		"DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchComponent",
+		"CurrentProxySelection", "DeleteAPIProfile", "GetAPICompatibility", "GetInstallTask", "LaunchComponent",
 		"ListAPIProfiles", "ListHistory", "ProbeAPIProfile", "ProbeProxy", "RemoveComponent", "SaveAPIProfile", "ScanEnvironment",
 		"StartAppUpdate", "StartInstall", "UseDirectConnection",
 	}
@@ -618,7 +618,9 @@ func TestUseDirectConnectionClearsProxySelection(t *testing.T) {
 		t.Fatalf("ProbeProxy() error = %v", err)
 	}
 
-	app.UseDirectConnection()
+	if err := app.UseDirectConnection(); err != nil {
+		t.Fatal(err)
+	}
 
 	if selection := app.currentProxy(); selection != (proxySelection{}) {
 		t.Fatalf("proxy selection after direct mode = %#v", selection)
@@ -645,13 +647,74 @@ func TestUseDirectConnectionInvalidatesAnOlderProbeResult(t *testing.T) {
 	}()
 	<-started
 
-	app.UseDirectConnection()
+	if err := app.UseDirectConnection(); err != nil {
+		t.Fatal(err)
+	}
 	close(release)
 	if err := <-done; err != nil {
 		t.Fatalf("ProbeProxy() error = %v", err)
 	}
 	if selection := app.currentProxy(); selection != (proxySelection{}) {
 		t.Fatalf("stale probe restored proxy: %#v", selection)
+	}
+}
+
+func TestProxySelectionStoreRestoresPersistsAndExposesCurrentSelection(t *testing.T) {
+	initial := proxyservice.Selection{Protocol: proxyservice.ProtocolSOCKS5, Port: 7897}
+	store := &fakeProxySelectionStore{loaded: initial}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{result: proxyservice.Result{
+		Port: 2080, Reachable: true, Recommended: proxyservice.ProtocolHTTPSConnect,
+	}})
+
+	attachProxySelectionStore(app, store)
+	if selection := app.CurrentProxySelection(); selection != initial {
+		t.Fatalf("restored selection = %#v, want %#v", selection, initial)
+	}
+	if _, err := app.ProbeProxy(2080); err != nil {
+		t.Fatal(err)
+	}
+	want := proxyservice.Selection{Protocol: proxyservice.ProtocolHTTPSConnect, Port: 2080}
+	if len(store.saved) != 1 || store.saved[0] != want || app.CurrentProxySelection() != want {
+		t.Fatalf("saved = %#v, current = %#v, want %#v", store.saved, app.CurrentProxySelection(), want)
+	}
+	if err := app.UseDirectConnection(); err != nil {
+		t.Fatal(err)
+	}
+	if !store.cleared || app.CurrentProxySelection() != (proxyservice.Selection{}) {
+		t.Fatalf("cleared = %t, current = %#v", store.cleared, app.CurrentProxySelection())
+	}
+}
+
+func TestProxySelectionStoreFailuresCannotCreateFalseUIState(t *testing.T) {
+	secret := errors.New("private filesystem detail")
+	store := &fakeProxySelectionStore{saveErr: secret}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{result: proxyservice.Result{
+		Port: 7897, Reachable: true, Recommended: proxyservice.ProtocolSOCKS5,
+	}})
+	attachProxySelectionStore(app, store)
+	_, err := app.ProbeProxy(7897)
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Code != domain.ErrProxyProbeFailed || strings.Contains(public.Error(), secret.Error()) {
+		t.Fatalf("ProbeProxy() error = %v", err)
+	}
+	if app.CurrentProxySelection() != (proxyservice.Selection{}) {
+		t.Fatalf("failed save exposed selection %#v", app.CurrentProxySelection())
+	}
+
+	store.saveErr = nil
+	if _, err := app.ProbeProxy(7897); err != nil {
+		t.Fatal(err)
+	}
+	store.clearErr = secret
+	if err := app.UseDirectConnection(); err == nil {
+		t.Fatal("UseDirectConnection() accepted failed persistent clear")
+	}
+	if app.CurrentProxySelection().Port != 7897 {
+		t.Fatalf("failed clear discarded active selection %#v", app.CurrentProxySelection())
 	}
 }
 
@@ -663,6 +726,29 @@ type fakeProxyProber struct {
 	result proxyservice.Result
 	err    error
 	probe  func(context.Context, int) (proxyservice.Result, error)
+}
+
+type fakeProxySelectionStore struct {
+	loaded   proxyservice.Selection
+	loadErr  error
+	saved    []proxyservice.Selection
+	saveErr  error
+	clearErr error
+	cleared  bool
+}
+
+func (store *fakeProxySelectionStore) Load() (proxyservice.Selection, error) {
+	return store.loaded, store.loadErr
+}
+
+func (store *fakeProxySelectionStore) Save(selection proxyservice.Selection) error {
+	store.saved = append(store.saved, selection)
+	return store.saveErr
+}
+
+func (store *fakeProxySelectionStore) Clear() error {
+	store.cleared = true
+	return store.clearErr
 }
 
 type fakeInstallPlanner struct {
@@ -781,13 +867,35 @@ func TestDefaultWindowMatchesCockpitTools(t *testing.T) {
 type fakeAppUpdater struct {
 	checkedProtocol proxyservice.Protocol
 	checkedPort     int
+	checkErr        error
 	appliedPlan     string
 	result          selfupdate.ApplyResult
 }
 
 func (updater *fakeAppUpdater) Check(_ context.Context, protocol proxyservice.Protocol, port int) (selfupdate.Info, error) {
 	updater.checkedProtocol, updater.checkedPort = protocol, port
+	if updater.checkErr != nil {
+		return selfupdate.Info{}, updater.checkErr
+	}
 	return selfupdate.Info{Available: true, CanInstall: true, PlanID: "update-plan", CurrentVersion: "1.0.0", LatestVersion: "1.1.0"}, nil
+}
+
+func TestAppUpdateBridgeDistinguishesRateLimitFromNetworkFailure(t *testing.T) {
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{})
+	updater := &fakeAppUpdater{checkErr: selfupdate.ErrRateLimited}
+	app.updater = updater
+	_, err := app.CheckForAppUpdate()
+	var public *domain.PublicError
+	if !errors.As(err, &public) || public.Message != "GitHub 更新检查频率受限，请稍后重试" {
+		t.Fatalf("rate-limit error = %v", err)
+	}
+	updater.checkErr = selfupdate.ErrInvalidReply
+	_, err = app.CheckForAppUpdate()
+	if !errors.As(err, &public) || public.Message != "更新信息校验失败，请稍后重试" {
+		t.Fatalf("metadata error = %v", err)
+	}
 }
 
 func (updater *fakeAppUpdater) Apply(_ context.Context, planID string, protocol proxyservice.Protocol, port int) (selfupdate.ApplyResult, error) {

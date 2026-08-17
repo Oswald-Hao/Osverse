@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ProxyResult } from '../domain'
-import { probeProxy, useDirectConnection } from '../services/osverse'
+import type { ProxyResult, ProxySelection } from '../domain'
+import { getCurrentProxySelection, probeProxy, useDirectConnection } from '../services/osverse'
 
 export type ProxyPhase = 'direct' | 'probing' | 'proxy' | 'error'
 
 export interface ProxyProbeState {
   phase: ProxyPhase
   result: ProxyResult | null
+  selection: ProxySelection | null
   error: string | null
   probe: (port: number) => void
   useDirect: () => void
@@ -26,6 +27,7 @@ function publicErrorMessage(reason: unknown): string {
 export function useProxyProbe(): ProxyProbeState {
   const [phase, setPhase] = useState<ProxyPhase>('direct')
   const [result, setResult] = useState<ProxyResult | null>(null)
+  const [selection, setSelection] = useState<ProxySelection | null>(null)
   const [error, setError] = useState<string | null>(null)
   const mounted = useRef(false)
   const generation = useRef(0)
@@ -36,6 +38,7 @@ export function useProxyProbe(): ProxyProbeState {
     const requestGeneration = ++generation.current
     setPhase('probing')
     setResult(null)
+    setSelection(null)
     setError(null)
 
     let request: Promise<ProxyResult>
@@ -49,37 +52,74 @@ export function useProxyProbe(): ProxyProbeState {
       (nextResult) => {
         if (!mounted.current || generation.current !== requestGeneration) return
         setResult(nextResult)
+        setSelection(nextResult.reachable && nextResult.recommended !== ''
+          ? { protocol: nextResult.recommended, port: nextResult.port }
+          : null)
         setPhase(nextResult.reachable ? 'proxy' : 'error')
         setError(nextResult.reachable ? null : '未发现可安全承载 HTTPS 下载的本地代理')
       },
       (reason: unknown) => {
         if (!mounted.current || generation.current !== requestGeneration) return
-        setPhase('error')
-        setResult(null)
-        setError(publicErrorMessage(reason))
+        void getCurrentProxySelection().then(
+          (current) => {
+            if (!mounted.current || generation.current !== requestGeneration) return
+            setPhase(current ? 'proxy' : 'error')
+            setResult(null)
+            setSelection(current)
+            setError(publicErrorMessage(reason))
+          },
+          () => {
+            if (!mounted.current || generation.current !== requestGeneration) return
+            setPhase('error')
+            setResult(null)
+            setSelection(null)
+            setError(publicErrorMessage(reason))
+          },
+        )
       },
     )
   }, [])
 
   const useDirect = useCallback(() => {
     if (!mounted.current) return
-    ++generation.current
-    setPhase('direct')
+    const requestGeneration = ++generation.current
+    setPhase('probing')
     setResult(null)
     setError(null)
-    void useDirectConnection().catch(() => {
-      // The backend operation is idempotent and has already invalidated stale
-      // probes. There is no secret-bearing diagnostic to expose here.
-    })
-  }, [])
+    void useDirectConnection().then(
+      () => {
+        if (!mounted.current || generation.current !== requestGeneration) return
+        setPhase('direct')
+        setSelection(null)
+      },
+      (reason: unknown) => {
+        if (!mounted.current || generation.current !== requestGeneration) return
+        setPhase(selection ? 'proxy' : 'error')
+        setError(publicErrorMessage(reason))
+      },
+    )
+  }, [selection])
 
   useEffect(() => {
     mounted.current = true
+    const requestGeneration = ++generation.current
+    void getCurrentProxySelection().then(
+      (current) => {
+        if (!mounted.current || generation.current !== requestGeneration) return
+        setSelection(current)
+        setPhase(current ? 'proxy' : 'direct')
+      },
+      (reason: unknown) => {
+        if (!mounted.current || generation.current !== requestGeneration) return
+        setPhase('error')
+        setError(publicErrorMessage(reason))
+      },
+    )
     return () => {
       mounted.current = false
       ++generation.current
     }
   }, [])
 
-  return { phase, result, error, probe, useDirect }
+  return { phase, result, selection, error, probe, useDirect }
 }

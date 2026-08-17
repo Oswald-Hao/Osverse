@@ -43,7 +43,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 - **Install without surrendering control.** Every supported CLI install starts with a backend-generated plan, verifies exact size and SHA-256, switches versions atomically, and can recover after interruption.
 - **Preview and recover removals.** User and Osverse-managed files go to the desktop Trash, while system packages use a fixed privileged action. Config, credentials, and sessions are preserved by default.
 - **Keep API credentials local.** Third-party API profiles are stored with AES-256-GCM encryption, can be edited safely, are probed for protocol compatibility, and are applied only after a second confirmation.
-- **Use your proxy, not a global rewrite.** Enter one loopback port; Osverse detects HTTP, HTTPS CONNECT, and SOCKS5 and uses the result only for its own downloads.
+- **Use your proxy, not a global rewrite.** Enter one loopback port; Osverse detects HTTP, HTTPS CONNECT, and SOCKS5, remembers the verified protocol and port for the current user, and uses it only for its own downloads. It stores no proxy credentials and shows latency as green at `≤500ms`, yellow at `501–1000ms`, and red above `1000ms`.
 - **Manage the surrounding desktop stack.** Install, update, and launch supported desktop clients and API-switching tools from the same dashboard.
 - **Update Osverse in place.** Startup checks the official Release feed, shows the version and release notes, then downloads, verifies, and applies the matching package only after confirmation—no uninstall or manual GitHub trip.
 
@@ -123,7 +123,7 @@ A portable `.tar.gz` is also published. Every release includes one unified check
 gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 ```
 
-After the first installation, Osverse checks for updates quietly at startup and prompts only when a newer release is available. Update downloads use the currently verified loopback proxy when selected; the frontend cannot provide an artifact URL, path, or digest.
+After the first installation, Osverse checks the official Release feed quietly at startup and prompts only when a newer release is available. Update downloads reuse the verified, persisted loopback proxy without depending on GitHub's anonymous REST rate limit for shared proxy exits; the frontend cannot provide an artifact URL, path, or digest.
 
 ## Safety model
 
