@@ -460,6 +460,45 @@ func TestCopilotInstallPlansAndTasksStayOnCopilotManager(t *testing.T) {
 	}
 }
 
+func TestKimiInstallPlansAndTasksStayOnKimiManager(t *testing.T) {
+	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("Kimi plan reached generic CLI manager")
+		return install.Plan{}, nil
+	}}}
+	kimi := &fakeInstallManager{}
+	kimi.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "kimi-code" {
+			t.Fatalf("Kimi CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "kimi-plan", ComponentID: id}, nil
+	}
+	kimi.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		return install.Task{ID: "kimi-task", PlanID: id, ComponentID: "kimi-code"}, nil
+	}
+	kimi.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "kimi-code", Phase: "completed"}, nil
+	}
+	kimi.cancel = func(string) error { return nil }
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.kimiPlanner, app.kimiExecutor = kimi, kimi
+	plan, err := app.CreateInstallPlan("kimi-code")
+	if err != nil || app.planOwners[plan.ID] != "kimi" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner=%q", plan, err, app.planOwners[plan.ID])
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "kimi-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if current, err := app.GetInstallTask(task.ID); err != nil || current.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", current, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
 	cli := &fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
 		t.Fatal("system plan reached CLI manager")

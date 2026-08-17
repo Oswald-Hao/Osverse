@@ -64,6 +64,20 @@ func TestManagerLaunchesDetectedGitHubCopilotInTerminal(t *testing.T) {
 	}
 }
 
+func TestManagerLaunchesDetectedKimiCodeInTerminal(t *testing.T) {
+	starter := &fakeStarter{}
+	manager := NewManager(starter, nil)
+	kimiPath := launchTestPath("home", "test", ".local", "bin", "kimi")
+	component := installedComponent("kimi-code", "Core CLI", kimiPath, kimiPath, true)
+
+	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	if len(starter.requests) != 1 || !starter.requests[0].Terminal || len(starter.requests[0].Args) != 0 {
+		t.Fatalf("Kimi Code launch request = %#v", starter.requests)
+	}
+}
+
 func TestManagerKeepsVerifiedOsverseDesktopLaunch(t *testing.T) {
 	starter := &fakeStarter{}
 	managed := &fakeManagedLauncher{}
