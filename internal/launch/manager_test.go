@@ -3,7 +3,9 @@ package launch
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
@@ -14,11 +16,12 @@ func TestManagerLaunchesDetectedCLIInTerminalAndExternalDesktopDirectly(t *testi
 	starter := &fakeStarter{}
 	manager := NewManager(starter, nil)
 
-	cli := installedComponent("claude-code", "Core CLI", "/home/test/.local/bin/claude", "/home/test/.local/share/claude/versions/2.1.232", false)
+	cli := installedComponent("claude-code", "Core CLI", launchTestPath("home", "test", ".local", "bin", "claude"), launchTestPath("home", "test", ".local", "share", "claude", "versions", "2.1.232"), false)
 	if err := manager.Launch(context.Background(), cli, cli.Installations[0].Path); err != nil {
 		t.Fatalf("Launch(CLI) error = %v", err)
 	}
-	desktop := installedComponent("cockpit-tools", "Management Tools", "/opt/cockpit/cockpit-tools", "/opt/cockpit/cockpit-tools", false)
+	desktopPath := launchTestPath("opt", "cockpit", "cockpit-tools")
+	desktop := installedComponent("cockpit-tools", "Management Tools", desktopPath, desktopPath, false)
 	if err := manager.Launch(context.Background(), desktop, desktop.Installations[0].Path); err != nil {
 		t.Fatalf("Launch(desktop) error = %v", err)
 	}
@@ -37,7 +40,7 @@ func TestManagerLaunchesDetectedCLIInTerminalAndExternalDesktopDirectly(t *testi
 func TestManagerLaunchesDeepSeekHarnessWebProfile(t *testing.T) {
 	starter := &fakeStarter{}
 	manager := NewManager(starter, nil)
-	component := installedComponent("deepseek-harness", "Core CLI", "/home/test/.local/bin/dsh", "/home/test/.local/share/osverse/tools/deepseek-harness/current/bin/dsh", true)
+	component := installedComponent("deepseek-harness", "Core CLI", launchTestPath("home", "test", ".local", "bin", "dsh"), launchTestPath("home", "test", ".local", "share", "osverse", "tools", "deepseek-harness", "current", "bin", "dsh"), true)
 
 	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
 		t.Fatal(err)
@@ -50,7 +53,8 @@ func TestManagerLaunchesDeepSeekHarnessWebProfile(t *testing.T) {
 func TestManagerLaunchesDetectedGitHubCopilotInTerminal(t *testing.T) {
 	starter := &fakeStarter{}
 	manager := NewManager(starter, nil)
-	component := installedComponent("github-copilot-cli", "Core CLI", "/home/test/.local/bin/copilot", "/home/test/.local/bin/copilot", false)
+	copilotPath := launchTestPath("home", "test", ".local", "bin", "copilot")
+	component := installedComponent("github-copilot-cli", "Core CLI", copilotPath, copilotPath, false)
 
 	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
 		t.Fatal(err)
@@ -64,7 +68,7 @@ func TestManagerKeepsVerifiedOsverseDesktopLaunch(t *testing.T) {
 	starter := &fakeStarter{}
 	managed := &fakeManagedLauncher{}
 	manager := NewManager(starter, managed)
-	component := installedComponent("cc-switch", "Management Tools", "/home/test/.local/bin/cc-switch", "/home/test/.local/share/osverse/apps/cc-switch/3.19.2/application.AppImage", true)
+	component := installedComponent("cc-switch", "Management Tools", launchTestPath("home", "test", ".local", "bin", "cc-switch"), launchTestPath("home", "test", ".local", "share", "osverse", "apps", "cc-switch", "3.19.2", "application.AppImage"), true)
 
 	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
 		t.Fatal(err)
@@ -101,7 +105,8 @@ func TestManagerRejectsFrontendControlledOrAmbiguousLaunches(t *testing.T) {
 func TestManagerHonorsCancellationAndRedactsStarterFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	component := installedComponent("opencode-cli", "Core CLI", "/usr/bin/opencode", "/usr/bin/opencode", false)
+	opencodePath := launchTestPath("usr", "bin", "opencode")
+	component := installedComponent("opencode-cli", "Core CLI", opencodePath, opencodePath, false)
 	if err := NewManager(&fakeStarter{}, nil).Launch(ctx, component, component.Installations[0].Path); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Launch() error = %v", err)
 	}
@@ -113,9 +118,10 @@ func TestManagerHonorsCancellationAndRedactsStarterFailures(t *testing.T) {
 }
 
 func TestManagerUsesPathOnlyAsFreshEvidenceSelectorForConflicts(t *testing.T) {
-	component := installedComponent("codex-cli", "Core CLI", "/usr/bin/codex", "/usr/lib/codex", false)
+	component := installedComponent("codex-cli", "Core CLI", launchTestPath("usr", "bin", "codex"), launchTestPath("usr", "lib", "codex"), false)
 	component.Status = domain.StatusConflict
-	component.Installations = append(component.Installations, domain.Installation{Path: "/home/test/.local/bin/codex", ResolvedPath: "/home/test/.local/bin/codex"})
+	secondPath := launchTestPath("home", "test", ".local", "bin", "codex")
+	component.Installations = append(component.Installations, domain.Installation{Path: secondPath, ResolvedPath: secondPath})
 	starter := &fakeStarter{}
 	manager := NewManager(starter, nil)
 	if err := manager.Launch(context.Background(), component, component.Installations[1].Path); err != nil {
@@ -124,9 +130,17 @@ func TestManagerUsesPathOnlyAsFreshEvidenceSelectorForConflicts(t *testing.T) {
 	if len(starter.requests) != 1 || starter.requests[0].Path != component.Installations[1].Path {
 		t.Fatalf("selected request = %#v", starter.requests)
 	}
-	if err := manager.Launch(context.Background(), component, "/tmp/frontend-path"); !errors.Is(err, ErrLaunchUnavailable) {
+	if err := manager.Launch(context.Background(), component, launchTestPath("tmp", "frontend-path")); !errors.Is(err, ErrLaunchUnavailable) {
 		t.Fatalf("unscanned selector error = %v", err)
 	}
+}
+
+func launchTestPath(parts ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, parts...)...)
 }
 
 func installedComponent(id, category, path, resolved string, managed bool) domain.Component {

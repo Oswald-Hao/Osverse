@@ -231,6 +231,8 @@ jobs:
       - name: Verify Windows toolchain
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           if ((go env GOVERSION) -ne 'go1.25.12') { throw 'Unexpected Go version.' }
           if ((node --version) -ne 'v22.23.2') { throw 'Unexpected Node.js version.' }
           if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Unexpected runner architecture.' }
@@ -241,6 +243,8 @@ jobs:
       - name: Run native Windows tests and vet
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           go mod verify
           go test ./...
           go test -race ./...
@@ -249,6 +253,8 @@ jobs:
       - name: Test and audit frontend
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           npm --prefix frontend test
           npm --prefix frontend run typecheck
           npm --prefix frontend audit --audit-level=high
@@ -261,6 +267,8 @@ jobs:
       - name: Package and verify Windows release candidates
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           ./build/windows/package.ps1 -Version 0.0.0-ci -Binary build/bin/osverse.exe -Installer build/bin/osverse-amd64-installer.exe -OutputDirectory build/release/windows
           Push-Location build/release/windows
           Get-Content SHA256SUMS-windows-amd64 | ForEach-Object {

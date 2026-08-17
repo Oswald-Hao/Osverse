@@ -9,7 +9,10 @@ import (
 )
 
 func TestWindowsHistoryUsesLocalAppDataAndReplacesExistingFile(t *testing.T) {
-	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := NewStore(home)
 	if err != nil {
 		t.Fatal(err)

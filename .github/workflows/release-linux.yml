@@ -160,6 +160,8 @@ jobs:
       - name: Verify Windows toolchain
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           if ((go env GOVERSION) -ne 'go1.25.12') { throw 'Unexpected Go version.' }
           if ((node --version) -ne 'v22.23.2') { throw 'Unexpected Node.js version.' }
           if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Unexpected runner architecture.' }
@@ -168,6 +170,8 @@ jobs:
       - name: Test tagged source
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           go mod verify
           go test ./...
           go test -race ./...
@@ -178,11 +182,15 @@ jobs:
       - name: Build user-scoped NSIS installer
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = '${{ github.ref_name }}'.Substring(1)
           go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath -ldflags "-X main.appVersion=$version"
       - name: Package and verify Windows release candidates
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = '${{ github.ref_name }}'.Substring(1)
           ./build/windows/package.ps1 -Version $version -Binary build/bin/osverse.exe -Installer build/bin/osverse-amd64-installer.exe -OutputDirectory build/release/windows
           Push-Location build/release/windows
@@ -194,6 +202,8 @@ jobs:
       - name: Install, launch, and remove Windows package
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = '${{ github.ref_name }}'.Substring(1)
           ./build/windows/smoke.ps1 -Installer "build/release/windows/osverse-$version-windows-amd64-setup.exe"
       - name: Upload Windows packages

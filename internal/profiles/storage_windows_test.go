@@ -13,7 +13,7 @@ import (
 )
 
 func TestWindowsStoreUsesDPAPIAndSupportsAtomicUpdates(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	store, err := NewStore(home)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestWindowsStoreUsesDPAPIAndSupportsAtomicUpdates(t *testing.T) {
 }
 
 func TestWindowsStoreRejectsTamperedDPAPIKey(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	store, err := NewStore(home)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestWindowsStoreRejectsTamperedDPAPIKey(t *testing.T) {
 }
 
 func TestWindowsAdaptersUseLocalAppDataBackupsAndReplaceConfigs(t *testing.T) {
-	home := t.TempDir()
+	home := resolvedTestHome(t)
 	adapters, err := NewAdapterSet(home)
 	if err != nil {
 		t.Fatal(err)
