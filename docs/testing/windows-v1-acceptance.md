@@ -23,6 +23,8 @@
 - [x] 命令运行器使用 Job Object 清理超时或取消后的进程树。
 - [x] 启动前重新扫描并验证身份，前端不能提交任意可执行路径。
 - [x] API 档案存储在 `%LOCALAPPDATA%\Osverse`，AES 主密钥由当前用户 DPAPI 保护。
+- [x] 已验证的本机代理协议与端口存储在 `%LOCALAPPDATA%\Osverse\network.json`，跨页面和应用重启恢复；选择直连会清除保存值。
+- [x] 代理延迟在 500ms、1000ms 和 1001ms 边界分别显示绿色、黄色和红色。
 - [x] CLI 下载使用固定 URL、精确字节长度和 SHA-256；归档解压拒绝路径穿越。
 - [x] DeepSeek Harness 的 Windows Node ZIP 与全部平台适用 npm 包完成真实制品展开；逐包 SHA-512、Node 大小/SHA-256 和 Windows 命令入口均由自动化校验。
 - [x] GitHub Copilot CLI 官方 Windows ZIP 完成精确长度、SHA-256、单文件结构、安全展开和 PE 文件头验证；安装器通过 Windows 原生测试与交叉编译。
