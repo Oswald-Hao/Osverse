@@ -201,6 +201,9 @@ func (manager *Manager) run(ctx context.Context, id string, protocol proxyservic
 }
 
 func (manager *Manager) update(id, phase string, progress int, message string) {
+	if !install.IsProgressTaskPhase(phase) {
+		return
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if state := manager.tasks[id]; state != nil {

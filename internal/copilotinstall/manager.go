@@ -151,6 +151,9 @@ func (manager *Manager) Start(ctx context.Context, planID string, protocol proxy
 
 func (manager *Manager) runTask(ctx context.Context, taskID string, stored storedPlan, protocol proxyservice.Protocol, port int) {
 	err := manager.executeFn(ctx, stored, protocol, port, func(phase string, progress int, message string) {
+		if !install.IsProgressTaskPhase(phase) {
+			return
+		}
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
 		state := manager.tasks[taskID]
@@ -221,7 +224,7 @@ func clonePlan(plan install.Plan) install.Plan {
 }
 
 func terminalPhase(phase string) bool {
-	return phase == "completed" || phase == "failed" || phase == "canceled"
+	return install.IsTerminalTaskPhase(phase)
 }
 
 func secureID() (string, error) {
