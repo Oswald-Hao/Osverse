@@ -96,6 +96,8 @@ type App struct {
 	harnessExecutor   InstallExecutor
 	qwenPlanner       InstallPlanner
 	qwenExecutor      InstallExecutor
+	kimiPlanner       InstallPlanner
+	kimiExecutor      InstallExecutor
 	copilotPlanner    InstallPlanner
 	copilotExecutor   InstallExecutor
 	appLauncher       AppLauncher
@@ -309,6 +311,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	} else if componentID == "qwen-code" && app.qwenPlanner != nil {
 		planner = app.qwenPlanner
 		owner = "qwen"
+	} else if componentID == "kimi-code" && app.kimiPlanner != nil {
+		planner = app.kimiPlanner
+		owner = "kimi"
 	} else if componentID == "github-copilot-cli" && app.copilotPlanner != nil {
 		planner = app.copilotPlanner
 		owner = "copilot"
@@ -355,6 +360,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 		executor = app.harnessExecutor
 	} else if owner == "qwen" {
 		executor = app.qwenExecutor
+	} else if owner == "kimi" {
+		executor = app.kimiExecutor
 	} else if owner == "copilot" {
 		executor = app.copilotExecutor
 	}
@@ -394,6 +401,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 		executor = app.harnessExecutor
 	} else if app.taskOwners[taskID] == "qwen" {
 		executor = app.qwenExecutor
+	} else if app.taskOwners[taskID] == "kimi" {
+		executor = app.kimiExecutor
 	} else if app.taskOwners[taskID] == "copilot" {
 		executor = app.copilotExecutor
 	}
@@ -461,6 +470,8 @@ func componentDisplayName(id string) string {
 		return "DeepSeek Harness"
 	case "qwen-code":
 		return "Qwen Code"
+	case "kimi-code":
+		return "Kimi Code"
 	case "github-copilot-cli":
 		return "GitHub Copilot CLI"
 	case "claude-desktop":
@@ -480,7 +491,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "github-copilot-cli", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "kimi-code", "github-copilot-cli", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
@@ -626,6 +637,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 		executor = app.harnessExecutor
 	} else if app.taskOwners[taskID] == "qwen" {
 		executor = app.qwenExecutor
+	} else if app.taskOwners[taskID] == "kimi" {
+		executor = app.kimiExecutor
 	} else if app.taskOwners[taskID] == "copilot" {
 		executor = app.copilotExecutor
 	}

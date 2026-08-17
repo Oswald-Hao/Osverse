@@ -183,6 +183,18 @@ func TestWireHTTPProbeRequiresAValidProxyResponse(t *testing.T) {
 	}
 }
 
+func TestSuccessfulWireLatencyIsPositiveEvenBeforeTheClockTicks(t *testing.T) {
+	if got := positiveWireLatency(0); got != time.Nanosecond {
+		t.Fatalf("zero elapsed latency = %v", got)
+	}
+	if got := positiveWireLatency(-time.Nanosecond); got != time.Nanosecond {
+		t.Fatalf("negative elapsed latency = %v", got)
+	}
+	if got := positiveWireLatency(7 * time.Millisecond); got != 7*time.Millisecond {
+		t.Fatalf("positive elapsed latency = %v", got)
+	}
+}
+
 func TestWireHTTPSConnectAndSOCKS5VerifyTheTargetCertificate(t *testing.T) {
 	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodHead || request.URL.Path != "/probe" {

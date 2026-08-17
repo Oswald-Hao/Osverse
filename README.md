@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>你的本地 AI 开发环境控制台。</strong><br>
-  在一个界面里检测、安装、更新、启动和安全移除 Claude Code、Codex CLI、OpenCode、DeepSeek Harness、Qwen Code、GitHub Copilot CLI、桌面应用与第三方 API。
+  在一个界面里检测、安装、更新、启动和安全移除 Claude Code、Codex CLI、OpenCode、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI、桌面应用与第三方 API。
 </p>
 
 <p align="center">
@@ -35,9 +35,10 @@
 
 换一台电脑，不应该重新花几个小时找运行时、代理端口、CLI 安装位置和各不相同的 API 配置文件。Osverse 把这些工作收进一个可检查、可确认、可恢复的桌面流程，并且尊重你已经安装好的工具。
 
-- **已有工具无需搬家。** Claude Code、Codex CLI、OpenCode、Qwen Code、GitHub Copilot CLI 会从用户真实可用的命令路径中发现，不要求放进 Osverse 目录。
+- **已有工具无需搬家。** Claude Code、Codex CLI、OpenCode、Qwen Code、Kimi Code、GitHub Copilot CLI 会从用户真实可用的命令路径中发现，不要求放进 Osverse 目录。
 - **DeepSeek Harness 开箱即用。** Osverse 固定官方 Harness 与 Node.js 版本，逐个校验锁定依赖，不执行 npm 生命周期脚本；安装后可直接启动官方 Web 工作台，并能把已验证的第三方 API 档案安全应用到 Harness。
 - **Qwen Code 不依赖本机 Node。** Osverse 使用官方跨平台独立包，固定版本、长度和 SHA-256，安全解包后用包内 Node 启动；第三方 OpenAI 兼容 API 也可从 API 档案直接应用。
+- **Kimi Code 原生接入第三方 API。** Osverse 校验并安装官方独立二进制，可将已确认的 OpenAI Chat、OpenAI Responses 或 Anthropic Messages 档案写入 Kimi 原生 Provider，同时保持服务商的精确模型名。
 - **GitHub Copilot CLI 可验证安装。** Osverse 使用 GitHub 官方 standalone 包，锁定版本、长度和 SHA-256，并关闭上游自更新以避免绕过 Osverse 的统一更新验证；登录与订阅仍由 GitHub Copilot 管理。
 - **每个真实安装都能控制。** 同一工具存在多个安装位置时会分别展示；启动前由后端重新扫描并核对文件身份，不会执行界面传入的任意路径。
 - **安装过程可解释。** 安装前显示后端生成的变更计划；下载同时校验固定长度和 SHA-256；版本原子切换，失败和异常退出都可恢复。
@@ -51,7 +52,7 @@
 
 | 范围 | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
-| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI、DeepSeek Harness、Qwen Code、GitHub Copilot CLI 的检测与事务式安装/更新 | 同左；Harness、Qwen Code 与 Copilot CLI 使用独立的受校验用户级运行时 |
+| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI 的检测与事务式安装/更新 | 同左；Harness、Qwen Code、Kimi Code 与 Copilot CLI 使用独立的受校验用户级运行时 |
 | 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT Desktop、Codex Desktop（分别识别） |
 | API 管理工具 | CC Switch、Cockpit Tools | CC Switch、Cockpit Tools |
 | API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key | 同左；主密钥由当前 Windows 用户的 DPAPI 保护 |
@@ -79,6 +80,12 @@ Harness 目前仍是官方 Developer Preview。Osverse 将安装契约固定在�
 在“核心 CLI”中选择 **Qwen Code**，确认安装计划后，Osverse 会下载官方 `v0.21.13` 独立包。包内已经包含 Node.js 和平台原生模块，因此不需要安装或修改全局 Node/npm。Linux x64、Linux arm64、Windows x64、macOS x64 与 macOS arm64 的官方制品元数据均已固定；当前 Osverse 应用在 Linux x64 与 Windows x64 上启用安装。
 
 API 档案确认 OpenAI Chat Completions 兼容后，可以同时应用到 Qwen Code。Osverse 会备份并原子更新 `~/.qwen/settings.json`，写入独立的 `osverse` provider、精确模型 ID、Base URL 和受限权限的 Key，再通过 Qwen 的 `openai` 协议精确选中该模型与地址；不会覆盖其他 provider。详见 [Qwen Code 接入指南](docs/guides/qwen-code.md)。
+
+### Kimi Code
+
+在“核心 CLI”中选择 **Kimi Code**，Osverse 会下载官方 `0.36.1` 独立二进制，并对每个平台的官方 URL、精确长度和 SHA-256 做固定校验。Linux x64/arm64、Windows x64/arm64 与 macOS x64/arm64 的制品元数据均已锁定；当前 Linux x64 与 Windows x64 应用启用安装。受管入口会设置 `KIMI_CODE_NO_AUTO_UPDATE=1`，防止上游后台升级绕过 Osverse 的版本验证。
+
+API 档案探测到 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages 后，可以勾选 Kimi Code。Osverse 会备份并原子更新 `~/.kimi-code/config.toml`，保留无关配置，创建独立 `osverse` Provider 和模型别名，并把服务商的原始模型 ID（例如 `deepseek/deepseek-v4-flash`）原样交给 Kimi；不会拼接 `osverse/`。详见 [Kimi Code 接入指南](docs/guides/kimi-code.md)。
 
 ### GitHub Copilot CLI
 
@@ -134,7 +141,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 - 启动和移除前会重新扫描并验证目标身份；前端不能提交任意可执行路径或系统包名。
 - 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
 - Windows 上受管 CLI 使用锁定文件身份移入 `%LOCALAPPDATA%\Osverse\recovery`，卸载桌面应用只允许固定的 WinGet ID、Microsoft Store ID、MSI ProductCode 或受信任卸载器路径。
-- 安装源来自内置白名单，并同时校验文件长度与 SHA-256。Qwen Code 与 Copilot CLI 会拒绝归档路径穿越、链接、特殊文件和异常归档结构；DeepSeek Harness 额外使用嵌入式 npm lockfile 对每个包做 SHA-512 校验，且不会执行包内安装脚本。
+- 安装源来自内置白名单，并同时校验文件长度与 SHA-256。Qwen Code、Kimi Code 与 Copilot CLI 会拒绝归档路径穿越、链接、特殊文件和异常归档结构；DeepSeek Harness 额外使用嵌入式 npm lockfile 对每个包做 SHA-512 校验，且不会执行包内安装脚本。
 - 安装末段的运行时提交、命令入口和 PATH 激活属于同一事务；失败只回滚本次新写入的版本，保留重新校验通过的已有版本，并明确报告无法自动清理的残留。
 - Osverse 自更新只接受固定仓库的语义化版本、匹配平台的结构化清单和精确发布路径；稳定版默认不接收预发布版，测试版可升级到更新的测试版或稳定版。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
@@ -220,4 +227,4 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/am
 
 Apache-2.0，见 [LICENSE](LICENSE)。
 
-Osverse 是独立项目。Claude、Codex、OpenAI、OpenCode、DeepSeek、Qwen、GitHub 和 Copilot 等名称属于各自权利人；列出它们仅表示兼容，不代表背书或合作关系。Copilot CLI 的上游许可证副本随受管运行时一同安装。
+Osverse 是独立项目。Claude、Codex、OpenAI、OpenCode、DeepSeek、Qwen、Kimi、Moonshot AI、GitHub 和 Copilot 等名称属于各自权利人；列出它们仅表示兼容，不代表背书或合作关系。Copilot CLI 的上游许可证副本随受管运行时一同安装。

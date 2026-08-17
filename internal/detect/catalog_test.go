@@ -22,6 +22,7 @@ func TestCoreCLISpecsProvidesOrderedFixedCLICommands(t *testing.T) {
 		{id: "opencode-cli", name: "OpenCode CLI", executable: "opencode"},
 		{id: "deepseek-harness", name: "DeepSeek Harness", executable: "dsh"},
 		{id: "qwen-code", name: "Qwen Code", executable: "qwen"},
+		{id: "kimi-code", name: "Kimi Code", executable: "kimi"},
 		{id: "github-copilot-cli", name: "GitHub Copilot CLI", executable: "copilot"},
 	}
 	if len(specs) != len(want) {
@@ -78,6 +79,7 @@ func TestCoreCLISpecsVersionPatternsParseUpstreamShapedOutput(t *testing.T) {
 		{id: "deepseek-harness", output: "0.1.0-rc.6", version: "0.1.0-rc.6"},
 		{id: "qwen-code", output: "0.21.13", version: "0.21.13"},
 		{id: "qwen-code", output: "Qwen Code v0.21.13", version: "0.21.13"},
+		{id: "kimi-code", output: "0.36.1", version: "0.36.1"},
 		{id: "github-copilot-cli", output: "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.", version: "1.0.80"},
 	}
 
