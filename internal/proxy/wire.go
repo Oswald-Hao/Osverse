@@ -82,7 +82,18 @@ func (probe wireProbe) Check(ctx context.Context, address string, target probeTa
 	if err != nil {
 		return 0, classifyWireError(ctx, err)
 	}
-	return time.Since(started), nil
+	return positiveWireLatency(time.Since(started)), nil
+}
+
+// Windows' monotonic clock can report no elapsed tick for a fast loopback
+// handshake, especially under the race detector. Successful probes still
+// carry a positive duration so callers and tests do not confuse that valid
+// result with the zero value used on failure.
+func positiveWireLatency(elapsed time.Duration) time.Duration {
+	if elapsed <= 0 {
+		return time.Nanosecond
+	}
+	return elapsed
 }
 
 func checkHTTPProxy(conn net.Conn, target probeTarget) error {
