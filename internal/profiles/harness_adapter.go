@@ -44,6 +44,15 @@ func harnessAPIProtocol(probeProtocol string) (string, error) {
 	}
 }
 
+func harnessProviderBaseURL(baseURL, api string) string {
+	switch api {
+	case "openai-completions", "openai-responses":
+		return openAIBaseURL(baseURL)
+	default:
+		return baseURL
+	}
+}
+
 func (adapters *AdapterSet) applyHarness(ctx context.Context, input Input) (ApplyResult, error) {
 	if adapters == nil || adapters.writeConfig == nil || adapters.restoreConfig == nil {
 		return ApplyResult{}, ErrUnknownTarget
@@ -175,7 +184,7 @@ func mergeHarnessSettings(raw []byte, input Input, api string) ([]byte, bool, er
 	setYAMLScalar(provider, "displayName", "Osverse: "+input.Name)
 	setYAMLScalar(provider, "apiKeyEnv", harnessCredentialRef)
 	setYAMLScalar(provider, "api", api)
-	setYAMLScalar(provider, "baseURL", input.BaseURL)
+	setYAMLScalar(provider, "baseURL", harnessProviderBaseURL(input.BaseURL, api))
 	models := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{
 		{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
 			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "id"},
@@ -285,7 +294,7 @@ func verifyHarnessConfig(settingsPath, credentialsPath string, input Input, api 
 	}
 	selectedProvider, _, _ := yamlStringValue(selection, "provider")
 	selectedModel, _, _ := yamlStringValue(selection, "model")
-	if configuredAPI != api || baseURL != input.BaseURL || model != input.Model || selectedProvider != "osverse" || selectedModel != input.Model {
+	if configuredAPI != api || baseURL != harnessProviderBaseURL(input.BaseURL, api) || model != input.Model || selectedProvider != "osverse" || selectedModel != input.Model {
 		return ErrConfigConflict
 	}
 	_, credentialsRoot, err := parseYAMLDocument(credentials)
