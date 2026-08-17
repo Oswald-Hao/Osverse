@@ -92,6 +92,8 @@ type App struct {
 	harnessExecutor   InstallExecutor
 	qwenPlanner       InstallPlanner
 	qwenExecutor      InstallExecutor
+	copilotPlanner    InstallPlanner
+	copilotExecutor   InstallExecutor
 	appLauncher       AppLauncher
 	componentLauncher ComponentLauncher
 	removal           RemovalService
@@ -287,6 +289,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	} else if componentID == "qwen-code" && app.qwenPlanner != nil {
 		planner = app.qwenPlanner
 		owner = "qwen"
+	} else if componentID == "github-copilot-cli" && app.copilotPlanner != nil {
+		planner = app.copilotPlanner
+		owner = "copilot"
 	}
 	app.mu.RUnlock()
 	if planner == nil {
@@ -330,6 +335,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 		executor = app.harnessExecutor
 	} else if owner == "qwen" {
 		executor = app.qwenExecutor
+	} else if owner == "copilot" {
+		executor = app.copilotExecutor
 	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
@@ -367,6 +374,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 		executor = app.harnessExecutor
 	} else if app.taskOwners[taskID] == "qwen" {
 		executor = app.qwenExecutor
+	} else if app.taskOwners[taskID] == "copilot" {
+		executor = app.copilotExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {
@@ -432,6 +441,8 @@ func componentDisplayName(id string) string {
 		return "DeepSeek Harness"
 	case "qwen-code":
 		return "Qwen Code"
+	case "github-copilot-cli":
+		return "GitHub Copilot CLI"
 	case "claude-desktop":
 		return "Claude Desktop"
 	case "chatgpt-desktop":
@@ -449,7 +460,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "github-copilot-cli", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
@@ -595,6 +606,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 		executor = app.harnessExecutor
 	} else if app.taskOwners[taskID] == "qwen" {
 		executor = app.qwenExecutor
+	} else if app.taskOwners[taskID] == "copilot" {
+		executor = app.copilotExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {

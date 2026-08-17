@@ -38,17 +38,18 @@ type componentKind struct {
 }
 
 var fixedComponents = map[string]componentKind{
-	"claude-code":      {category: "Core CLI"},
-	"codex-cli":        {category: "Core CLI"},
-	"opencode-cli":     {category: "Core CLI"},
-	"deepseek-harness": {category: "Core CLI", launchArgs: []string{"web"}},
-	"qwen-code":        {category: "Core CLI"},
-	"claude-desktop":   {category: "Desktop Applications"},
-	"chatgpt-desktop":  {category: "Desktop Applications"},
-	"codex-desktop":    {category: "Desktop Applications"},
-	"opencode-desktop": {category: "Desktop Applications", managedDesktop: true},
-	"cc-switch":        {category: "Management Tools", managedDesktop: true},
-	"cockpit-tools":    {category: "Management Tools", managedDesktop: true},
+	"claude-code":        {category: "Core CLI"},
+	"codex-cli":          {category: "Core CLI"},
+	"opencode-cli":       {category: "Core CLI"},
+	"deepseek-harness":   {category: "Core CLI", launchArgs: []string{"web"}},
+	"qwen-code":          {category: "Core CLI"},
+	"github-copilot-cli": {category: "Core CLI"},
+	"claude-desktop":     {category: "Desktop Applications"},
+	"chatgpt-desktop":    {category: "Desktop Applications"},
+	"codex-desktop":      {category: "Desktop Applications"},
+	"opencode-desktop":   {category: "Desktop Applications", managedDesktop: true},
+	"cc-switch":          {category: "Management Tools", managedDesktop: true},
+	"cockpit-tools":      {category: "Management Tools", managedDesktop: true},
 }
 
 func (manager *Manager) Launch(ctx context.Context, component domain.Component, selector string) error {

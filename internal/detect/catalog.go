@@ -55,5 +55,15 @@ func CoreCLISpecs() []CommandSpec {
 			),
 			MinimumOS: platformMinimumOS(),
 		},
+		{
+			ID:              "github-copilot-cli",
+			Name:            "GitHub Copilot CLI",
+			ExecutableNames: platformExecutableNames("copilot"),
+			VersionArgs:     []string{"--version"},
+			VersionPattern: regexp.MustCompile(
+				`^(?:(?i:GitHub[[:space:]]+Copilot[[:space:]]+CLI)[[:space:]]+)?v?([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)\.?(?:\r?\nRun 'copilot update' to check for updates\.)?$`,
+			),
+			MinimumOS: platformMinimumOS(),
+		},
 	}
 }

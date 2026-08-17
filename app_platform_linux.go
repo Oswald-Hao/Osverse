@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
+	"github.com/Oswald-Hao/Osverse/internal/copilotinstall"
 	"github.com/Oswald-Hao/Osverse/internal/harnessinstall"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
@@ -30,6 +31,10 @@ func configurePlatformServices(app *App, home string) {
 	if manager, err := qweninstall.NewManager(home); err == nil {
 		app.qwenPlanner = manager
 		app.qwenExecutor = manager
+	}
+	if manager, err := copilotinstall.NewManager(home); err == nil {
+		app.copilotPlanner = manager
+		app.copilotExecutor = manager
 	}
 	if manager, err := install.NewManager(home); err == nil {
 		app.installPlanner = manager
