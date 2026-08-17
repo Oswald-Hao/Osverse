@@ -19,6 +19,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"github.com/Oswald-Hao/Osverse/internal/releaseasset"
 )
 
 const (
@@ -136,13 +137,7 @@ func (manager *Manager) download(ctx context.Context, item artifact, protocol pr
 		return fmt.Errorf("%w: client", errDownload)
 	}
 	copyClient := *client
-	copyClient.CheckRedirect = func(request *http.Request, via []*http.Request) error {
-		if len(via) > 3 || request.URL.Scheme != "https" || request.URL.Hostname() != "release-assets.githubusercontent.com" ||
-			len(via) == 0 || via[0].URL.Hostname() != "github.com" {
-			return errors.New("untrusted desktop artifact redirect")
-		}
-		return nil
-	}
+	copyClient.CheckRedirect = releaseasset.GitHubRedirectPolicy(item.URL)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, item.URL, nil)
 	if err != nil {
 		return errDownload

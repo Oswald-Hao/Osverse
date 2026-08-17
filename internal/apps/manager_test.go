@@ -3,9 +3,11 @@
 package apps
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -138,6 +140,35 @@ func TestDownloadCancellationCannotCommit(t *testing.T) {
 	}
 }
 
+func TestDesktopDownloadAllowsOnlyOfficialGitHubHandoff(t *testing.T) {
+	body := []byte("verified desktop artifact")
+	digest := sha256.Sum256(body)
+	item := artifact{
+		ID: "cc-switch", URL: "https://github.com/owner/repo/releases/download/v1/app.AppImage",
+		SHA256: hex.EncodeToString(digest[:]), DownloadBytes: int64(len(body)),
+	}
+	manager := testManager(t.TempDir(), item)
+	manager.client = func(proxyservice.Protocol, int) (*http.Client, error) {
+		return &http.Client{Transport: desktopRoundTrip(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Host == "github.com" {
+				return &http.Response{StatusCode: http.StatusFound, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{"Location": []string{"https://release-assets.githubusercontent.com/github-production-release-asset/1/app?sig=fixed"}}, Request: request}, nil
+			}
+			return &http.Response{StatusCode: http.StatusOK, ContentLength: int64(len(body)), Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header), Request: request}, nil
+		})}, nil
+	}
+	if err := manager.download(context.Background(), item, "", 0, filepath.Join(t.TempDir(), "artifact"), func(progressUpdate) {}); err != nil {
+		t.Fatalf("official handoff failed: %v", err)
+	}
+	manager.client = func(proxyservice.Protocol, int) (*http.Client, error) {
+		return &http.Client{Transport: desktopRoundTrip(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusFound, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{"Location": []string{"https://example.invalid/escape"}}, Request: request}, nil
+		})}, nil
+	}
+	if err := manager.download(context.Background(), item, "", 0, filepath.Join(t.TempDir(), "artifact"), func(progressUpdate) {}); !errors.Is(err, errDownload) {
+		t.Fatalf("untrusted redirect error = %v", err)
+	}
+}
+
 type fakeLauncher struct {
 	path  string
 	calls atomic.Int32
@@ -204,4 +235,10 @@ func itoa(value int) string {
 		value /= 10
 	}
 	return string(data[index:])
+}
+
+type desktopRoundTrip func(*http.Request) (*http.Response, error)
+
+func (roundTrip desktopRoundTrip) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
