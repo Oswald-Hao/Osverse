@@ -16,7 +16,7 @@ func TestPowerShellWorkflowBlocksFailOnEveryNativeCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		workflow := string(content)
+		workflow := strings.ReplaceAll(string(content), "\r\n", "\n")
 		blocks := strings.Count(workflow, block)
 		if blocks == 0 {
 			t.Fatalf("%s has no multiline PowerShell blocks", path)
