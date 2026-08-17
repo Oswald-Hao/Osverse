@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 		t.Fatalf("Probe() = (%#v, %v), secret %#v", probe, err, prober.got)
 	}
 	matrix, err := service.Compatibility(profile.ID)
-	if err != nil || len(matrix) != 4 {
+	if err != nil || len(matrix) != 5 {
 		t.Fatalf("Compatibility() = (%#v, %v)", matrix, err)
 	}
 	for _, item := range matrix {
@@ -41,21 +42,21 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 			t.Errorf("target compatibility = %#v", item)
 		}
 	}
-	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex, TargetQwen})
+	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex, TargetQwen, TargetHarness})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 4 || plan.Warning == "" {
+	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 5 || plan.Warning == "" {
 		t.Fatalf("plan = %#v", plan)
 	}
-	wantOrder := []string{TargetClaude, TargetCodex, TargetOpenCode, TargetQwen}
-	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target, plan.Effects[3].Target}
+	wantOrder := []string{TargetClaude, TargetCodex, TargetHarness, TargetOpenCode, TargetQwen}
+	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target, plan.Effects[3].Target, plan.Effects[4].Target}
 	if !reflect.DeepEqual(gotOrder, wantOrder) {
 		t.Fatalf("effect order = %#v", gotOrder)
 	}
 
 	result, err := service.Apply(context.Background(), plan.ID)
-	if err != nil || result.Succeeded != 4 || result.Failed != 0 || len(result.Results) != 4 {
+	if err != nil || result.Succeeded != 5 || result.Failed != 0 || len(result.Results) != 5 {
 		t.Fatalf("Apply() = (%#v, %v)", result, err)
 	}
 	for _, target := range wantOrder {
@@ -67,6 +68,68 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 	}
 	if _, err := service.Apply(context.Background(), plan.ID); !errors.Is(err, ErrApplyPlan) {
 		t.Fatalf("reused apply plan error = %v", err)
+	}
+}
+
+func TestHarnessCompatibilityUsesPreferredConfirmedProtocol(t *testing.T) {
+	store := &fakeProfileStore{
+		profiles: []Profile{{ID: "profile", Name: "P", KeyHint: "••••1234"}},
+		secret:   adapterInput(),
+	}
+	adapters := &fakeProfileAdapters{}
+	probe := compatibleProbe()
+	service := testProfileService(store, &fakeProfileProber{result: probe}, adapters)
+	if _, err := service.Probe(context.Background(), "profile"); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreateApplyPlan(context.Background(), "profile", []string{TargetHarness})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Apply(context.Background(), plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	if adapters.protocols[TargetHarness] != "openai-chat" {
+		t.Fatalf("Harness protocol = %q", adapters.protocols[TargetHarness])
+	}
+
+	probe.Protocols[1].Status = "unavailable"
+	service = testProfileService(store, &fakeProfileProber{result: probe}, adapters)
+	_, _ = service.Probe(context.Background(), "profile")
+	plan, err = service.CreateApplyPlan(context.Background(), "profile", []string{TargetHarness})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = service.Apply(context.Background(), plan.ID)
+	if adapters.protocols[TargetHarness] != "openai-responses" {
+		t.Fatalf("Harness fallback protocol = %q", adapters.protocols[TargetHarness])
+	}
+}
+
+func TestHarnessCompatibilityRejectsUnconfirmedProtocols(t *testing.T) {
+	store := &fakeProfileStore{
+		profiles: []Profile{{ID: "profile", Name: "P", KeyHint: "••••1234"}},
+		secret:   adapterInput(),
+	}
+	probe := compatibleProbe()
+	for index := range probe.Protocols {
+		probe.Protocols[index].Status = "unavailable"
+	}
+	service := testProfileService(store, &fakeProfileProber{result: probe}, &fakeProfileAdapters{})
+	if _, err := service.Probe(context.Background(), "profile"); err != nil {
+		t.Fatal(err)
+	}
+	matrix, err := service.Compatibility("profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range matrix {
+		if item.Target == TargetHarness && item.Compatible {
+			t.Fatalf("Harness unexpectedly compatible: %#v", item)
+		}
+	}
+	if _, err := service.CreateApplyPlan(context.Background(), "profile", []string{TargetHarness}); !errors.Is(err, ErrProbeRequired) {
+		t.Fatalf("unconfirmed Harness plan error = %v", err)
 	}
 }
 
@@ -167,6 +230,27 @@ func TestApplyContinuesAfterOneTargetFailsWithoutLeakingError(t *testing.T) {
 	}
 }
 
+func TestApplyDoesNotClaimHarnessFilesWerePreservedAfterRollbackFailure(t *testing.T) {
+	store := &fakeProfileStore{
+		profiles: []Profile{{ID: "profile", Name: "P", KeyHint: "••••1234"}},
+		secret:   adapterInput(),
+	}
+	adapters := &fakeProfileAdapters{fail: TargetHarness, failErr: ErrConfigRollback}
+	service := testProfileService(store, &fakeProfileProber{result: compatibleProbe()}, adapters)
+	_, _ = service.Probe(context.Background(), "profile")
+	plan, err := service.CreateApplyPlan(context.Background(), "profile", []string{TargetHarness})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Apply(context.Background(), plan.ID)
+	if err != nil || result.Failed != 1 || len(result.Results) != 1 {
+		t.Fatalf("Apply() = (%#v, %v)", result, err)
+	}
+	if strings.Contains(result.Results[0].Message, "原文件已保留") || !strings.Contains(result.Results[0].Message, "回滚未完成") {
+		t.Fatalf("rollback result message = %q", result.Results[0].Message)
+	}
+}
+
 type fakeProfileProber struct {
 	result ProbeResult
 	err    error
@@ -213,15 +297,24 @@ func (store *fakeProfileStore) Secret(context.Context, string) (Input, error) {
 func (store *fakeProfileStore) Delete(context.Context, string) error { return nil }
 
 type fakeProfileAdapters struct {
-	fail string
+	fail      string
+	failErr   error
+	protocols map[string]string
 }
 
 func (adapters *fakeProfileAdapters) TargetPath(target string) (string, error) {
 	return filepath.Join("/home/test", ".config", target), nil
 }
 
-func (adapters *fakeProfileAdapters) Apply(_ context.Context, target string, _ Input) (ApplyResult, error) {
+func (adapters *fakeProfileAdapters) Apply(_ context.Context, target string, input Input) (ApplyResult, error) {
+	if adapters.protocols == nil {
+		adapters.protocols = make(map[string]string)
+	}
+	adapters.protocols[target] = input.Protocol
 	if target == adapters.fail {
+		if adapters.failErr != nil {
+			return ApplyResult{}, adapters.failErr
+		}
 		return ApplyResult{}, errors.New("secret backend error")
 	}
 	return ApplyResult{Target: target, Applied: true, Path: "/safe/path", Message: "ok"}, nil
