@@ -37,6 +37,7 @@ function operations(overrides: Partial<Parameters<typeof setProfileOperationsFor
       { target: 'codex-cli', compatible: true, reason: '凭据和协议均已确认' },
       { target: 'opencode-cli', compatible: false, reason: 'API 未确认所需协议' },
       { target: 'qwen-code', compatible: true, reason: '凭据和协议均已确认' },
+      { target: 'kimi-code', compatible: true, reason: '将使用 OpenAI Chat Completions' },
       { target: 'deepseek-harness', compatible: true, reason: '将使用 OpenAI Responses' },
     ]),
     createPlan: vi.fn().mockResolvedValue({
@@ -45,13 +46,14 @@ function operations(overrides: Partial<Parameters<typeof setProfileOperationsFor
         { target: 'claude-code', path: '/home/test/.claude/settings.json', description: '备份并原子更新' },
         { target: 'codex-cli', path: '/home/test/.codex/config.toml', description: '备份并原子更新' },
         { target: 'qwen-code', path: '/home/test/.qwen/settings.json', description: '备份并原子更新' },
+        { target: 'kimi-code', path: '/home/test/.kimi-code/config.toml', description: '备份并原子更新' },
         { target: 'deepseek-harness', path: '/home/test/.dsh/settings.yaml', description: '备份并原子更新' },
       ],
       warning: '目标文件和备份均强制为 0600。', createdAt: '', expiresAt: '',
     }),
     apply: vi.fn().mockResolvedValue({
       planId: 'apply-plan', profileId: profile.id,
-      results: [], succeeded: 4, failed: 0,
+      results: [], succeeded: 5, failed: 0,
     }),
     ...overrides,
   }
@@ -97,19 +99,21 @@ describe('APIProfilesPage', () => {
     expect(screen.getByLabelText(/OpenCode CLI/)).toBeDisabled()
     expect(screen.getByLabelText(/Claude Code/)).toBeChecked()
     expect(screen.getByLabelText(/Qwen Code/)).toBeChecked()
+    expect(screen.getByLabelText(/Kimi Code/)).toBeChecked()
     expect(screen.getByLabelText(/DeepSeek Harness/)).toBeChecked()
 
     fireEvent.click(screen.getByRole('button', { name: '预览应用变更' }))
     const dialog = await screen.findByRole('dialog', { name: /确认应用 工作网关/ })
     expect(within(dialog).getByText('/home/test/.claude/settings.json')).toBeVisible()
     expect(within(dialog).getByText('/home/test/.qwen/settings.json')).toBeVisible()
+    expect(within(dialog).getByText('/home/test/.kimi-code/config.toml')).toBeVisible()
     expect(within(dialog).getByText('/home/test/.dsh/settings.yaml')).toBeVisible()
     expect(within(dialog).getByText(/0600/)).toBeVisible()
     expect(api.apply).not.toHaveBeenCalled()
 
     fireEvent.click(within(dialog).getByRole('button', { name: '确认写入' }))
     await waitFor(() => expect(api.apply).toHaveBeenCalledWith('apply-plan'))
-    expect(await screen.findByRole('status')).toHaveTextContent('已完成 4 个目标')
+    expect(await screen.findByRole('status')).toHaveTextContent('已完成 5 个目标')
   })
 
   it('requires a second click before deleting an encrypted profile', async () => {
