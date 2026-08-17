@@ -83,6 +83,15 @@ const snapshot: EnvironmentSnapshot = {
       minimumOS: 'Ubuntu 20.04',
     },
     {
+      id: 'github-copilot-cli',
+      name: 'GitHub Copilot CLI',
+      category: 'Core CLI',
+      status: 'missing',
+      installations: [],
+      message: '未检测到安装',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
       id: 'claude-desktop',
       name: 'Claude Desktop',
       category: 'Desktop Applications',
@@ -129,7 +138,7 @@ const snapshot: EnvironmentSnapshot = {
     },
   ],
   ready: 1,
-  total: 8,
+  total: 9,
   needsAttention: 5,
 }
 
@@ -185,7 +194,7 @@ describe('environment status dashboard', () => {
       }
 
       expect(screen.getByRole('article', { name: '已就绪 1' })).toBeVisible()
-      expect(screen.getByRole('article', { name: '工具总数 8' })).toBeVisible()
+      expect(screen.getByRole('article', { name: '工具总数 9' })).toBeVisible()
       expect(screen.getByRole('article', { name: '需要关注 5' })).toBeVisible()
     } finally {
       dateTimeFormat.mockRestore()
@@ -259,7 +268,7 @@ describe('environment status dashboard', () => {
       '可更新',
       '检测中',
     ]) {
-      expect(screen.getByText(label, { selector: '.status-badge' })).toBeVisible()
+      expect(screen.getAllByText(label, { selector: '.status-badge' })[0]).toBeVisible()
     }
   })
 
@@ -389,6 +398,8 @@ describe('environment status dashboard', () => {
 
     const openCodeCard = screen.getByRole('heading', { name: 'OpenCode CLI' }).closest('article')
     expect(within(openCodeCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
+    const copilotCard = screen.getByRole('heading', { name: 'GitHub Copilot CLI' }).closest('article')
+    expect(within(copilotCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
     const claudeCard = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
     expect(within(claudeCard as HTMLElement).getByRole('button', { name: /启动/ })).toBeEnabled()
     const desktopCard = screen.getByRole('heading', { name: 'Claude Desktop' }).closest('article')
@@ -399,7 +410,7 @@ describe('environment status dashboard', () => {
     expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
     const chatGPT = screen.getByRole('heading', { name: 'ChatGPT Desktop' }).closest('article')
     expect(within(chatGPT as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
-    expect(screen.getAllByText('官方校验安装')).toHaveLength(4)
+    expect(screen.getAllByText('官方校验安装')).toHaveLength(5)
   })
 
   it('starts detected CLI and external desktop installations through Osverse', () => {

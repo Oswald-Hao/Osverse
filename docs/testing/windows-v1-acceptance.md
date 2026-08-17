@@ -25,6 +25,7 @@
 - [x] API 档案存储在 `%LOCALAPPDATA%\Osverse`，AES 主密钥由当前用户 DPAPI 保护。
 - [x] CLI 下载使用固定 URL、精确字节长度和 SHA-256；归档解压拒绝路径穿越。
 - [x] DeepSeek Harness 的 Windows Node ZIP 与全部平台适用 npm 包完成真实制品展开；逐包 SHA-512、Node 大小/SHA-256 和 Windows 命令入口均由自动化校验。
+- [x] GitHub Copilot CLI 官方 Windows ZIP 完成精确长度、SHA-256、单文件结构、安全展开和 PE 文件头验证；安装器通过 Windows 原生测试与交叉编译。
 - [x] 桌面安装仅使用固定 WinGet、Store、MSI 或受信任安装器身份。
 - [x] 移除不会删除 API 配置、凭据或登录会话；受管 CLI 移入恢复目录。
 
@@ -45,5 +46,6 @@
 - [ ] 真实第三方 API 在确认后应用到目标 CLI，重启 CLI 后仍生效。
 - [ ] Windows Defender/SmartScreen 对未签名预发布包的提示被发布说明清楚解释。
 - [ ] 在 Windows 10 与 11 各完成一次 Harness 安装，确认 `dsh --version`、`dsh web`、Provider 保存、Osverse 启动和保留凭据的安全移除。
+- [ ] 在 Windows 10 与 11 各完成一次 Copilot CLI 安装、`copilot login`、交互启动、Osverse 更新和保留登录状态的安全移除。
 
 正式代码签名证书不在当前仓库自动化范围内；预发布产物依靠 SHA-256、GitHub OIDC provenance 与可复现的公开 CI 记录建立来源链。

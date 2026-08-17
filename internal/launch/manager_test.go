@@ -47,6 +47,19 @@ func TestManagerLaunchesDeepSeekHarnessWebProfile(t *testing.T) {
 	}
 }
 
+func TestManagerLaunchesDetectedGitHubCopilotInTerminal(t *testing.T) {
+	starter := &fakeStarter{}
+	manager := NewManager(starter, nil)
+	component := installedComponent("github-copilot-cli", "Core CLI", "/home/test/.local/bin/copilot", "/home/test/.local/bin/copilot", false)
+
+	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	if len(starter.requests) != 1 || !starter.requests[0].Terminal || len(starter.requests[0].Args) != 0 {
+		t.Fatalf("GitHub Copilot launch request = %#v", starter.requests)
+	}
+}
+
 func TestManagerKeepsVerifiedOsverseDesktopLaunch(t *testing.T) {
 	starter := &fakeStarter{}
 	managed := &fakeManagedLauncher{}
