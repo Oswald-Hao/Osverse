@@ -1,5 +1,6 @@
 import type { Component } from './domain'
 import StatusBadge from './StatusBadge'
+import ToolIcon from './ToolIcon'
 
 const actionLabels: Record<Component['status'], string> = {
   detecting: '配置',
@@ -38,9 +39,12 @@ function ToolCard({ component, onInstall, onLaunch, onRemove }: {
     <li>
       <article className="tool-card">
         <div className="tool-card__topline">
-          <div>
-            <p className="tool-card__id">{component.id}</p>
-            <h4>{component.name}</h4>
+          <div className="tool-card__identity">
+            <ToolIcon id={component.id} />
+            <div>
+              <p className="tool-card__id">{component.id}</p>
+              <h4>{component.name}</h4>
+            </div>
           </div>
           <StatusBadge status={component.status} />
         </div>
