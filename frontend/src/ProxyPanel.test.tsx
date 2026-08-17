@@ -51,8 +51,43 @@ describe('ProxyPanel', () => {
     expect(within(results).getByText('5 ms')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: '使用直连' }))
-    expect(screen.getByText('直连', { selector: '.connection-state' })).toBeVisible()
+    await waitFor(() => expect(screen.getByText('直连', { selector: '.connection-state' })).toBeVisible())
     expect(screen.queryByLabelText('代理探测结果')).not.toBeInTheDocument()
     expect(direct).toHaveBeenCalledTimes(1)
   })
+
+  it('restores the backend selection after navigation without probing again', async () => {
+    const current = vi.fn().mockResolvedValue({ protocol: 'socks5', port: 7897 })
+    const probe = vi.fn()
+    setProxyOperationsForTests(probe, () => Promise.resolve(), current)
+    const first = render(<ProxyPanel />)
+
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897')
+    expect(screen.getByText('SOCKS5 · 127.0.0.1:7897')).toBeVisible()
+    expect(probe).not.toHaveBeenCalled()
+
+    first.unmount()
+    render(<ProxyPanel />)
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('7897')
+    expect(current).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the active selection visible when persistent clear fails', async () => {
+    setProxyOperationsForTests(
+      vi.fn(),
+      () => Promise.reject(new Error('无法清除已保存的代理选择')),
+      () => Promise.resolve({ protocol: 'https-connect', port: 2080 }),
+    )
+    render(<ProxyPanel />)
+    await waitFor(() => expect(screen.getByText('代理已启用')).toBeVisible())
+
+    fireEvent.click(screen.getByRole('button', { name: '使用直连' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('无法清除'))
+    expect(screen.getByText('代理已启用')).toBeVisible()
+    expect(screen.getByLabelText(/本地代理端口/)).toHaveValue('2080')
+  })
+
 })

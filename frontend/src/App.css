@@ -332,6 +332,7 @@ button:focus-visible {
 
 .connection-state--proxy { color: #0d6246; background: #dff4eb; }
 .connection-state--probing { color: #185ba8; background: #e4efff; }
+.connection-state--error { color: #843732; background: #fde7e4; }
 
 .proxy-panel__controls {
   justify-content: flex-start;

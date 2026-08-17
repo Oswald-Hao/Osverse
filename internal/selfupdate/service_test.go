@@ -3,6 +3,8 @@ package selfupdate
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,16 +29,16 @@ func TestCheckSelectsVerifiedPrereleaseArtifact(t *testing.T) {
 	t.Parallel()
 	manifestBody := validManifest("0.4.0-beta.10")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(request.URL.Path, "update-manifest.json") {
+			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write(manifestBody)
 			return
 		}
-		releases := []map[string]any{
-			{"tag_name": "v0.4.0-beta.2", "name": "older", "body": "", "draft": false, "prerelease": true, "published_at": "2026-08-10T00:00:00Z", "assets": []any{}},
-			{"tag_name": "v0.4.0-beta.10", "name": "十号测试版", "body": "新增应用内更新", "draft": false, "prerelease": true, "published_at": "2026-08-14T00:00:00Z", "extra_github_field": true, "assets": []map[string]any{{"name": "osverse-0.4.0-beta.10-update-manifest.json", "state": "uploaded", "size": len(manifestBody), "browser_download_url": "https://github.com/Oswald-Hao/Osverse/releases/download/v0.4.0-beta.10/osverse-0.4.0-beta.10-update-manifest.json"}}},
-		}
-		_ = json.NewEncoder(writer).Encode(releases)
+		writer.Header().Set("Content-Type", "application/atom+xml")
+		_, _ = fmt.Fprint(writer, releaseFeed(
+			atomTestEntry("v0.4.0-beta.2", "older", "", "2026-08-10T00:00:00Z"),
+			atomTestEntry("v0.4.0-beta.10", "十号测试版", "&lt;p&gt;新增&lt;strong&gt;应用内更新&lt;/strong&gt;&lt;/p&gt;", "2026-08-14T00:00:00Z"),
+		))
 	}))
 	defer server.Close()
 
@@ -45,8 +47,57 @@ func TestCheckSelectsVerifiedPrereleaseArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Available || !info.CanInstall || info.LatestVersion != "0.4.0-beta.10" || info.Format != "nsis" || info.PlanID == "" {
+	if !info.Available || !info.CanInstall || info.LatestVersion != "0.4.0-beta.10" || info.Format != "nsis" || info.PlanID == "" || info.ReleaseNotes != "新增应用内更新" {
 		t.Fatalf("unexpected info: %+v", info)
+	}
+}
+
+func TestCheckUsesPublishedReleaseFeedWithoutGitHubAPIRateLimit(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if strings.HasSuffix(request.URL.Path, "update-manifest.json") {
+			_, _ = writer.Write(validManifest("0.4.0-beta.1"))
+			return
+		}
+		if strings.Contains(request.URL.Path, "/api/") {
+			writer.Header().Set("X-RateLimit-Remaining", "0")
+			writer.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = fmt.Fprint(writer, releaseFeed(atomTestEntry(
+			"v0.4.0-beta.1", "Osverse v0.4.0-beta.1", "&lt;p&gt;rate-limit free&lt;/p&gt;", "2026-08-14T00:00:00Z",
+		)))
+	}))
+	defer server.Close()
+	service := testService(server, "0.3.0-beta.1")
+	if info, err := service.Check(context.Background(), "", 0); err != nil || !info.Available || requests != 2 {
+		t.Fatalf("Check() = (%#v, %v), requests=%d", info, err, requests)
+	}
+}
+
+func TestReleaseFeedRejectsUntrustedEntryAndClassifiesRateLimit(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/limited" {
+			writer.Header().Set("X-RateLimit-Remaining", "0")
+			writer.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = fmt.Fprint(writer, strings.Replace(
+			releaseFeed(atomTestEntry("v0.4.0-beta.1", "release", "", "2026-08-14T00:00:00Z")),
+			"https://github.com/Oswald-Hao/Osverse/releases/tag/", "https://evil.example/", 1,
+		))
+	}))
+	defer server.Close()
+	service := testService(server, "0.3.0-beta.1")
+	if _, err := service.Check(context.Background(), "", 0); !errors.Is(err, ErrInvalidReply) {
+		t.Fatalf("untrusted feed error = %v", err)
+	}
+	service.endpoint = server.URL + "/limited"
+	if _, err := service.Check(context.Background(), "", 0); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("rate-limit error = %v", err)
 	}
 }
 
@@ -92,4 +143,17 @@ func validManifest(version string) []byte {
 	}}}
 	result, _ := json.Marshal(document)
 	return result
+}
+
+func releaseFeed(entries ...string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<feed xmlns="http://www.w3.org/2005/Atom">` +
+		`<id>tag:github.com,2008:https://github.com/Oswald-Hao/Osverse/releases</id>` +
+		strings.Join(entries, "") + `</feed>`
+}
+
+func atomTestEntry(tag, title, content, updated string) string {
+	return `<entry><updated>` + updated + `</updated>` +
+		`<link rel="alternate" type="text/html" href="https://github.com/Oswald-Hao/Osverse/releases/tag/` + tag + `"/>` +
+		`<title>` + title + `</title><content type="html">` + content + `</content></entry>`
 }

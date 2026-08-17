@@ -1,17 +1,18 @@
 import {
   ApplyAPIPlan,
-	ClearHistory,
+  ClearHistory,
   CreateAPIApplyPlan,
   DeleteAPIProfile,
   GetAPICompatibility,
   ListAPIProfiles,
-	ListHistory,
-	LaunchComponent,
+  ListHistory,
+  LaunchComponent,
   ProbeAPIProfile,
   ProbeProxy,
   CancelInstallTask,
   CreateInstallPlan,
   CreateRemovalPlan,
+  CurrentProxySelection,
   GetInstallTask,
   ScanEnvironment,
   UseDirectConnection,
@@ -32,11 +33,12 @@ import type {
   InstallPlan,
   InstallTask,
   InstallTaskPhase,
-	HistoryEntry,
+  HistoryEntry,
   RemovalPlan,
   RemovalResult,
   ProxyProtocol,
   ProxyResult,
+  ProxySelection,
 } from '../domain'
 
 type ScanResult = generated.EnvironmentSnapshot | EnvironmentSnapshot
@@ -54,6 +56,7 @@ type ProbeFunction = (port: number) => Promise<{
   checkedAt: unknown
 }>
 type DirectFunction = () => Promise<void>
+type CurrentProxyFunction = () => Promise<{ protocol: string; port: number }>
 type PlanFunction = (componentId: string) => Promise<unknown>
 type StartFunction = (planId: string) => Promise<unknown>
 type TaskFunction = (taskId: string) => Promise<unknown>
@@ -78,6 +81,7 @@ const componentStatuses = new Set<string>([
 let scan: ScanFunction = ScanEnvironment
 let probe: ProbeFunction = ProbeProxy
 let direct: DirectFunction = UseDirectConnection
+let currentProxy: CurrentProxyFunction = CurrentProxySelection
 let createPlan: PlanFunction = CreateInstallPlan
 let startInstall: StartFunction = StartInstall
 let getTask: TaskFunction = GetInstallTask
@@ -175,6 +179,17 @@ export async function probeProxy(port: number): Promise<ProxyResult> {
 
 export async function useDirectConnection(): Promise<void> {
   await direct()
+}
+
+export async function getCurrentProxySelection(): Promise<ProxySelection | null> {
+  const selection = await currentProxy()
+  if (selection.protocol === '' && selection.port === 0) {
+    return null
+  }
+  if (!Number.isInteger(selection.port) || selection.port < 1 || selection.port > 65535) {
+    throw new Error('代理服务返回了无效的端口')
+  }
+  return { protocol: proxyProtocol(selection.protocol), port: selection.port }
 }
 
 function stringValue(value: unknown): string {
@@ -408,12 +423,14 @@ export function resetScanEnvironmentForTests(): void {
 export function setProxyOperationsForTests(
   testProbe: ProbeFunction,
   testDirect: DirectFunction = () => Promise.resolve(),
+  testCurrent: CurrentProxyFunction = () => Promise.resolve({ protocol: '', port: 0 }),
 ): void {
   if (!testSeamEnabled()) {
     throw new Error('The proxy test seam is unavailable outside tests')
   }
   probe = testProbe
   direct = testDirect
+  currentProxy = testCurrent
 }
 
 export function resetProxyOperationsForTests(): void {
@@ -422,6 +439,7 @@ export function resetProxyOperationsForTests(): void {
   }
   probe = ProbeProxy
   direct = UseDirectConnection
+  currentProxy = CurrentProxySelection
 }
 
 export function setInstallOperationsForTests(operations: {

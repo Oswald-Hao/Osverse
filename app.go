@@ -27,6 +27,12 @@ type ProxyProber interface {
 	Probe(context.Context, int) (proxyservice.Result, error)
 }
 
+type ProxySelectionStore interface {
+	Load() (proxyservice.Selection, error)
+	Save(proxyservice.Selection) error
+	Clear() error
+}
+
 // InstallPlanner accepts fixed component IDs and returns backend-owned plans.
 type InstallPlanner interface {
 	CreatePlan(context.Context, string) (install.Plan, error)
@@ -72,10 +78,7 @@ type AppUpdateService interface {
 	Apply(context.Context, string, proxyservice.Protocol, int) (selfupdate.ApplyResult, error)
 }
 
-type proxySelection struct {
-	Protocol proxyservice.Protocol
-	Port     int
-}
+type proxySelection = proxyservice.Selection
 
 type App struct {
 	mu                sync.RWMutex
@@ -83,6 +86,7 @@ type App struct {
 	scanner           Scanner
 	proxyProber       ProxyProber
 	proxySelection    proxySelection
+	proxyStore        ProxySelectionStore
 	proxyGeneration   uint64
 	installPlanner    InstallPlanner
 	installExecutor   InstallExecutor
@@ -122,11 +126,27 @@ func NewApp(scanner Scanner) *App {
 		app.history = history
 	}
 	if err == nil && app != nil {
+		if store, storeErr := proxyservice.NewSelectionStore(home); storeErr == nil {
+			attachProxySelectionStore(app, store)
+		}
 		configurePlatformServices(app, home)
 		app.updater = selfupdate.NewService(home, appVersion)
 		app.quitApplication = wruntime.Quit
 	}
 	return app
+}
+
+func attachProxySelectionStore(app *App, store ProxySelectionStore) {
+	if app == nil || store == nil {
+		return
+	}
+	selection, err := store.Load()
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	app.proxyStore = store
+	if err == nil {
+		app.proxySelection = selection
+	}
 }
 
 func newAppWithServices(scanner Scanner, proxyProber ProxyProber) *App {
@@ -659,6 +679,14 @@ func (app *App) ProbeProxy(port int) (proxyservice.Result, error) {
 	prober := app.proxyProber
 	app.proxyGeneration++
 	generation := app.proxyGeneration
+	if app.proxyStore != nil {
+		if err := app.proxyStore.Clear(); err != nil {
+			app.mu.Unlock()
+			return proxyservice.Result{}, domain.NewPublicError(
+				domain.ErrProxyProbeFailed, "无法更新已保存的代理选择", err,
+			)
+		}
+	}
 	app.proxySelection = proxySelection{}
 	app.mu.Unlock()
 	if prober == nil {
@@ -683,7 +711,16 @@ func (app *App) ProbeProxy(port int) (proxyservice.Result, error) {
 
 	app.mu.Lock()
 	if app.proxyGeneration == generation && result.Reachable && result.Recommended != "" {
-		app.proxySelection = proxySelection{Protocol: result.Recommended, Port: result.Port}
+		selection := proxySelection{Protocol: result.Recommended, Port: result.Port}
+		if app.proxyStore != nil {
+			if err := app.proxyStore.Save(selection); err != nil {
+				app.mu.Unlock()
+				return proxyservice.Result{}, domain.NewPublicError(
+					domain.ErrProxyProbeFailed, "代理可用，但无法保存选择", err,
+				)
+			}
+		}
+		app.proxySelection = selection
 	}
 	app.mu.Unlock()
 	return result, nil
@@ -691,14 +728,20 @@ func (app *App) ProbeProxy(port int) (proxyservice.Result, error) {
 
 // UseDirectConnection clears the task-scoped proxy selection. It does not
 // modify system or shell proxy settings.
-func (app *App) UseDirectConnection() {
+func (app *App) UseDirectConnection() error {
 	if app == nil {
-		return
+		return nil
 	}
 	app.mu.Lock()
 	defer app.mu.Unlock()
 	app.proxyGeneration++
+	if app.proxyStore != nil {
+		if err := app.proxyStore.Clear(); err != nil {
+			return domain.NewPublicError(domain.ErrProxyProbeFailed, "无法清除已保存的代理选择", err)
+		}
+	}
 	app.proxySelection = proxySelection{}
+	return nil
 }
 
 func (app *App) currentProxy() proxySelection {
@@ -710,9 +753,15 @@ func (app *App) currentProxy() proxySelection {
 	return app.proxySelection
 }
 
+// CurrentProxySelection returns only a validated loopback protocol and port.
+// It never exposes environment settings, URLs, or credentials.
+func (app *App) CurrentProxySelection() proxyservice.Selection {
+	return app.currentProxy()
+}
+
 // CheckForAppUpdate checks only the fixed Osverse GitHub repository. Any
-// selected loopback proxy is scoped to this request and is never persisted as
-// a system setting.
+// selected loopback proxy is scoped to Osverse and is never persisted as a
+// system or shell setting.
 func (app *App) CheckForAppUpdate() (selfupdate.Info, error) {
 	if app == nil {
 		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, "更新服务不可用", nil)
@@ -728,7 +777,14 @@ func (app *App) CheckForAppUpdate() (selfupdate.Info, error) {
 	defer cancel()
 	info, err := updater.Check(ctx, selection.Protocol, selection.Port)
 	if err != nil {
-		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, "无法检查更新，请检查网络或代理设置", err)
+		message := "无法检查更新，请检查网络或代理设置"
+		switch {
+		case errors.Is(err, selfupdate.ErrRateLimited):
+			message = "GitHub 更新检查频率受限，请稍后重试"
+		case errors.Is(err, selfupdate.ErrInvalidReply):
+			message = "更新信息校验失败，请稍后重试"
+		}
+		return selfupdate.Info{}, domain.NewPublicError(domain.ErrUpdateFailed, message, err)
 	}
 	return info, nil
 }
