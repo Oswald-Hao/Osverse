@@ -22,6 +22,7 @@ const targetNames: Record<string, string> = {
   'claude-code': 'Claude Code',
   'codex-cli': 'Codex CLI',
   'opencode-cli': 'OpenCode CLI',
+  'qwen-code': 'Qwen Code',
 }
 
 const protocolNames: Record<string, string> = {

@@ -84,6 +84,43 @@ func TestOpenCodeAdapterMergesOsverseProviderWithoutReplacingOthers(t *testing.T
 	}
 }
 
+func TestQwenAdapterSelectsAnOpenAICompatibleOsverseProvider(t *testing.T) {
+	home := t.TempDir()
+	adapters, _ := NewAdapterSet(home)
+	path, _ := adapters.TargetPath(TargetQwen)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"theme":"Dracula","modelProviders":{"keep":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.Apply(context.Background(), TargetQwen, adapterInput()); err != nil {
+		t.Fatal(err)
+	}
+	root := readJSONMap(t, path)
+	if root["theme"] != "Dracula" {
+		t.Fatalf("unrelated Qwen setting changed: %#v", root)
+	}
+	environment := root["env"].(map[string]any)
+	if environment["OSVERSE_API_KEY"] != "secret-key-1234" {
+		t.Fatalf("Qwen environment = %#v", environment)
+	}
+	providers := root["modelProviders"].(map[string]any)
+	if _, ok := providers["keep"]; !ok {
+		t.Fatal("existing Qwen provider was removed")
+	}
+	osverse := providers["osverse"].([]any)[0].(map[string]any)
+	if osverse["id"] != "model-name" || osverse["envKey"] != "OSVERSE_API_KEY" || osverse["baseUrl"] != "https://api.example/v1" {
+		t.Fatalf("Qwen Osverse provider = %#v", osverse)
+	}
+	if root["providerProtocol"].(map[string]any)["osverse"] != "openai" ||
+		root["security"].(map[string]any)["auth"].(map[string]any)["selectedType"] != "openai" ||
+		root["model"].(map[string]any)["name"] != "model-name" ||
+		root["model"].(map[string]any)["baseUrl"] != "https://api.example/v1" {
+		t.Fatalf("Qwen selection = %#v", root)
+	}
+}
+
 func TestOpenAIAdaptersAppendV1ToAnUnversionedBaseURL(t *testing.T) {
 	home := t.TempDir()
 	adapters, err := NewAdapterSet(home)
