@@ -38,6 +38,7 @@ var componentRules = map[string]componentRule{
 	"codex-cli":        {category: "Core CLI", command: "codex"},
 	"opencode-cli":     {category: "Core CLI", command: "opencode"},
 	"deepseek-harness": {category: "Core CLI", command: "dsh"},
+	"qwen-code":        {category: "Core CLI", command: "qwen"},
 	"claude-desktop":   {category: "Desktop Applications", uninstallKind: "winget", uninstallID: "Anthropic.Claude"},
 	"chatgpt-desktop":  {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9NT1R1C2HH7J"},
 	"codex-desktop":    {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},

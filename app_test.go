@@ -382,6 +382,45 @@ func TestHarnessInstallPlansAndTasksStayOnHarnessManager(t *testing.T) {
 	}
 }
 
+func TestQwenInstallPlansAndTasksStayOnQwenManager(t *testing.T) {
+	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("Qwen plan reached generic CLI manager")
+		return install.Plan{}, nil
+	}}}
+	qwen := &fakeInstallManager{}
+	qwen.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "qwen-code" {
+			t.Fatalf("Qwen CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "qwen-plan", ComponentID: id}, nil
+	}
+	qwen.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		return install.Task{ID: "qwen-task", PlanID: id, ComponentID: "qwen-code"}, nil
+	}
+	qwen.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "qwen-code", Phase: "completed"}, nil
+	}
+	qwen.cancel = func(string) error { return nil }
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.qwenPlanner, app.qwenExecutor = qwen, qwen
+	plan, err := app.CreateInstallPlan("qwen-code")
+	if err != nil || app.planOwners[plan.ID] != "qwen" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner=%q", plan, err, app.planOwners[plan.ID])
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "qwen-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if current, err := app.GetInstallTask(task.ID); err != nil || current.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", current, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
 	cli := &fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
 		t.Fatal("system plan reached CLI manager")
