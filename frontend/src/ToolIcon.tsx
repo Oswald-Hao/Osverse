@@ -3,7 +3,7 @@ import { useId } from 'react'
 import ccSwitchIcon from './assets/tool-icons/cc-switch.png'
 import cockpitToolsIcon from './assets/tool-icons/cockpit-tools.png'
 
-type IconFamily = 'anthropic' | 'chatgpt' | 'codex' | 'opencode' | 'deepseek' | 'qwen' | 'copilot' | 'cc-switch' | 'cockpit' | 'generic'
+type IconFamily = 'anthropic' | 'chatgpt' | 'codex' | 'opencode' | 'deepseek' | 'qwen' | 'kimi' | 'copilot' | 'cc-switch' | 'cockpit' | 'generic'
 
 const iconFamilies: Record<string, { family: IconFamily; badge?: string }> = {
   'claude-code': { family: 'anthropic', badge: 'C' },
@@ -15,6 +15,7 @@ const iconFamilies: Record<string, { family: IconFamily; badge?: string }> = {
   'opencode-desktop': { family: 'opencode', badge: 'APP' },
   'deepseek-harness': { family: 'deepseek' },
   'qwen-code': { family: 'qwen' },
+  'kimi-code': { family: 'kimi' },
   'github-copilot-cli': { family: 'copilot' },
   'cc-switch': { family: 'cc-switch' },
   'cockpit-tools': { family: 'cockpit' },
@@ -41,6 +42,14 @@ function CodexIcon() {
   </svg>
 }
 
+function KimiIcon() {
+  return <svg viewBox="0 0 24 24">
+    <rect x="3" y="4.5" width="18" height="13" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+    <rect x="9.6" y="8" width="1.4" height="2.6" rx=".45" />
+    <rect x="15.6" y="8" width="1.4" height="2.6" rx=".45" />
+  </svg>
+}
+
 function GenericIcon() {
   return <svg viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0h-3a5 5 0 1 0-10 0H4Zm8-8 1.7 5.1-2.4.8L12 10Zm-7.6 9.5h15.2V22H4.4v-2.5Z" /></svg>
 }
@@ -51,7 +60,7 @@ export default function ToolIcon({ id }: { id: string }) {
   const officialRaster = icon.family === 'cc-switch' ? ccSwitchIcon : icon.family === 'cockpit' ? cockpitToolsIcon : null
   return (
     <span className={`tool-icon tool-icon--${icon.family}`} data-tool-icon={id} data-icon-family={icon.family} aria-hidden="true">
-      {officialRaster ? <img src={officialRaster} alt="" /> : path ? <svg viewBox="0 0 24 24"><path d={path} /></svg> : icon.family === 'chatgpt' ? <ChatGPTIcon /> : icon.family === 'codex' ? <CodexIcon /> : <GenericIcon />}
+      {officialRaster ? <img src={officialRaster} alt="" /> : path ? <svg viewBox="0 0 24 24"><path d={path} /></svg> : icon.family === 'chatgpt' ? <ChatGPTIcon /> : icon.family === 'codex' ? <CodexIcon /> : icon.family === 'kimi' ? <KimiIcon /> : <GenericIcon />}
       {icon.badge && <small>{icon.badge}</small>}
     </span>
   )

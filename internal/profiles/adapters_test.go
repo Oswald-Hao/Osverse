@@ -158,6 +158,161 @@ func TestQwenAdapterCanUpdateItsOwnProvider(t *testing.T) {
 	}
 }
 
+func TestKimiAdapterPreservesUnrelatedTOMLAndExactModelID(t *testing.T) {
+	home := t.TempDir()
+	adapters, _ := NewAdapterSet(home)
+	path, _ := adapters.TargetPath(TargetKimi)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := "# keep me\ntelemetry = false\n\n[tools]\nkeep = true\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := adapterInput()
+	input.Protocol = "openai-chat"
+	input.Model = "deepseek/deepseek-v4-flash"
+	if _, err := adapters.Apply(context.Background(), TargetKimi, input); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	for _, expected := range []string{
+		"# keep me", "telemetry = false", "[tools]", "keep = true",
+		`default_model = "osverse"`, `[providers.osverse]`, `type = "openai"`,
+		`base_url = "https://api.example/v1"`, `api_key = "secret-key-1234"`,
+		`[models.osverse]`, `provider = "osverse"`, `model = "deepseek/deepseek-v4-flash"`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("Kimi config missing %q:\n%s", expected, text)
+		}
+	}
+	info, _ := os.Stat(path)
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("Kimi config mode = %o", info.Mode().Perm())
+	}
+}
+
+func TestKimiAdapterMapsConfirmedProtocolsAndRejectsUnownedTables(t *testing.T) {
+	for protocol, providerType := range map[string]string{
+		"openai-chat":        "openai",
+		"openai-responses":   "openai_responses",
+		"anthropic-messages": "anthropic",
+	} {
+		t.Run(protocol, func(t *testing.T) {
+			input := adapterInput()
+			input.Protocol = protocol
+			next, err := mergeKimiConfig(nil, input)
+			if err != nil || !strings.Contains(string(next), `type = "`+providerType+`"`) {
+				t.Fatalf("mergeKimiConfig() = %v\n%s", err, next)
+			}
+		})
+	}
+	input := adapterInput()
+	input.Protocol = "openai-chat"
+	for _, raw := range []string{
+		"[providers.osverse]\ntype = \"openai\"\n",
+		"[models.osverse]\nprovider = \"personal\"\nmodel = \"mine\"\nmax_context_size = 1\n",
+	} {
+		if _, err := mergeKimiConfig([]byte(raw), input); !errors.Is(err, ErrConfigConflict) {
+			t.Fatalf("unowned Kimi table error = %v", err)
+		}
+	}
+}
+
+func TestKimiAdapterUpdatesItsMarkedBlockIdempotently(t *testing.T) {
+	first := adapterInput()
+	first.Protocol = "openai-chat"
+	configured, err := mergeKimiConfig([]byte("# keep\ndefault_model = \"personal\"\n"), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := adapterInput()
+	updated.Name = "Updated"
+	updated.Model = "deepseek/deepseek-v4-flash"
+	updated.BaseURL = "https://updated.example/gateway"
+	updated.Protocol = "openai-responses"
+	next, err := mergeKimiConfig(configured, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(next)
+	for _, expected := range []string{
+		"# keep", `default_model = "osverse"`, `type = "openai_responses"`,
+		`base_url = "https://updated.example/gateway/v1"`,
+		`model = "deepseek/deepseek-v4-flash"`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("updated Kimi config missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Count(text, kimiBlockStart) != 1 || strings.Count(text, `default_model = "osverse"`) != 1 || strings.Contains(text, "secret-key-1234\nsecret-key-1234") {
+		t.Fatalf("Kimi config was not updated idempotently:\n%s", text)
+	}
+}
+
+func TestKimiAdapterRejectsMalformedOwnershipAndDuplicateRootDefaults(t *testing.T) {
+	input := adapterInput()
+	input.Protocol = "openai-chat"
+	for _, raw := range []string{
+		kimiBlockStart + "\n[providers.osverse]\ntype = \"openai\"\n",
+		kimiBlockEnd + "\n",
+		"default_model = \"first\"\ndefault_model = \"second\"\n",
+		string([]byte{'d', 'e', 'f', 0, 'a', 'u', 'l', 't'}),
+	} {
+		if _, err := mergeKimiConfig([]byte(raw), input); !errors.Is(err, ErrConfigConflict) {
+			t.Fatalf("malformed Kimi config %q error = %v", raw, err)
+		}
+	}
+}
+
+func TestKimiProviderBaseURLKeepsAnthropicRootAndVersionsOpenAI(t *testing.T) {
+	if got := kimiProviderBaseURL("https://api.example/gateway/", "anthropic-messages"); got != "https://api.example/gateway" {
+		t.Fatalf("Anthropic base URL = %q", got)
+	}
+	if got := kimiProviderBaseURL("https://api.example/gateway/", "openai-chat"); got != "https://api.example/gateway/v1" {
+		t.Fatalf("OpenAI base URL = %q", got)
+	}
+	if got := kimiProviderBaseURL("https://api.example/v1", "openai-responses"); got != "https://api.example/v1" {
+		t.Fatalf("OpenAI Responses base URL = %q", got)
+	}
+}
+
+func TestKimiAdapterHonorsSafeKimiCodeHome(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(home, "config", "kimi")
+	t.Setenv("KIMI_CODE_HOME", custom)
+	adapters, err := NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := adapters.TargetPath(TargetKimi)
+	if err != nil || path != filepath.Join(custom, "config.toml") {
+		t.Fatalf("custom KIMI_CODE_HOME target = (%q, %v)", path, err)
+	}
+
+	t.Setenv("KIMI_CODE_HOME", filepath.Join(filepath.Dir(home), "outside"))
+	adapters, err = NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.TargetPath(TargetKimi); !errors.Is(err, ErrUnsafeStorage) {
+		t.Fatalf("outside KIMI_CODE_HOME error = %v", err)
+	}
+
+	t.Setenv("KIMI_CODE_HOME", "relative/path")
+	adapters, err = NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.TargetPath(TargetKimi); !errors.Is(err, ErrUnsafeStorage) {
+		t.Fatalf("relative KIMI_CODE_HOME error = %v", err)
+	}
+}
+
 func TestOpenAIAdaptersAppendV1ToAnUnversionedBaseURL(t *testing.T) {
 	home := t.TempDir()
 	adapters, err := NewAdapterSet(home)

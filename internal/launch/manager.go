@@ -43,6 +43,7 @@ var fixedComponents = map[string]componentKind{
 	"opencode-cli":       {category: "Core CLI"},
 	"deepseek-harness":   {category: "Core CLI", launchArgs: []string{"web"}},
 	"qwen-code":          {category: "Core CLI"},
+	"kimi-code":          {category: "Core CLI"},
 	"github-copilot-cli": {category: "Core CLI"},
 	"claude-desktop":     {category: "Desktop Applications"},
 	"chatgpt-desktop":    {category: "Desktop Applications"},
