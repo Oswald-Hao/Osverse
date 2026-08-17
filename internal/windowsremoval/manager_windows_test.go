@@ -14,7 +14,10 @@ import (
 )
 
 func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
-	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	manager, err := NewManager(home)
 	if err != nil {
 		t.Fatal(err)

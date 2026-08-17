@@ -28,12 +28,18 @@ func TestMovableEvidenceRenamesThePinnedFile(t *testing.T) {
 	if err := evidence.MoveTo(destination); err != nil {
 		t.Fatal(err)
 	}
+	if evidence.Path() != destination {
+		t.Fatalf("moved evidence path = %q, want %q", evidence.Path(), destination)
+	}
 	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("source remains: %v", err)
 	}
+	if err := evidence.Close(); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := os.ReadFile(destination)
-	if err != nil || string(raw) != "managed" || evidence.Path() != destination {
-		t.Fatalf("moved evidence = (%q, %v, %q)", raw, err, evidence.Path())
+	if err != nil || string(raw) != "managed" {
+		t.Fatalf("moved evidence = (%q, %v)", raw, err)
 	}
 }
 

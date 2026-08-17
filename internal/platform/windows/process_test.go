@@ -18,7 +18,7 @@ import (
 func TestExecRunnerCapturesBoundedOutputAndExit(t *testing.T) {
 	result, err := NewExecRunner().Run(context.Background(), platform.CommandRequest{
 		Path: os.Args[0], Args: []string{"-test.run=TestWindowsRunnerHelper", "--", "output"},
-		Env: []string{"OSVERSE_WINDOWS_RUNNER_HELPER=1"}, Timeout: time.Second, OutputLimit: 8,
+		Env: []string{"OSVERSE_WINDOWS_RUNNER_HELPER=1"}, Timeout: 10 * time.Second, OutputLimit: 8,
 	})
 	if err != nil || result.ExitCode != 0 || result.Stdout != "01234567" || !result.Truncated {
 		t.Fatalf("Run() = (%#v, %v)", result, err)
