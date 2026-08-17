@@ -432,6 +432,8 @@ func componentDisplayName(id string) string {
 		return "DeepSeek Harness"
 	case "qwen-code":
 		return "Qwen Code"
+	case "github-copilot-cli":
+		return "GitHub Copilot CLI"
 	case "claude-desktop":
 		return "Claude Desktop"
 	case "chatgpt-desktop":
@@ -449,7 +451,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "github-copilot-cli", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
