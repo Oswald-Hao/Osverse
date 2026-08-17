@@ -15,7 +15,18 @@ it('provides a local icon for every supported component', () => {
   for (const id of ids) {
     const icon = container.querySelector(`[data-tool-icon="${id}"]`)
     expect(icon).toBeTruthy()
-    expect(icon?.querySelector('svg path')).toHaveAttribute('d')
   }
-  expect(container.querySelector('img')).toBeNull()
+  expect(container.querySelector('[data-tool-icon="codex-cli"]')).toHaveAttribute('data-icon-family', 'codex')
+  expect(container.querySelector('[data-tool-icon="codex-desktop"]')).toHaveAttribute('data-icon-family', 'codex')
+  expect(container.querySelector('[data-tool-icon="chatgpt-desktop"]')).toHaveAttribute('data-icon-family', 'chatgpt')
+  expect(container.querySelector('[data-tool-icon="codex-desktop"] svg')?.innerHTML)
+    .not.toBe(container.querySelector('[data-tool-icon="chatgpt-desktop"] svg')?.innerHTML)
+
+  for (const id of ['cc-switch', 'cockpit-tools']) {
+    const image = container.querySelector(`[data-tool-icon="${id}"] img`)
+    expect(image).toHaveAttribute('src')
+    expect(image?.getAttribute('src')).not.toMatch(/^https?:/)
+  }
+  expect(container.querySelectorAll('img')).toHaveLength(2)
+  expect(container.querySelectorAll('svg path').length).toBeGreaterThanOrEqual(ids.length - 2)
 })
