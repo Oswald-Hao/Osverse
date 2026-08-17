@@ -19,14 +19,28 @@ dsh web
 
 ### 配置 DeepSeek 或第三方 API
 
-打开 Harness Web 工作台的 Provider 设置：
+有两种配置方式：
+
+1. 打开 Harness Web 工作台的 Models 设置，直接使用 DeepSeek Provider 或添加 Custom Provider。
+2. 在 Osverse 的“API 配置”中保存 Key、Base URL 和精确模型 ID，完成协议探测后勾选 **DeepSeek Harness**，预览并确认写入。
+
+使用 Osverse 应用档案时：
+
+- OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 任一协议确认后即可使用；多个协议同时可用时优先选择 Chat Completions，其次 Responses，最后 Anthropic Messages。
+- Osverse 在 `$DSH_HOME/settings.yaml` 的 `llm-pi-ai.providers` 下维护唯一的 `osverse` Provider，并把模型设为 `agent-default-model`，因此新会话会直接使用它；已经发送过请求的既有会话仍保留自己的模型。
+- Key 只写入 `$DSH_HOME/.credentials.yaml` 的 `OSVERSE_API_KEY`，`settings.yaml` 只保存凭据引用。模型 ID 不会添加 `osverse/` 前缀；Harness 界面显示的 `osverse/<模型 ID>` 只是 Provider 路由表示。
+- 两份文件会在确认前展示，原内容打包备份到 Osverse 的当前用户私有备份目录。写入使用 Harness 官方的同名 `.lock` 文件约定、原子替换和失败回滚；目标、备份和凭据均限制为当前用户访问。
+- 现有同名 `osverse` Provider 或孤立的 `OSVERSE_API_KEY` 如果不是 Osverse 创建的，操作会停止，不会覆盖。无关 Provider、设置、注释和凭据会保留。
+- 默认使用 `~/.dsh`；如果启动 Osverse 时设置了绝对的 `$DSH_HOME`，它必须位于当前用户主目录内。相对路径或主目录外路径会被拒绝。
+
+在 Harness 自己的 Models 页面配置时：
 
 - 使用 DeepSeek 官方服务时，选择 DeepSeek Provider 并填写 API Key。
 - 使用兼容服务时，添加 Custom Provider，填写服务给出的 Base URL、协议、API Key 和模型名。
 - Base URL 来自 API 服务商的开发者文档或控制台，不是聊天网页地址。不要猜测路径；不同服务可能要求 `/v1`，也可能已经把版本路径包含在 URL 中。
 - 模型名必须使用服务商 API 返回或文档列出的精确 ID。
 
-Harness 将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`，普通设置只保留引用。Osverse 不解析这份快速演进的 Developer Preview 配置，以免破坏 Harness 的凭据和工作区；卸载 Harness 时也默认保留它。
+Harness 将密钥以只写方式保存到 `$DSH_HOME/.credentials.yaml`，普通设置只保留引用。Osverse 只维护自己拥有的 `osverse` Provider、默认模型字段和 `OSVERSE_API_KEY`，并按固定的 `0.1.0-rc.6` 配置契约验证写回结果；不会接管其他 Provider 或工作区。卸载 Harness 时仍默认保留这些配置、凭据和会话。
 
 ### Osverse 如何安装
 
@@ -49,9 +63,11 @@ Find **DeepSeek Harness** under Core CLI, preview and confirm the install plan, 
 
 ### Configure a provider
 
-Use Harness's Provider settings. Choose the DeepSeek provider for the official service, or add a Custom Provider with the exact protocol, Base URL, API key, and model ID supplied by your API vendor. A Base URL comes from the vendor's developer documentation or console; it is not the consumer chat page and should not be guessed.
+Configure a provider in Harness's Models page, or save and probe an Osverse API profile and then select **DeepSeek Harness** in the compatibility matrix. Osverse accepts a confirmed OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages route, preferring them in that order when more than one is available. It transactionally updates `$DSH_HOME/settings.yaml` and `$DSH_HOME/.credentials.yaml`, owns only the `llm-pi-ai.providers.osverse` route and `OSVERSE_API_KEY`, and selects the exact model for new sessions. Existing sessions keep the model recorded in their logs.
 
-Harness stores keys write-only in `$DSH_HOME/.credentials.yaml`. Osverse deliberately does not parse this fast-changing Developer Preview format and preserves it during Harness removal.
+The key is stored only in Harness's credential document; settings carry its reference. Unrelated providers, comments, and credentials are preserved. Osverse coordinates with a running Harness through the same `.lock` files used by the pinned release, writes atomically, rolls the first file back if the second commit fails, and refuses an unowned `osverse` route or credential. A configured `DSH_HOME` must resolve inside the current user's home. Harness removal continues to preserve provider settings, credentials, and sessions.
+
+When configuring directly in Harness, choose the DeepSeek provider for the official service or add a Custom Provider with the exact protocol, Base URL, API key, and model ID supplied by the vendor. The Base URL comes from developer documentation or the vendor console, not a consumer chat page.
 
 ### Verified installation model
 
