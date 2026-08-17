@@ -36,7 +36,7 @@
 Moving to a new machine should not mean spending hours rediscovering runtimes, proxy settings, CLI locations, and API configuration formats. Osverse turns that setup work into an inspectable desktop workflow while preserving tools you already installed.
 
 - **Find what is already there.** Claude Code, Codex CLI, OpenCode, Qwen Code, and GitHub Copilot CLI are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
-- **Run DeepSeek Harness without environment setup.** Osverse pins the official Harness and Node.js versions, verifies every locked dependency, runs no npm lifecycle scripts, and launches the official web workspace.
+- **Run DeepSeek Harness without environment setup.** Osverse pins the official Harness and Node.js versions, verifies every locked dependency, runs no npm lifecycle scripts, launches the official web workspace, and can safely apply a verified third-party API profile to Harness.
 - **Run Qwen Code without a system Node.js.** Osverse installs the official standalone archive with pinned version, length, and SHA-256, then uses its private Node runtime. Confirmed OpenAI-compatible API profiles can be applied directly.
 - **Install GitHub Copilot CLI from verified artifacts.** Osverse pins GitHub's official standalone package and disables upstream self-update so managed files cannot bypass Osverse's release verification. Authentication and subscription remain owned by GitHub Copilot.
 - **Control every real installation.** Multiple locations are shown separately. Before launch, the backend rescans and verifies file identity instead of executing an arbitrary frontend-provided path.
@@ -70,7 +70,7 @@ Select **DeepSeek Harness** under Core CLI, preview the plan, and confirm instal
 dsh web
 ```
 
-The workspace defaults to `http://127.0.0.1:3080`. Add the DeepSeek key—or a compatible protocol, Base URL, and model—in Harness's own Provider settings. Harness writes credentials to `$DSH_HOME/.credentials.yaml`; Osverse never reads, migrates, or removes them. See the [DeepSeek Harness integration guide](docs/guides/deepseek-harness.md) for details.
+The workspace defaults to `http://127.0.0.1:3080`. You can configure a provider in Harness's Models page, or save and probe an Osverse API profile and select **DeepSeek Harness** in the compatibility matrix. Osverse chooses a confirmed OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages route; backs up and transactionally updates `$DSH_HOME/settings.yaml` plus `$DSH_HOME/.credentials.yaml`; creates a dedicated `osverse` provider; and selects the exact model for new sessions. The key is written only to Harness's credential document, while settings retain the `OSVERSE_API_KEY` reference. Unrelated providers, comments, and credentials survive. Writes coordinate with a running Harness through its official `.lock` convention, and removal still preserves the Harness home. See the [DeepSeek Harness integration guide](docs/guides/deepseek-harness.md) for details.
 
 Harness is currently an upstream Developer Preview. Osverse pins the tested contract instead of silently following npm `latest`; upgrades arrive with a tested Osverse release. Linux x64 and Windows x64 are wired into the app today. The same verified installer is ready for macOS x64/arm64 and will be enabled with the Osverse macOS release.
 

@@ -42,6 +42,9 @@ type Input struct {
 	BaseURL             string `json:"baseUrl"`
 	Model               string `json:"model"`
 	AllowPrivateNetwork bool   `json:"allowPrivateNetwork"`
+	// Protocol is selected from a fresh probe when an apply plan is created.
+	// It is never accepted from the frontend or persisted with the profile.
+	Protocol string `json:"-"`
 }
 
 // Profile is safe for frontend display and never contains the API key.

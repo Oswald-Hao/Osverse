@@ -20,12 +20,14 @@ const (
 	TargetCodex    = "codex-cli"
 	TargetOpenCode = "opencode-cli"
 	TargetQwen     = "qwen-code"
+	TargetHarness  = "deepseek-harness"
 	configLimit    = 2 * 1024 * 1024
 )
 
 var (
 	ErrUnknownTarget  = errors.New("unknown API profile target")
 	ErrConfigConflict = errors.New("target configuration conflict")
+	ErrConfigRollback = errors.New("target configuration rollback failed")
 )
 
 // ApplyResult is redacted; it contains paths but never config contents.
@@ -38,9 +40,13 @@ type ApplyResult struct {
 }
 
 type AdapterSet struct {
-	home       string
-	backupRoot string
-	now        func() time.Time
+	home          string
+	backupRoot    string
+	harnessHome   string
+	harnessErr    error
+	now           func() time.Time
+	writeConfig   func(string, []byte, os.FileMode) error
+	restoreConfig func(string, []byte, os.FileMode, bool) error
 }
 
 func NewAdapterSet(home string) (*AdapterSet, error) {
@@ -52,7 +58,11 @@ func NewAdapterSet(home string) (*AdapterSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &AdapterSet{home: resolved, backupRoot: backupRoot, now: time.Now}, nil
+	harnessHome, harnessErr := resolveHarnessHome(resolved, os.Getenv("DSH_HOME"))
+	return &AdapterSet{
+		home: resolved, backupRoot: backupRoot, harnessHome: harnessHome, harnessErr: harnessErr,
+		now: time.Now, writeConfig: atomicWriteConfig, restoreConfig: restoreConfig,
+	}, nil
 }
 
 func (adapters *AdapterSet) TargetPath(target string) (string, error) {
@@ -68,9 +78,35 @@ func (adapters *AdapterSet) TargetPath(target string) (string, error) {
 		return filepath.Join(adapters.home, ".config", "opencode", "opencode.json"), nil
 	case TargetQwen:
 		return filepath.Join(adapters.home, ".qwen", "settings.json"), nil
+	case TargetHarness:
+		if adapters.harnessErr != nil {
+			return "", adapters.harnessErr
+		}
+		return filepath.Join(adapters.harnessHome, "settings.yaml"), nil
 	default:
 		return "", ErrUnknownTarget
 	}
+}
+
+func resolveHarnessHome(home, configured string) (string, error) {
+	configured = strings.TrimSpace(configured)
+	if configured == "" {
+		return filepath.Join(home, ".dsh"), nil
+	}
+	if configured == "~" {
+		configured = home
+	} else if strings.HasPrefix(configured, "~/") || strings.HasPrefix(configured, `~\`) {
+		configured = filepath.Join(home, configured[2:])
+	}
+	if containsControl(configured) || !filepath.IsAbs(configured) {
+		return "", ErrUnsafeStorage
+	}
+	configured = filepath.Clean(configured)
+	relative, err := filepath.Rel(home, configured)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", ErrUnsafeStorage
+	}
+	return configured, nil
 }
 
 func (adapters *AdapterSet) Apply(ctx context.Context, target string, input Input) (ApplyResult, error) {
@@ -88,6 +124,9 @@ func (adapters *AdapterSet) Apply(ctx context.Context, target string, input Inpu
 		return ApplyResult{}, err
 	}
 	validated.BaseURL = normalized
+	if target == TargetHarness {
+		return adapters.applyHarness(ctx, validated)
+	}
 	path, err := adapters.TargetPath(target)
 	if err != nil {
 		return ApplyResult{}, err
@@ -136,6 +175,9 @@ func ensureConfigParent(home, directory string) error {
 	relative, err := filepath.Rel(home, directory)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return ErrUnsafeStorage
+	}
+	if relative == "." {
+		return nil
 	}
 	current := home
 	for _, component := range strings.Split(relative, string(filepath.Separator)) {
@@ -513,7 +555,10 @@ func verifyWrittenConfig(target, path string) error {
 
 func restoreConfig(path string, content []byte, mode os.FileMode, existed bool) error {
 	if !existed {
-		return os.Remove(path)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
 	}
 	return atomicWriteConfig(path, content, mode)
 }
