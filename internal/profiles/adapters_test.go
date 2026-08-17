@@ -281,6 +281,38 @@ func TestKimiProviderBaseURLKeepsAnthropicRootAndVersionsOpenAI(t *testing.T) {
 	}
 }
 
+func TestKimiAdapterHonorsSafeKimiCodeHome(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(home, "config", "kimi")
+	t.Setenv("KIMI_CODE_HOME", custom)
+	adapters, err := NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := adapters.TargetPath(TargetKimi)
+	if err != nil || path != filepath.Join(custom, "config.toml") {
+		t.Fatalf("custom KIMI_CODE_HOME target = (%q, %v)", path, err)
+	}
+
+	t.Setenv("KIMI_CODE_HOME", filepath.Join(filepath.Dir(home), "outside"))
+	adapters, err = NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.TargetPath(TargetKimi); !errors.Is(err, ErrUnsafeStorage) {
+		t.Fatalf("outside KIMI_CODE_HOME error = %v", err)
+	}
+
+	t.Setenv("KIMI_CODE_HOME", "relative/path")
+	adapters, err = NewAdapterSet(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.TargetPath(TargetKimi); !errors.Is(err, ErrUnsafeStorage) {
+		t.Fatalf("relative KIMI_CODE_HOME error = %v", err)
+	}
+}
+
 func TestOpenAIAdaptersAppendV1ToAnUnversionedBaseURL(t *testing.T) {
 	home := t.TempDir()
 	adapters, err := NewAdapterSet(home)

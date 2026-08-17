@@ -45,6 +45,8 @@ type AdapterSet struct {
 	backupRoot    string
 	harnessHome   string
 	harnessErr    error
+	kimiHome      string
+	kimiErr       error
 	now           func() time.Time
 	writeConfig   func(string, []byte, os.FileMode) error
 	restoreConfig func(string, []byte, os.FileMode, bool) error
@@ -59,9 +61,11 @@ func NewAdapterSet(home string) (*AdapterSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	harnessHome, harnessErr := resolveHarnessHome(resolved, os.Getenv("DSH_HOME"))
+	harnessHome, harnessErr := resolveConfiguredHome(resolved, os.Getenv("DSH_HOME"), ".dsh")
+	kimiHome, kimiErr := resolveConfiguredHome(resolved, os.Getenv("KIMI_CODE_HOME"), ".kimi-code")
 	return &AdapterSet{
 		home: resolved, backupRoot: backupRoot, harnessHome: harnessHome, harnessErr: harnessErr,
+		kimiHome: kimiHome, kimiErr: kimiErr,
 		now: time.Now, writeConfig: atomicWriteConfig, restoreConfig: restoreConfig,
 	}, nil
 }
@@ -80,7 +84,10 @@ func (adapters *AdapterSet) TargetPath(target string) (string, error) {
 	case TargetQwen:
 		return filepath.Join(adapters.home, ".qwen", "settings.json"), nil
 	case TargetKimi:
-		return filepath.Join(adapters.home, ".kimi-code", "config.toml"), nil
+		if adapters.kimiErr != nil {
+			return "", adapters.kimiErr
+		}
+		return filepath.Join(adapters.kimiHome, "config.toml"), nil
 	case TargetHarness:
 		if adapters.harnessErr != nil {
 			return "", adapters.harnessErr
@@ -91,10 +98,10 @@ func (adapters *AdapterSet) TargetPath(target string) (string, error) {
 	}
 }
 
-func resolveHarnessHome(home, configured string) (string, error) {
+func resolveConfiguredHome(home, configured, defaultDirectory string) (string, error) {
 	configured = strings.TrimSpace(configured)
 	if configured == "" {
-		return filepath.Join(home, ".dsh"), nil
+		return filepath.Join(home, defaultDirectory), nil
 	}
 	if configured == "~" {
 		configured = home

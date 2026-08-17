@@ -18,7 +18,7 @@ Osverse 当前固定官方 Kimi Code `0.36.1` 独立二进制，不要求 Node/n
 
 确认后 Osverse 会：
 
-- 备份并原子更新 `~/.kimi-code/config.toml`；
+- 备份并原子更新 `~/.kimi-code/config.toml`（设置了安全的主目录内 `KIMI_CODE_HOME` 时使用该目录）；
 - 保留无关注释、根设置、Provider、模型与工具配置；
 - 创建带所有权标记的 `[providers.osverse]` 和 `[models.osverse]`；
 - 根据实测协议选择 Kimi 原生 `openai`、`openai_responses` 或 `anthropic` Provider 类型；
