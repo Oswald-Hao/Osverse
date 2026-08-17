@@ -272,6 +272,9 @@ func mergeQwenConfig(raw []byte, input Input) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if existing, exists := providers["osverse"]; exists && !ownedQwenProvider(existing) {
+		return nil, ErrConfigConflict
+	}
 	providers["osverse"] = []any{map[string]any{
 		"id": input.Model, "name": "Osverse: " + input.Name,
 		"envKey": "OSVERSE_API_KEY", "baseUrl": openAIBaseURL(input.BaseURL),
@@ -279,6 +282,9 @@ func mergeQwenConfig(raw []byte, input Input) ([]byte, error) {
 	protocols, err := jsonObjectField(root, "providerProtocol")
 	if err != nil {
 		return nil, err
+	}
+	if existing := protocols["osverse"]; existing != nil && existing != "openai" {
+		return nil, ErrConfigConflict
 	}
 	protocols["osverse"] = "openai"
 	security, err := jsonObjectField(root, "security")
@@ -300,6 +306,21 @@ func mergeQwenConfig(raw []byte, input Input) ([]byte, error) {
 	// otherwise accepts the JSON and then fails when it tries to authenticate.
 	auth["selectedType"] = "openai"
 	return marshalConfigJSON(root)
+}
+
+func ownedQwenProvider(value any) bool {
+	models, ok := value.([]any)
+	if !ok || len(models) != 1 {
+		return false
+	}
+	model, ok := models[0].(map[string]any)
+	if !ok || model["envKey"] != "OSVERSE_API_KEY" {
+		return false
+	}
+	name, nameOK := model["name"].(string)
+	_, idOK := model["id"].(string)
+	_, baseOK := model["baseUrl"].(string)
+	return nameOK && strings.HasPrefix(name, "Osverse: ") && idOK && baseOK
 }
 
 func jsonObjectField(root map[string]any, key string) (map[string]any, error) {
