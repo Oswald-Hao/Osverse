@@ -34,7 +34,7 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 		t.Fatalf("Probe() = (%#v, %v), secret %#v", probe, err, prober.got)
 	}
 	matrix, err := service.Compatibility(profile.ID)
-	if err != nil || len(matrix) != 5 {
+	if err != nil || len(matrix) != 6 {
 		t.Fatalf("Compatibility() = (%#v, %v)", matrix, err)
 	}
 	for _, item := range matrix {
@@ -42,21 +42,21 @@ func TestServiceRequiresSuccessfulProbeAndAppliesConfirmedTargets(t *testing.T) 
 			t.Errorf("target compatibility = %#v", item)
 		}
 	}
-	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex, TargetQwen, TargetHarness})
+	plan, err := service.CreateApplyPlan(context.Background(), profile.ID, []string{TargetOpenCode, TargetClaude, TargetCodex, TargetQwen, TargetHarness, TargetKimi})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 5 || plan.Warning == "" {
+	if plan.ProfileName != "Work" || plan.KeyHint != "••••1234" || len(plan.Effects) != 6 || plan.Warning == "" {
 		t.Fatalf("plan = %#v", plan)
 	}
-	wantOrder := []string{TargetClaude, TargetCodex, TargetHarness, TargetOpenCode, TargetQwen}
-	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target, plan.Effects[3].Target, plan.Effects[4].Target}
+	wantOrder := []string{TargetClaude, TargetCodex, TargetHarness, TargetKimi, TargetOpenCode, TargetQwen}
+	gotOrder := []string{plan.Effects[0].Target, plan.Effects[1].Target, plan.Effects[2].Target, plan.Effects[3].Target, plan.Effects[4].Target, plan.Effects[5].Target}
 	if !reflect.DeepEqual(gotOrder, wantOrder) {
 		t.Fatalf("effect order = %#v", gotOrder)
 	}
 
 	result, err := service.Apply(context.Background(), plan.ID)
-	if err != nil || result.Succeeded != 5 || result.Failed != 0 || len(result.Results) != 5 {
+	if err != nil || result.Succeeded != 6 || result.Failed != 0 || len(result.Results) != 6 {
 		t.Fatalf("Apply() = (%#v, %v)", result, err)
 	}
 	for _, target := range wantOrder {
@@ -103,6 +103,29 @@ func TestHarnessCompatibilityUsesPreferredConfirmedProtocol(t *testing.T) {
 	_, _ = service.Apply(context.Background(), plan.ID)
 	if adapters.protocols[TargetHarness] != "openai-responses" {
 		t.Fatalf("Harness fallback protocol = %q", adapters.protocols[TargetHarness])
+	}
+}
+
+func TestKimiCompatibilityUsesPreferredConfirmedProtocol(t *testing.T) {
+	store := &fakeProfileStore{
+		profiles: []Profile{{ID: "profile", Name: "P", KeyHint: "••••1234"}},
+		secret:   adapterInput(),
+	}
+	adapters := &fakeProfileAdapters{}
+	probe := compatibleProbe()
+	service := testProfileService(store, &fakeProfileProber{result: probe}, adapters)
+	if _, err := service.Probe(context.Background(), "profile"); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreateApplyPlan(context.Background(), "profile", []string{TargetKimi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Apply(context.Background(), plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	if adapters.protocols[TargetKimi] != "openai-chat" {
+		t.Fatalf("Kimi protocol = %q", adapters.protocols[TargetKimi])
 	}
 }
 

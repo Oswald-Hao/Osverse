@@ -20,6 +20,7 @@ const (
 	TargetCodex    = "codex-cli"
 	TargetOpenCode = "opencode-cli"
 	TargetQwen     = "qwen-code"
+	TargetKimi     = "kimi-code"
 	TargetHarness  = "deepseek-harness"
 	configLimit    = 2 * 1024 * 1024
 )
@@ -78,6 +79,8 @@ func (adapters *AdapterSet) TargetPath(target string) (string, error) {
 		return filepath.Join(adapters.home, ".config", "opencode", "opencode.json"), nil
 	case TargetQwen:
 		return filepath.Join(adapters.home, ".qwen", "settings.json"), nil
+	case TargetKimi:
+		return filepath.Join(adapters.home, ".kimi-code", "config.toml"), nil
 	case TargetHarness:
 		if adapters.harnessErr != nil {
 			return "", adapters.harnessErr
@@ -152,6 +155,8 @@ func (adapters *AdapterSet) Apply(ctx context.Context, target string, input Inpu
 		next, err = mergeOpenCodeConfig(before, validated)
 	case TargetQwen:
 		next, err = mergeQwenConfig(before, validated)
+	case TargetKimi:
+		next, err = mergeKimiConfig(before, validated)
 	default:
 		err = ErrUnknownTarget
 	}
@@ -365,6 +370,107 @@ func ownedQwenProvider(value any) bool {
 	return nameOK && strings.HasPrefix(name, "Osverse: ") && idOK && baseOK
 }
 
+const (
+	kimiBlockStart = "# >>> osverse managed kimi provider >>>"
+	kimiBlockEnd   = "# <<< osverse managed kimi provider <<<"
+)
+
+var kimiDefaultModelAssignment = regexp.MustCompile(`^default_model[ \t]*=`)
+
+func mergeKimiConfig(raw []byte, input Input) ([]byte, error) {
+	if len(raw) > configLimit || bytes.IndexByte(raw, 0) >= 0 {
+		return nil, ErrConfigConflict
+	}
+	providerType := ""
+	switch input.Protocol {
+	case "openai-chat":
+		providerType = "openai"
+	case "openai-responses":
+		providerType = "openai_responses"
+	case "anthropic-messages":
+		providerType = "anthropic"
+	default:
+		return nil, ErrConfigConflict
+	}
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	if strings.Count(text, kimiBlockStart) != strings.Count(text, kimiBlockEnd) || strings.Count(text, kimiBlockStart) > 1 {
+		return nil, ErrConfigConflict
+	}
+	var err error
+	text, err = removeMarkedBlock(text, kimiBlockStart, kimiBlockEnd)
+	if err != nil {
+		return nil, err
+	}
+	for _, pattern := range []string{
+		`(?m)^\s*\[providers\.osverse\]\s*(?:#.*)?$`,
+		`(?m)^\s*\[models\.osverse\]\s*(?:#.*)?$`,
+	} {
+		if regexp.MustCompile(pattern).MatchString(text) {
+			return nil, ErrConfigConflict
+		}
+	}
+	lines := strings.Split(text, "\n")
+	rootEnd := len(lines)
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			rootEnd = index
+			break
+		}
+	}
+	defaultCount := 0
+	for index := 0; index < rootEnd; index++ {
+		trimmed := strings.TrimSpace(lines[index])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || !kimiDefaultModelAssignment.MatchString(trimmed) {
+			continue
+		}
+		defaultCount++
+		if defaultCount > 1 {
+			return nil, ErrConfigConflict
+		}
+		lines[index] = `default_model = "osverse" # osverse-managed-profile`
+	}
+	if defaultCount == 0 {
+		combined := make([]string, 0, len(lines)+1)
+		combined = append(combined, lines[:rootEnd]...)
+		combined = append(combined, `default_model = "osverse" # osverse-managed-profile`)
+		combined = append(combined, lines[rootEnd:]...)
+		lines = combined
+	}
+	baseURL := kimiProviderBaseURL(input.BaseURL, input.Protocol)
+	block := strings.Join([]string{
+		kimiBlockStart,
+		"[providers.osverse]",
+		"type = " + strconv.Quote(providerType),
+		"base_url = " + strconv.Quote(baseURL),
+		"api_key = " + strconv.Quote(input.APIKey),
+		"",
+		"[models.osverse]",
+		`provider = "osverse"`,
+		"model = " + strconv.Quote(input.Model),
+		"display_name = " + strconv.Quote("Osverse: "+input.Name),
+		"max_context_size = 131072",
+		kimiBlockEnd,
+	}, "\n")
+	next := strings.TrimRight(strings.Join(lines, "\n"), "\n")
+	if next != "" {
+		next += "\n\n"
+	}
+	next += block + "\n"
+	if len(next) > configLimit {
+		return nil, ErrConfigConflict
+	}
+	return []byte(next), nil
+}
+
+func kimiProviderBaseURL(baseURL, protocol string) string {
+	switch protocol {
+	case "openai-chat", "openai-responses":
+		return openAIBaseURL(baseURL)
+	default:
+		return strings.TrimRight(baseURL, "/")
+	}
+}
+
 func jsonObjectField(root map[string]any, key string) (map[string]any, error) {
 	value, ok := root[key].(map[string]any)
 	if !ok {
@@ -542,6 +648,11 @@ func verifyWrittenConfig(target, path string) error {
 	switch target {
 	case TargetClaude, TargetOpenCode, TargetQwen:
 		_, err = decodeJSONObject(raw)
+	case TargetKimi:
+		text := string(raw)
+		if strings.Count(text, kimiBlockStart) != 1 || strings.Count(text, "[providers.osverse]") != 1 || strings.Count(text, "[models.osverse]") != 1 {
+			err = ErrConfigConflict
+		}
 	case TargetCodex:
 		text := string(raw)
 		if strings.Count(text, codexBlockStart) != 1 || strings.Count(text, "[model_providers.osverse]") != 1 {
