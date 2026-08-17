@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your local control center for AI development tools.</strong><br>
-  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, DeepSeek Harness, Qwen Code, desktop apps, and third-party API profiles from one place.
+  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, DeepSeek Harness, Qwen Code, GitHub Copilot CLI, desktop apps, and third-party API profiles from one place.
 </p>
 
 <p align="center">
@@ -35,9 +35,10 @@
 
 Moving to a new machine should not mean spending hours rediscovering runtimes, proxy settings, CLI locations, and API configuration formats. Osverse turns that setup work into an inspectable desktop workflow while preserving tools you already installed.
 
-- **Find what is already there.** Claude Code, Codex CLI, OpenCode, and Qwen Code are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
+- **Find what is already there.** Claude Code, Codex CLI, OpenCode, Qwen Code, and GitHub Copilot CLI are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
 - **Run DeepSeek Harness without environment setup.** Osverse pins the official Harness and Node.js versions, verifies every locked dependency, runs no npm lifecycle scripts, and launches the official web workspace.
 - **Run Qwen Code without a system Node.js.** Osverse installs the official standalone archive with pinned version, length, and SHA-256, then uses its private Node runtime. Confirmed OpenAI-compatible API profiles can be applied directly.
+- **Install GitHub Copilot CLI from verified artifacts.** Osverse pins GitHub's official standalone package and disables upstream self-update so managed files cannot bypass Osverse's release verification. Authentication and subscription remain owned by GitHub Copilot.
 - **Control every real installation.** Multiple locations are shown separately. Before launch, the backend rescans and verifies file identity instead of executing an arbitrary frontend-provided path.
 - **Install without surrendering control.** Every supported CLI install starts with a backend-generated plan, verifies exact size and SHA-256, switches versions atomically, and can recover after interruption.
 - **Preview and recover removals.** User and Osverse-managed files go to the desktop Trash, while system packages use a fixed privileged action. Config, credentials, and sessions are preserved by default.
@@ -50,7 +51,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 
 | Area | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
-| Core CLI | Claude Code, Codex CLI, OpenCode CLI, DeepSeek Harness, and Qwen Code detection plus transactional install/update | Same; Harness and Qwen Code use verified private runtimes |
+| Core CLI | Claude Code, Codex CLI, OpenCode CLI, DeepSeek Harness, Qwen Code, and GitHub Copilot CLI detection plus transactional install/update | Same; Harness, Qwen Code, and Copilot CLI use verified private runtimes |
 | Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, ChatGPT Desktop, and Codex Desktop (detected separately) |
 | API tools | CC Switch, Cockpit Tools | CC Switch, Cockpit Tools |
 | API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
@@ -78,6 +79,12 @@ Harness is currently an upstream Developer Preview. Osverse pins the tested cont
 Select **Qwen Code** under Core CLI and confirm the install plan. Osverse downloads the official `v0.21.13` standalone archive, which includes Node.js and target-native modules, so it never changes a global Node/npm installation. Official metadata is pinned for Linux x64/arm64, Windows x64, and macOS x64/arm64; installation is enabled in the current Linux x64 and Windows x64 apps.
 
 After an API profile confirms OpenAI Chat Completions compatibility, it can also be applied to Qwen Code. Osverse backs up and atomically updates `~/.qwen/settings.json`, adds a dedicated `osverse` provider with the exact model ID and Base URL, selects that exact pair through Qwen's built-in `openai` protocol, and preserves unrelated providers. See the [Qwen Code integration guide](docs/guides/qwen-code.md).
+
+### GitHub Copilot CLI
+
+Select **GitHub Copilot CLI** under Core CLI to install the official `v1.0.80` standalone package. Official URL, exact length, and SHA-256 metadata are pinned for Linux x64/arm64, Windows x64, and macOS x64/arm64; installation is currently enabled in the Linux x64 and Windows x64 apps. The managed command always adds `--no-auto-update`, so runtime upgrades arrive only through a tested Osverse release.
+
+Follow the prompt on first launch or run `copilot login` in a terminal. An active GitHub Copilot subscription is required. Copilot CLI does not consume Osverse's generic third-party API profiles, so no profile key, Base URL, or model is written into its configuration. See the [GitHub Copilot CLI integration guide](docs/guides/github-copilot-cli.md).
 
 ## Install
 
@@ -127,7 +134,7 @@ Osverse is deliberately narrower than a generic package manager.
 - Launch and removal rescan and verify target identity; the frontend cannot supply an arbitrary executable path or system package name.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
-- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. Qwen Code extraction also rejects traversal, links, device entries, and expansion bombs. DeepSeek Harness additionally verifies every npm tarball against an embedded lockfile with SHA-512 and executes no package install scripts.
+- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. Qwen Code and Copilot CLI extraction reject traversal, links, special entries, and unexpected archive layouts. DeepSeek Harness additionally verifies every npm tarball against an embedded lockfile with SHA-512 and executes no package install scripts.
 - Osverse self-update accepts only semantic versions and platform artifacts from the fixed official repository and release-manifest path. Stable builds ignore prereleases; prerelease builds can advance to newer prereleases or stable releases.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.
@@ -220,4 +227,4 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), open a
 
 Apache-2.0. See [LICENSE](LICENSE).
 
-Osverse is an independent project. Claude, Codex, OpenAI, OpenCode, DeepSeek, Qwen, and other product names belong to their respective owners; inclusion indicates interoperability, not endorsement.
+Osverse is an independent project. Claude, Codex, OpenAI, OpenCode, DeepSeek, Qwen, GitHub, Copilot, and other product names belong to their respective owners; inclusion indicates interoperability, not endorsement. A copy of the upstream Copilot CLI license is installed with every managed runtime.

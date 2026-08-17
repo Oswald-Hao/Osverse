@@ -34,17 +34,18 @@ type componentRule struct {
 }
 
 var componentRules = map[string]componentRule{
-	"claude-code":      {category: "Core CLI", command: "claude"},
-	"codex-cli":        {category: "Core CLI", command: "codex"},
-	"opencode-cli":     {category: "Core CLI", command: "opencode"},
-	"deepseek-harness": {category: "Core CLI", command: "dsh"},
-	"qwen-code":        {category: "Core CLI", command: "qwen"},
-	"claude-desktop":   {category: "Desktop Applications", uninstallKind: "winget", uninstallID: "Anthropic.Claude"},
-	"chatgpt-desktop":  {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9NT1R1C2HH7J"},
-	"codex-desktop":    {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},
-	"opencode-desktop": {category: "Desktop Applications", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\OpenCode\Uninstall OpenCode.exe`, `AppData\Local\Programs\opencode\Uninstall OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\Uninstall OpenCode.exe`}, uninstallArgs: []string{"/S"}},
-	"cc-switch":        {category: "Management Tools", uninstallKind: "msi", uninstallID: "{634D5E13-C751-4997-A707-B6B27B354D77}"},
-	"cockpit-tools":    {category: "Management Tools", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\Cockpit Tools\uninstall.exe`, `AppData\Local\Cockpit Tools\uninstall.exe`, `AppData\Local\Programs\Cockpit Tools\Uninstall Cockpit Tools.exe`}, uninstallArgs: []string{"/S"}},
+	"claude-code":        {category: "Core CLI", command: "claude"},
+	"codex-cli":          {category: "Core CLI", command: "codex"},
+	"opencode-cli":       {category: "Core CLI", command: "opencode"},
+	"deepseek-harness":   {category: "Core CLI", command: "dsh"},
+	"qwen-code":          {category: "Core CLI", command: "qwen"},
+	"github-copilot-cli": {category: "Core CLI", command: "copilot"},
+	"claude-desktop":     {category: "Desktop Applications", uninstallKind: "winget", uninstallID: "Anthropic.Claude"},
+	"chatgpt-desktop":    {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9NT1R1C2HH7J"},
+	"codex-desktop":      {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},
+	"opencode-desktop":   {category: "Desktop Applications", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\OpenCode\Uninstall OpenCode.exe`, `AppData\Local\Programs\opencode\Uninstall OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\Uninstall OpenCode.exe`}, uninstallArgs: []string{"/S"}},
+	"cc-switch":          {category: "Management Tools", uninstallKind: "msi", uninstallID: "{634D5E13-C751-4997-A707-B6B27B354D77}"},
+	"cockpit-tools":      {category: "Management Tools", uninstallKind: "exe", uninstallerPaths: []string{`AppData\Local\Programs\Cockpit Tools\uninstall.exe`, `AppData\Local\Cockpit Tools\uninstall.exe`, `AppData\Local\Programs\Cockpit Tools\Uninstall Cockpit Tools.exe`}, uninstallArgs: []string{"/S"}},
 }
 
 type capturedPath struct {

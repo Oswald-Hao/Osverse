@@ -139,6 +139,8 @@ jobs:
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/harnessinstall-darwin-arm64.test ./internal/harnessinstall
           GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/qweninstall-darwin-amd64.test ./internal/qweninstall
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/qweninstall-darwin-arm64.test ./internal/qweninstall
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/copilotinstall-darwin-amd64.test ./internal/copilotinstall
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/copilotinstall-darwin-arm64.test ./internal/copilotinstall
 
   frontend:
     name: Frontend tests and build

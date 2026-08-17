@@ -421,6 +421,45 @@ func TestQwenInstallPlansAndTasksStayOnQwenManager(t *testing.T) {
 	}
 }
 
+func TestCopilotInstallPlansAndTasksStayOnCopilotManager(t *testing.T) {
+	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("Copilot plan reached generic CLI manager")
+		return install.Plan{}, nil
+	}}}
+	copilot := &fakeInstallManager{}
+	copilot.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "github-copilot-cli" {
+			t.Fatalf("Copilot CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "copilot-plan", ComponentID: id}, nil
+	}
+	copilot.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		return install.Task{ID: "copilot-task", PlanID: id, ComponentID: "github-copilot-cli"}, nil
+	}
+	copilot.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "github-copilot-cli", Phase: "completed"}, nil
+	}
+	copilot.cancel = func(string) error { return nil }
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.copilotPlanner, app.copilotExecutor = copilot, copilot
+	plan, err := app.CreateInstallPlan("github-copilot-cli")
+	if err != nil || app.planOwners[plan.ID] != "copilot" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner=%q", plan, err, app.planOwners[plan.ID])
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "copilot-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if current, err := app.GetInstallTask(task.ID); err != nil || current.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", current, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
 	cli := &fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
 		t.Fatal("system plan reached CLI manager")
