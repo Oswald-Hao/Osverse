@@ -22,7 +22,7 @@ GitHub Copilot CLI 使用 GitHub 自己的认证与服务协议，不是一个�
 ### 更新与安全边界
 
 - Linux x64/arm64、Windows x64、macOS x64/arm64 的官方制品 URL、字节数与 SHA-256 固定在后端。
-- 下载拒绝重定向；归档必须只含一个固定名称的普通可执行文件。
+- 下载只允许 GitHub 所需的一次官方 HTTPS 资产跳转；归档必须只含一个固定名称的普通可执行文件。
 - 解压后必须精确返回 `GitHub Copilot CLI 1.0.80.`，否则不会激活。
 - Osverse 管理的命令始终加入 `--no-auto-update`。升级由新的 Osverse 版本提供并重新经过回归测试。
 - 如果电脑已有外部 `copilot`，Osverse 会检测并展示它，不要求迁移；也不会覆盖不属于 Osverse 的同名命令。
@@ -50,7 +50,7 @@ Copilot CLI uses GitHub authentication and service protocols. It is not a generi
 ### Update and security boundary
 
 - Official artifact URL, byte length, and SHA-256 are pinned for Linux x64/arm64, Windows x64, and macOS x64/arm64.
-- Redirects are rejected, and an archive must contain exactly one regular executable with the fixed platform name.
+- Only GitHub's required single HTTPS handoff to its dedicated release-asset host is accepted; an archive must contain exactly one regular executable with the fixed platform name.
 - The extracted executable must report the exact pinned version before activation.
 - The managed command always adds `--no-auto-update`; upgrades arrive with a newly tested Osverse release.
 - Existing external `copilot` commands are discovered in place and are never silently overwritten.

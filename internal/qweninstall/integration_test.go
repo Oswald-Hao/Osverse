@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +48,72 @@ func TestOfficialStandaloneArchiveFromVerifiedCache(t *testing.T) {
 	}
 	if err := verifyQwenPayload(ctx, destination, "linux", "amd64"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOfficialStandaloneDownloadThroughGitHubRedirect(t *testing.T) {
+	if os.Getenv("OSVERSE_QWEN_LIVE_DOWNLOAD") != "1" {
+		t.Skip("set OSVERSE_QWEN_LIVE_DOWNLOAD=1 to exercise the official GitHub download")
+	}
+	item, err := artifactForTarget("linux/amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if err := downloadArtifact(ctx, http.DefaultClient, item, filepath.Join(t.TempDir(), "qwen.tar.gz"), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagerInstallsFromOfficialGitHubRelease(t *testing.T) {
+	if os.Getenv("OSVERSE_QWEN_LIVE_INSTALL") != "1" {
+		t.Skip("set OSVERSE_QWEN_LIVE_INSTALL=1 to exercise the complete official install")
+	}
+	home := t.TempDir()
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", "/bin/sh")
+	plan, err := manager.CreatePlan(context.Background(), componentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installContext, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	protocol, port := proxyservice.Protocol(""), 0
+	if rawPort := os.Getenv("OSVERSE_QWEN_LIVE_PROXY_PORT"); rawPort != "" {
+		port, err = strconv.Atoi(rawPort)
+		if err != nil {
+			t.Fatal(err)
+		}
+		protocol = proxyservice.ProtocolHTTP
+	}
+	task, err := manager.Start(installContext, plan.ID, protocol, port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		current, taskErr := manager.Task(task.ID)
+		if taskErr != nil {
+			t.Fatal(taskErr)
+		}
+		if current.Phase == "completed" {
+			break
+		}
+		if current.Phase == "failed" || current.Phase == "canceled" || time.Now().After(deadline) {
+			t.Fatalf("live install task = %#v", current)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	shim := managedPathsFor(home, "linux", qwenVersion).shimPath
+	command := exec.Command(shim, "--version")
+	command.Env = append(os.Environ(), "CI=1", "NO_COLOR=1")
+	output, err := command.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(output)) != qwenVersion {
+		t.Fatalf("installed qwen --version = %q, %v", output, err)
 	}
 }
 
