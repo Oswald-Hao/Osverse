@@ -29,6 +29,7 @@
 
 - [x] Claude Code、Codex CLI、OpenCode CLI 三个既有核心 CLI 都先展示固定计划，再安装到 `~/.local/share/osverse/tools`
 - [x] DeepSeek Harness 从嵌入式 lockfile 重建完整运行时，不执行 npm 生命周期脚本；`dsh --version` 与 `dsh web` 真实启动通过
+- [x] Qwen Code 与 DeepSeek Harness 在最终激活失败时删除本次新运行时、保留已验证的已有版本，并在自动回滚失败时明确提示残留；证据：PR #39，run `31999109765`
 - [x] GitHub Copilot CLI 官方 Linux tar 完成 SHA-256、结构、真实版本执行、Manager 安装与 wrapper 启动回归；激活失败会移除本次新写入的运行时
 - [x] 取消、下载截断、SHA 不匹配、版本校验失败时当前命令不改变
 - [x] 进程在链接/配置提交中断后，下次启动从权限为 `0600` 的事务日志恢复旧状态

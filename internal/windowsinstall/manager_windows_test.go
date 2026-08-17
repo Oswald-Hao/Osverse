@@ -4,6 +4,8 @@ package windowsinstall
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -79,5 +81,114 @@ func TestManagedShimEscapesPercentInUserPath(t *testing.T) {
 		!strings.HasPrefix(content, shimMarkerPrefix+"claude-code\r\n") ||
 		!validManagedShim([]byte(content), "claude-code", managedRoot) {
 		t.Fatalf("managed shim = %q", content)
+	}
+}
+
+func TestWindowsActivationFailureRollsBackNewPayload(t *testing.T) {
+	home := t.TempDir()
+	payload := filepath.Join(home, "payload")
+	destination := filepath.Join(home, "tools", "codex-cli", "0.147.0")
+	marker := []byte("verified artifact\r\n")
+	if err := os.MkdirAll(payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(payload, ".osverse-artifact"), marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("activate shim")
+	err := commitAndActivateWindowsPayload(home, payload, destination, marker, func() error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v", err)
+	}
+	if _, statErr := os.Lstat(destination); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("new payload remains after failed activation: %v", statErr)
+	}
+}
+
+func TestWindowsActivationFailurePreservesExistingPayload(t *testing.T) {
+	home := t.TempDir()
+	destination := filepath.Join(home, "tools", "codex-cli", "0.147.0")
+	marker := []byte("verified artifact\r\n")
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, ".osverse-artifact"), marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload")
+	if err := os.Mkdir(payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(payload, ".osverse-artifact"), marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("activate path")
+	err := commitAndActivateWindowsPayload(home, payload, destination, marker, func() error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v", err)
+	}
+	if content, readErr := os.ReadFile(filepath.Join(destination, ".osverse-artifact")); readErr != nil || string(content) != string(marker) {
+		t.Fatalf("existing payload changed: content=%q error=%v", content, readErr)
+	}
+}
+
+func TestWindowsRollbackFailureIsReportedWithoutFalseNoInstallClaim(t *testing.T) {
+	home := t.TempDir()
+	payload := filepath.Join(home, "payload")
+	destination := filepath.Join(home, "tools", "codex-cli", "0.147.0")
+	marker := []byte("verified artifact\r\n")
+	if err := os.MkdirAll(payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(payload, ".osverse-artifact"), marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := commitAndActivateWindowsPayload(home, payload, destination, marker, func() error {
+		if writeErr := os.WriteFile(filepath.Join(destination, ".osverse-artifact"), []byte("tampered"), 0o600); writeErr != nil {
+			return writeErr
+		}
+		return errVersion
+	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("error = %v", err)
+	}
+	message := publicFailure(err)
+	if !strings.Contains(message, "回滚失败") || strings.Contains(message, "未安装") {
+		t.Fatalf("public failure = %q", message)
+	}
+}
+
+func TestWindowsExistingPayloadMustMatchVerifiedStagingTree(t *testing.T) {
+	home := t.TempDir()
+	payload := filepath.Join(home, "payload")
+	destination := filepath.Join(home, "tools", "codex-cli", "0.147.0")
+	marker := []byte("verified artifact\r\n")
+	for _, root := range []string{payload, destination} {
+		if err := os.MkdirAll(filepath.Join(root, "package"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".osverse-artifact"), marker, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(payload, "package", "codex.exe"), []byte("verified"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "package", "codex.exe"), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	activated := false
+	err := commitAndActivateWindowsPayload(home, payload, destination, marker, func() error {
+		activated = true
+		return nil
+	})
+	if err == nil || activated {
+		t.Fatalf("error = %v, activated = %t", err, activated)
 	}
 }

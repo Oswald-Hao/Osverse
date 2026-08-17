@@ -255,6 +255,8 @@ func publicFailure(err error) string {
 		return "dsh 命令入口已被其他程序占用，未修改原安装"
 	case errors.Is(err, errHashMismatch):
 		return "Harness 下载文件校验失败，未安装"
+	case errors.Is(err, errRollback):
+		return "Harness 安装未完成且回滚失败，请刷新扫描确认残留状态"
 	case errors.Is(err, errVersion):
 		return "Harness 版本验证失败，未安装"
 	case errors.Is(err, errUnsafeArchive):

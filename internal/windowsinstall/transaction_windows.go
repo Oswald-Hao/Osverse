@@ -40,6 +40,7 @@ var (
 	errUnsafeArchive = errors.New("unsafe Windows artifact archive")
 	errVersion       = errors.New("installed Windows version verification failed")
 	errExternalShim  = errors.New("external Windows command entry exists")
+	errRollback      = errors.New("Windows installation rollback failed")
 )
 
 func (manager *Manager) execute(ctx context.Context, stored storedPlan, protocol proxyservice.Protocol, port int, progress func(progressUpdate)) error {
@@ -92,41 +93,53 @@ func (manager *Manager) execute(ctx context.Context, stored storedPlan, protocol
 		return err
 	}
 	finalRoot := filepath.Join(toolRoot, item.Version)
-	if err := commitPayload(payload, finalRoot, marker); err != nil {
-		return err
-	}
-	finalBinary := filepath.Join(finalRoot, filepath.FromSlash(item.BinaryPath))
-	binRoot, err := ensureManagedDirectories(manager.home, ".local", "bin")
-	if err != nil {
-		return err
-	}
-	if err := rejectConflictingAliases(binRoot, item.Command); err != nil {
-		return err
-	}
-	shimPath := filepath.Join(binRoot, item.Command+".cmd")
-	previous, existed, err := inspectShim(shimPath, item.ID, filepath.Join(root, "tools"))
-	if err != nil {
-		return err
-	}
-	shim := managedShim(item.ID, finalBinary)
-	if err := atomicReplace(shimPath, shim); err != nil {
-		return err
-	}
-	pathChanged, originalPath, originalType, err := ensureUserPath(binRoot)
-	if err != nil {
-		_ = restoreShim(shimPath, previous, existed)
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		if pathChanged {
-			_ = restoreUserPath(originalPath, originalType)
+	return commitAndActivateWindowsPayload(manager.home, payload, finalRoot, marker, func() error {
+		finalBinary := filepath.Join(finalRoot, filepath.FromSlash(item.BinaryPath))
+		binRoot, err := ensureManagedDirectories(manager.home, ".local", "bin")
+		if err != nil {
+			return err
 		}
-		_ = restoreShim(shimPath, previous, existed)
-		return err
-	}
-	broadcastEnvironmentChange()
-	progress(progressUpdate{phase: "committing", progress: 99, message: "命令入口和用户 PATH 已更新"})
-	return nil
+		if err := rejectConflictingAliases(binRoot, item.Command); err != nil {
+			return err
+		}
+		shimPath := filepath.Join(binRoot, item.Command+".cmd")
+		previous, existed, err := inspectShim(shimPath, item.ID, filepath.Join(root, "tools"))
+		if err != nil {
+			return err
+		}
+		shim := managedShim(item.ID, finalBinary)
+		if err := atomicReplace(shimPath, shim); err != nil {
+			if restoreErr := restoreShim(shimPath, previous, existed); restoreErr != nil {
+				return errors.Join(errRollback, err, restoreErr)
+			}
+			return err
+		}
+		pathChanged, originalPath, originalType, err := ensureUserPath(binRoot)
+		if err != nil {
+			if restoreErr := restoreShim(shimPath, previous, existed); restoreErr != nil {
+				return errors.Join(errRollback, err, restoreErr)
+			}
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			var rollbackErrors []error
+			if pathChanged {
+				if restoreErr := restoreUserPath(originalPath, originalType); restoreErr != nil {
+					rollbackErrors = append(rollbackErrors, restoreErr)
+				}
+			}
+			if restoreErr := restoreShim(shimPath, previous, existed); restoreErr != nil {
+				rollbackErrors = append(rollbackErrors, restoreErr)
+			}
+			if len(rollbackErrors) > 0 {
+				return errors.Join(append([]error{errRollback, err}, rollbackErrors...)...)
+			}
+			return err
+		}
+		broadcastEnvironmentChange()
+		progress(progressUpdate{phase: "committing", progress: 99, message: "命令入口和用户 PATH 已更新"})
+		return nil
+	})
 }
 
 func (manager *Manager) download(ctx context.Context, item artifact, protocol proxyservice.Protocol, port int, destination string, progress func(progressUpdate)) error {
@@ -300,22 +313,136 @@ func ensureManagedDirectories(base string, components ...string) (string, error)
 	return current, nil
 }
 
-func commitPayload(payload, destination string, marker []byte) error {
+func commitAndActivateWindowsPayload(home, payload, destination string, marker []byte, activate func() error) error {
+	created, err := commitPayload(payload, destination, marker)
+	if err != nil {
+		return err
+	}
+	if err := activate(); err != nil {
+		if created {
+			if rollbackErr := removeCommittedWindowsPayload(home, destination, marker); rollbackErr != nil {
+				return errors.Join(errRollback, err, rollbackErr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func commitPayload(payload, destination string, marker []byte) (bool, error) {
 	info, err := os.Lstat(destination)
 	if err == nil {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("managed version path is unsafe")
+			return false, errors.New("managed version path is unsafe")
 		}
 		existing, readErr := os.ReadFile(filepath.Join(destination, ".osverse-artifact"))
 		if readErr != nil || !bytes.Equal(existing, marker) {
-			return errors.New("managed version identity mismatch")
+			return false, errors.New("managed version identity mismatch")
 		}
-		return nil
+		matches, compareErr := payloadTreesMatch(payload, destination)
+		if compareErr != nil || !matches {
+			return false, errors.New("managed version contents mismatch")
+		}
+		return false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
-	return os.Rename(payload, destination)
+	if err := os.Rename(payload, destination); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func removeCommittedWindowsPayload(home, destination string, marker []byte) error {
+	home, destination = filepath.Clean(home), filepath.Clean(destination)
+	if !within(home, destination) {
+		return errVersion
+	}
+	info, err := os.Lstat(destination)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errVersion
+	}
+	existing, err := os.ReadFile(filepath.Join(destination, ".osverse-artifact"))
+	if err != nil || !bytes.Equal(existing, marker) {
+		return errVersion
+	}
+	return os.RemoveAll(destination)
+}
+
+type payloadTreeEntry struct {
+	directory bool
+	size      int64
+	hash      [sha256.Size]byte
+}
+
+func payloadTreesMatch(expectedRoot, actualRoot string) (bool, error) {
+	expected, err := readPayloadTree(expectedRoot)
+	if err != nil {
+		return false, err
+	}
+	actual, err := readPayloadTree(actualRoot)
+	if err != nil || len(expected) != len(actual) {
+		return false, err
+	}
+	for name, expectedEntry := range expected {
+		if actualEntry, ok := actual[name]; !ok || actualEntry != expectedEntry {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func readPayloadTree(root string) (map[string]payloadTreeEntry, error) {
+	rootInfo, err := os.Lstat(root)
+	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, errVersion
+	}
+	entries := make(map[string]payloadTreeEntry)
+	err = filepath.Walk(root, func(current string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, current)
+		if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return errVersion
+		}
+		if relative == "." {
+			return nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errVersion
+		}
+		if info.IsDir() {
+			entries[relative] = payloadTreeEntry{directory: true}
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return errVersion
+		}
+		file, err := os.Open(current)
+		if err != nil {
+			return err
+		}
+		openedInfo, err := file.Stat()
+		if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+			_ = file.Close()
+			return errVersion
+		}
+		hash := sha256.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			_ = file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		var digest [sha256.Size]byte
+		copy(digest[:], hash.Sum(nil))
+		entries[relative] = payloadTreeEntry{size: openedInfo.Size(), hash: digest}
+		return nil
+	})
+	return entries, err
 }
 
 func managedShim(componentID, binary string) []byte {
@@ -411,7 +538,11 @@ func atomicReplace(destination string, content []byte) error {
 
 func restoreShim(path string, content []byte, existed bool) error {
 	if !existed {
-		return os.Remove(path)
+		err := os.Remove(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
 	}
 	return atomicReplace(path, content)
 }
@@ -527,6 +658,8 @@ func publicFailure(err error) string {
 		return "命令入口已被其他程序占用，未修改现有安装"
 	case errors.Is(err, errHashMismatch):
 		return "下载文件校验失败，未安装"
+	case errors.Is(err, errRollback):
+		return "安装未完成且回滚失败，请刷新扫描确认残留状态"
 	case errors.Is(err, errVersion):
 		return "工具版本验证失败，未安装"
 	case errors.Is(err, errUnsafeArchive):

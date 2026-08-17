@@ -26,6 +26,7 @@
 - [x] CLI 下载使用固定 URL、精确字节长度和 SHA-256；归档解压拒绝路径穿越。
 - [x] DeepSeek Harness 的 Windows Node ZIP 与全部平台适用 npm 包完成真实制品展开；逐包 SHA-512、Node 大小/SHA-256 和 Windows 命令入口均由自动化校验。
 - [x] GitHub Copilot CLI 官方 Windows ZIP 完成精确长度、SHA-256、单文件结构、安全展开和 PE 文件头验证；安装器通过 Windows 原生测试与交叉编译。
+- [x] Qwen Code、DeepSeek Harness 与通用 Windows CLI 安装在最终激活失败时删除本次新目录、保留已验证的已有版本；回滚失败会明确提示残留，已有 Windows payload 必须与新 staging 完整哈希一致。原生证据：PR #40，run `31999673830`。
 - [x] 桌面安装仅使用固定 WinGet、Store、MSI 或受信任安装器身份。
 - [x] 移除不会删除 API 配置、凭据或登录会话；受管 CLI 移入恢复目录。
 

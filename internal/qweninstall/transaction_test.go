@@ -73,10 +73,45 @@ func TestCommitPayloadRejectsDamagedOrSymlinkedExistingRuntime(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := commitPayload(payload, installed, "linux"); !errors.Is(err, errVersion) {
+			if _, err := commitPayload(payload, installed, "linux"); !errors.Is(err, errVersion) {
 				t.Fatalf("commitPayload() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestActivationFailureRemovesOnlyNewQwenRuntime(t *testing.T) {
+	home := t.TempDir()
+	paths := managedPathsFor(home, "linux", qwenVersion)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := []byte("fixed marker")
+	activationErr := errors.New("injected activation failure")
+	payload := filepath.Join(home, "payload")
+	writeQwenFixture(t, payload, marker)
+	if err := commitAndActivatePayload(home, payload, paths, marker, "linux", func(string, managedPaths, string) error { return activationErr }); !errors.Is(err, activationErr) {
+		t.Fatalf("commitAndActivatePayload() error = %v", err)
+	}
+	if _, err := os.Lstat(paths.finalRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new runtime remains after activation failure: %v", err)
+	}
+
+	payload = filepath.Join(home, "payload-existing")
+	writeQwenFixture(t, payload, marker)
+	writeQwenFixture(t, paths.finalRoot, marker)
+	if err := commitAndActivatePayload(home, payload, paths, marker, "linux", func(string, managedPaths, string) error { return activationErr }); !errors.Is(err, activationErr) {
+		t.Fatalf("existing commitAndActivatePayload() error = %v", err)
+	}
+	if _, err := os.Stat(paths.finalRoot); err != nil {
+		t.Fatalf("pre-existing runtime was removed: %v", err)
+	}
+}
+
+func TestRollbackFailureMessageDoesNotClaimCleanRollback(t *testing.T) {
+	message := publicFailure(errors.Join(errRollback, errVersion))
+	if !strings.Contains(message, "回滚失败") || strings.Contains(message, "未安装") {
+		t.Fatalf("publicFailure() = %q", message)
 	}
 }
 
