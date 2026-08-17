@@ -30,6 +30,10 @@ export function CreateRemovalPlan(arg1) {
   return window['go']['main']['App']['CreateRemovalPlan'](arg1);
 }
 
+export function CurrentProxySelection() {
+  return window['go']['main']['App']['CurrentProxySelection']();
+}
+
 export function DeleteAPIProfile(arg1) {
   return window['go']['main']['App']['DeleteAPIProfile'](arg1);
 }

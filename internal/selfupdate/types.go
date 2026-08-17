@@ -4,7 +4,7 @@ import "time"
 
 const (
 	repository       = "Oswald-Hao/Osverse"
-	releasesEndpoint = "https://api.github.com/repos/" + repository + "/releases?per_page=20"
+	releasesEndpoint = "https://github.com/" + repository + "/releases.atom"
 )
 
 // Info is the frontend-safe result of an update check. PlanID is opaque and

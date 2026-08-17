@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
+	"golang.org/x/net/html"
 )
 
 const (
@@ -30,6 +32,7 @@ const (
 var (
 	ErrNoPlan       = errors.New("update plan is unavailable")
 	ErrInvalidReply = errors.New("invalid update metadata")
+	ErrRateLimited  = errors.New("update service rate limited")
 )
 
 type clientFactory func(proxyservice.Protocol, int) (*http.Client, error)
@@ -73,6 +76,24 @@ type release struct {
 	Assets      []releaseAsset `json:"assets"`
 }
 
+type atomFeed struct {
+	XMLName xml.Name    `xml:"feed"`
+	ID      string      `xml:"id"`
+	Entries []atomEntry `xml:"entry"`
+}
+
+type atomEntry struct {
+	Updated string     `xml:"updated"`
+	Links   []atomLink `xml:"link"`
+	Title   string     `xml:"title"`
+	Content string     `xml:"content"`
+}
+
+type atomLink struct {
+	Rel  string `xml:"rel,attr"`
+	Href string `xml:"href,attr"`
+}
+
 func (service *Service) Check(ctx context.Context, protocol proxyservice.Protocol, port int) (Info, error) {
 	if service == nil {
 		return Info{}, errors.New("update service unavailable")
@@ -93,11 +114,9 @@ func (service *Service) Check(ctx context.Context, protocol proxyservice.Protoco
 	if !ok {
 		return Info{CurrentVersion: service.currentRaw, LatestVersion: service.currentRaw, Platform: service.platform, Message: "当前已是最新版本"}, nil
 	}
-	manifestAsset, ok := findManifestAsset(candidate, candidateVersion)
-	if !ok {
-		return Info{}, ErrInvalidReply
-	}
-	document, err := service.fetchManifest(ctx, client, manifestAsset.BrowserDownloadURL, manifestAsset.Name, candidateVersion, manifestAsset.Size)
+	manifestName := "osverse-" + candidateVersion + "-update-manifest.json"
+	manifestURL := "https://github.com/" + repository + "/releases/download/v" + candidateVersion + "/" + url.PathEscape(manifestName)
+	document, err := service.fetchManifest(ctx, client, manifestURL, manifestName, candidateVersion)
 	if err != nil {
 		return Info{}, err
 	}
@@ -158,19 +177,123 @@ func (service *Service) fetchReleases(ctx context.Context, client *http.Client) 
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	request.Header.Set("Accept", "application/atom+xml")
 	request.Header.Set("User-Agent", "Osverse/"+service.currentRaw)
-	var result []release
-	if err := fetchJSON(client, request, maxReleasesBytes, false, &result); err != nil {
+	response, err := client.Do(request)
+	if err != nil {
 		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, updateStatusError(response)
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maxReleasesBytes+1))
+	if err != nil || len(raw) > maxReleasesBytes {
+		return nil, ErrInvalidReply
+	}
+	var feed atomFeed
+	if err := xml.Unmarshal(raw, &feed); err != nil || feed.XMLName.Space != "http://www.w3.org/2005/Atom" ||
+		feed.ID != "tag:github.com,2008:https://github.com/"+repository+"/releases" || len(feed.Entries) > 100 {
+		return nil, ErrInvalidReply
+	}
+	result := make([]release, 0, len(feed.Entries))
+	for _, entry := range feed.Entries {
+		candidate, ok := releaseFromAtomEntry(entry)
+		if !ok {
+			return nil, ErrInvalidReply
+		}
+		result = append(result, candidate)
 	}
 	return result, nil
 }
 
-func (service *Service) fetchManifest(ctx context.Context, client *http.Client, rawURL, filename, version string, size int64) (manifest, error) {
+func releaseFromAtomEntry(entry atomEntry) (release, bool) {
+	var rawURL string
+	for _, link := range entry.Links {
+		if link.Rel == "alternate" {
+			if rawURL != "" {
+				return release{}, false
+			}
+			rawURL = link.Href
+		}
+	}
+	parsed, err := url.Parse(rawURL)
+	prefix := "/" + repository + "/releases/tag/"
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		!strings.HasPrefix(parsed.EscapedPath(), prefix) {
+		return release{}, false
+	}
+	tag, err := url.PathUnescape(strings.TrimPrefix(parsed.EscapedPath(), prefix))
+	if err != nil || tag == "" || strings.ContainsAny(tag, `/\\`) {
+		return release{}, false
+	}
+	parsedVersion, err := parseVersion(tag)
+	if err != nil {
+		return release{}, false
+	}
+	published, err := time.Parse(time.RFC3339, strings.TrimSpace(entry.Updated))
+	if err != nil {
+		return release{}, false
+	}
+	name := strings.TrimSpace(entry.Title)
+	if name == "" || len(name) > 512 {
+		return release{}, false
+	}
+	return release{
+		TagName: tag, Name: name, Body: atomHTMLText(entry.Content),
+		Prerelease: len(parsedVersion.pre) > 0, PublishedAt: published,
+	}, true
+}
+
+func atomHTMLText(raw string) string {
+	document, err := html.Parse(strings.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	var builder strings.Builder
+	var walk func(*html.Node, bool)
+	walk = func(node *html.Node, ignored bool) {
+		if node.Type == html.ElementNode && (node.Data == "script" || node.Data == "style") {
+			ignored = true
+		}
+		block := node.Type == html.ElementNode && atomBlockElement(node.Data)
+		if block && builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		if node.Type == html.TextNode && !ignored {
+			builder.WriteString(node.Data)
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child, ignored)
+		}
+		if block {
+			builder.WriteByte('\n')
+		}
+	}
+	walk(document, false)
+	lines := strings.Split(builder.String(), "\n")
+	compact := lines[:0]
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			compact = append(compact, line)
+		}
+	}
+	return trimUTF8(strings.Join(compact, "\n"), maxReleaseNotes)
+}
+
+func atomBlockElement(name string) bool {
+	switch name {
+	case "address", "blockquote", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ol", "p", "pre", "table", "tr", "ul":
+		return true
+	default:
+		return false
+	}
+}
+
+func (service *Service) fetchManifest(ctx context.Context, client *http.Client, rawURL, filename, version string) (manifest, error) {
 	expected := "https://github.com/" + repository + "/releases/download/v" + version + "/" + url.PathEscape(filename)
-	if size <= 0 || size > maxManifestBytes || !validReleaseURL(rawURL, filename) || rawURL != expected {
+	if !validReleaseURL(rawURL, filename) || rawURL != expected {
 		return manifest{}, ErrInvalidReply
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -192,7 +315,7 @@ func fetchJSON(client *http.Client, request *http.Request, limit int64, strict b
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("update server returned %d", response.StatusCode)
+		return updateStatusError(response)
 	}
 	reader := &io.LimitedReader{R: response.Body, N: limit + 1}
 	decoder := json.NewDecoder(reader)
@@ -210,6 +333,17 @@ func fetchJSON(client *http.Client, request *http.Request, limit int64, strict b
 		return ErrInvalidReply
 	}
 	return nil
+}
+
+func updateStatusError(response *http.Response) error {
+	if response != nil && (response.StatusCode == http.StatusTooManyRequests ||
+		(response.StatusCode == http.StatusForbidden && response.Header.Get("X-RateLimit-Remaining") == "0")) {
+		return ErrRateLimited
+	}
+	if response == nil {
+		return errors.New("update server unavailable")
+	}
+	return fmt.Errorf("update server returned %d", response.StatusCode)
 }
 
 func selectRelease(releases []release, current version, includePrerelease bool) (release, string, bool) {

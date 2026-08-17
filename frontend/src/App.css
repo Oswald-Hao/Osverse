@@ -332,6 +332,7 @@ button:focus-visible {
 
 .connection-state--proxy { color: #0d6246; background: #dff4eb; }
 .connection-state--probing { color: #185ba8; background: #e4efff; }
+.connection-state--error { color: #843732; background: #fde7e4; }
 
 .proxy-panel__controls {
   justify-content: flex-start;
@@ -388,7 +389,17 @@ button:focus-visible {
 .proxy-attempts strong { font-size: 0.76rem; }
 .proxy-attempts span { color: var(--muted-aa); font-size: 0.68rem; }
 .proxy-attempts p { margin-top: 7px; line-height: 1.45; }
-.proxy-attempts small { display: block; margin-top: 5px; color: var(--success); }
+.proxy-latency {
+  display: inline-block;
+  padding: 3px 7px;
+  margin-top: 7px;
+  font-weight: 800;
+  border-radius: 999px;
+}
+
+.proxy-latency--good { color: #0d6246; background: #dff4eb; }
+.proxy-latency--warning { color: #7d430e; background: #fff0d8; }
+.proxy-latency--bad { color: #843732; background: #fde7e4; }
 
 .system-card {
   display: grid;
@@ -562,6 +573,53 @@ button:focus-visible {
   justify-content: space-between;
   gap: 12px;
 }
+
+.tool-card__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.tool-icon {
+  position: relative;
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: #172234;
+  background: linear-gradient(145deg, #f7f9fc, #e7edf5);
+  border: 1px solid rgba(81, 107, 137, 0.16);
+  border-radius: 13px;
+  box-shadow: 0 8px 18px rgba(46, 76, 110, 0.1);
+}
+
+.tool-icon svg { width: 25px; height: 25px; fill: currentColor; }
+.tool-icon small {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 16px;
+  padding: 2px 4px;
+  color: white;
+  font-size: 0.46rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  background: #26364c;
+  border: 2px solid white;
+  border-radius: 999px;
+}
+
+.tool-icon--anthropic { color: #cf6f4a; background: #f8e8dc; }
+.tool-icon--openai { color: #0c7562; background: #dff4eb; }
+.tool-icon--opencode { color: #fff; background: #111820; }
+.tool-icon--deepseek { color: #416fe8; background: #e6edff; }
+.tool-icon--qwen { color: #6950ef; background: #eeeaff; }
+.tool-icon--copilot { color: #fff; background: linear-gradient(145deg, #353b48, #10141b); }
+.tool-icon--cc-switch { color: #fff; background: linear-gradient(145deg, #7164e8, #c45fe1); }
+.tool-icon--cockpit { color: #fff; background: linear-gradient(145deg, #148a9f, #1d5f91); }
 
 .tool-card__id {
   color: var(--muted-aa);
