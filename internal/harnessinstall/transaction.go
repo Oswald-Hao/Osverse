@@ -3,8 +3,10 @@ package harnessinstall
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +80,7 @@ func (manager *Manager) execute(
 		return err
 	}
 	progress("committing", 92, "正在原子切换 dsh 命令入口")
-	if err := commitHarnessPayload(payload, paths.finalRoot); err != nil {
+	if err := commitHarnessPayload(payload, paths.finalRoot, manager.goos); err != nil {
 		return err
 	}
 	if err := activateHarnessCommand(manager.home, paths, manager.goos); err != nil {
@@ -167,7 +169,7 @@ func verifyHarness(ctx context.Context, payload, goos string) error {
 	return nil
 }
 
-func commitHarnessPayload(payload, destination string) error {
+func commitHarnessPayload(payload, destination, goos string) error {
 	marker, err := os.ReadFile(filepath.Join(payload, ".osverse-harness-runtime"))
 	if err != nil {
 		return err
@@ -181,10 +183,92 @@ func commitHarnessPayload(payload, destination string) error {
 		if readErr != nil || !bytes.Equal(existing, marker) {
 			return errors.New("Harness version identity mismatch")
 		}
+		for _, relative := range criticalHarnessPaths(goos) {
+			equal, compareErr := sameRegularFile(
+				filepath.Join(payload, filepath.FromSlash(relative)),
+				filepath.Join(destination, filepath.FromSlash(relative)),
+			)
+			if compareErr != nil || !equal {
+				return errVersion
+			}
+		}
 		return nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return os.Rename(payload, destination)
+}
+
+func criticalHarnessPaths(goos string) []string {
+	if goos == "windows" {
+		return []string{
+			"runtime/node.exe",
+			"app/node_modules/@deepseek-ai/dsh/lib/bin.js",
+			"bin/dsh.cmd",
+		}
+	}
+	return []string{
+		"runtime/bin/node",
+		"app/node_modules/@deepseek-ai/dsh/lib/bin.js",
+		"bin/dsh",
+	}
+}
+
+func sameRegularFile(expectedPath, actualPath string) (bool, error) {
+	expected, expectedInfo, err := openVerifiedRegular(expectedPath)
+	if err != nil {
+		return false, err
+	}
+	defer expected.Close()
+	actual, actualInfo, err := openVerifiedRegular(actualPath)
+	if err != nil {
+		return false, err
+	}
+	defer actual.Close()
+	if expectedInfo.Size() != actualInfo.Size() {
+		return false, nil
+	}
+	expectedHash, err := fileSHA256(expected)
+	if err != nil {
+		return false, err
+	}
+	actualHash, err := fileSHA256(actual)
+	if err != nil {
+		return false, err
+	}
+	return expectedHash == actualHash, nil
+}
+
+func openVerifiedRegular(path string) (*os.File, os.FileInfo, error) {
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, errVersion
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	fileInfo, err := file.Stat()
+	if err != nil || !fileInfo.Mode().IsRegular() || !os.SameFile(pathInfo, fileInfo) {
+		_ = file.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, errVersion
+	}
+	return file, fileInfo, nil
+}
+
+func fileSHA256(file *os.File) ([sha256.Size]byte, error) {
+	var result [sha256.Size]byte
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return result, err
+	}
+	copy(result[:], hash.Sum(nil))
+	return result, nil
 }

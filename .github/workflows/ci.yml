@@ -133,10 +133,12 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
 
-      - name: Compile Harness installer for future macOS targets
+      - name: Compile portable CLI installers for future macOS targets
         run: |
           GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/harnessinstall-darwin-amd64.test ./internal/harnessinstall
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/harnessinstall-darwin-arm64.test ./internal/harnessinstall
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go test -c -o /tmp/qweninstall-darwin-amd64.test ./internal/qweninstall
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go test -c -o /tmp/qweninstall-darwin-arm64.test ./internal/qweninstall
 
   frontend:
     name: Frontend tests and build

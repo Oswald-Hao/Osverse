@@ -21,6 +21,7 @@ func TestCoreCLISpecsProvidesOrderedFixedCLICommands(t *testing.T) {
 		{id: "codex-cli", name: "Codex CLI", executable: "codex"},
 		{id: "opencode-cli", name: "OpenCode CLI", executable: "opencode"},
 		{id: "deepseek-harness", name: "DeepSeek Harness", executable: "dsh"},
+		{id: "qwen-code", name: "Qwen Code", executable: "qwen"},
 	}
 	if len(specs) != len(want) {
 		t.Fatalf("catalog entries = %d, want %d", len(specs), len(want))
@@ -74,6 +75,8 @@ func TestCoreCLISpecsVersionPatternsParseUpstreamShapedOutput(t *testing.T) {
 		{id: "opencode-cli", output: "opencode v1.0.159-rc.1+build.7", version: "1.0.159-rc.1+build.7"},
 		// DeepSeek Harness exposes the package version through dsh --version.
 		{id: "deepseek-harness", output: "0.1.0-rc.6", version: "0.1.0-rc.6"},
+		{id: "qwen-code", output: "0.21.13", version: "0.21.13"},
+		{id: "qwen-code", output: "Qwen Code v0.21.13", version: "0.21.13"},
 	}
 
 	specs := specsByID(CoreCLISpecs())

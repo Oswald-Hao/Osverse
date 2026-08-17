@@ -84,6 +84,80 @@ func TestOpenCodeAdapterMergesOsverseProviderWithoutReplacingOthers(t *testing.T
 	}
 }
 
+func TestQwenAdapterSelectsAnOpenAICompatibleOsverseProvider(t *testing.T) {
+	home := t.TempDir()
+	adapters, _ := NewAdapterSet(home)
+	path, _ := adapters.TargetPath(TargetQwen)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"theme":"Dracula","modelProviders":{"keep":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapters.Apply(context.Background(), TargetQwen, adapterInput()); err != nil {
+		t.Fatal(err)
+	}
+	root := readJSONMap(t, path)
+	if root["theme"] != "Dracula" {
+		t.Fatalf("unrelated Qwen setting changed: %#v", root)
+	}
+	environment := root["env"].(map[string]any)
+	if environment["OSVERSE_API_KEY"] != "secret-key-1234" {
+		t.Fatalf("Qwen environment = %#v", environment)
+	}
+	providers := root["modelProviders"].(map[string]any)
+	if _, ok := providers["keep"]; !ok {
+		t.Fatal("existing Qwen provider was removed")
+	}
+	osverse := providers["osverse"].([]any)[0].(map[string]any)
+	if osverse["id"] != "model-name" || osverse["envKey"] != "OSVERSE_API_KEY" || osverse["baseUrl"] != "https://api.example/v1" {
+		t.Fatalf("Qwen Osverse provider = %#v", osverse)
+	}
+	if root["providerProtocol"].(map[string]any)["osverse"] != "openai" ||
+		root["security"].(map[string]any)["auth"].(map[string]any)["selectedType"] != "openai" ||
+		root["model"].(map[string]any)["name"] != "model-name" ||
+		root["model"].(map[string]any)["baseUrl"] != "https://api.example/v1" {
+		t.Fatalf("Qwen selection = %#v", root)
+	}
+}
+
+func TestQwenAdapterRejectsAnUnmanagedOsverseProvider(t *testing.T) {
+	raw := []byte(`{
+  "theme": "Dracula",
+  "modelProviders": {
+    "osverse": [{"id":"personal-model","name":"Personal","envKey":"PERSONAL_KEY","baseUrl":"https://personal.example/v1"}]
+  },
+  "providerProtocol": {"osverse":"anthropic"}
+}`)
+	if _, err := mergeQwenConfig(raw, adapterInput()); !errors.Is(err, ErrConfigConflict) {
+		t.Fatalf("unmanaged Qwen provider error = %v", err)
+	}
+}
+
+func TestQwenAdapterCanUpdateItsOwnProvider(t *testing.T) {
+	first, err := mergeQwenConfig(nil, adapterInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := adapterInput()
+	next.Name = "Updated profile"
+	next.Model = "deepseek/deepseek-v4-flash"
+	next.BaseURL = "https://updated.example"
+	second, err := mergeQwenConfig(first, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(second, &root); err != nil {
+		t.Fatal(err)
+	}
+	provider := root["modelProviders"].(map[string]any)["osverse"].([]any)[0].(map[string]any)
+	if provider["id"] != next.Model || provider["baseUrl"] != "https://updated.example/v1" ||
+		root["model"].(map[string]any)["name"] != next.Model {
+		t.Fatalf("updated Qwen config = %#v", root)
+	}
+}
+
 func TestOpenAIAdaptersAppendV1ToAnUnversionedBaseURL(t *testing.T) {
 	home := t.TempDir()
 	adapters, err := NewAdapterSet(home)

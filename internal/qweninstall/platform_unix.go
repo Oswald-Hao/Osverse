@@ -1,6 +1,6 @@
 //go:build !windows
 
-package harnessinstall
+package qweninstall
 
 import (
 	"bytes"
@@ -31,8 +31,8 @@ func managedPathsFor(home, goos, version string) managedPaths {
 	return managedPaths{
 		root: root, stagingRoot: filepath.Join(root, "staging"), toolRoot: toolRoot,
 		finalRoot: finalRoot, currentPath: filepath.Join(toolRoot, "current"),
-		binRoot: filepath.Join(home, ".local", "bin"), shimPath: filepath.Join(home, ".local", "bin", "dsh"),
-		wrapperPath: filepath.Join(finalRoot, "bin", "dsh"),
+		binRoot: filepath.Join(home, ".local", "bin"), shimPath: filepath.Join(home, ".local", "bin", "qwen"),
+		wrapperPath: filepath.Join(finalRoot, "bin", "qwen"),
 	}
 }
 
@@ -52,7 +52,7 @@ func inspectOwnedSymlink(path, root string) (symlinkState, error) {
 		return symlinkState{}, nil
 	}
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
-		return symlinkState{}, errors.New("managed command entry is not an owned symlink")
+		return symlinkState{}, errors.New("managed Qwen Code entry is not an owned symlink")
 	}
 	target, err := os.Readlink(path)
 	if err != nil {
@@ -63,12 +63,12 @@ func inspectOwnedSymlink(path, root string) (symlinkState, error) {
 		resolved = filepath.Join(filepath.Dir(path), resolved)
 	}
 	if !pathWithin(root, filepath.Clean(resolved)) && filepath.Clean(resolved) != filepath.Clean(root) {
-		return symlinkState{}, errors.New("managed command symlink escapes tool root")
+		return symlinkState{}, errors.New("managed Qwen Code symlink escapes tool root")
 	}
 	return symlinkState{exists: true, target: target}, nil
 }
 
-func activateHarnessCommand(home string, paths managedPaths, _ string) (returnErr error) {
+func activateCommand(home string, paths managedPaths, _ string) (returnErr error) {
 	currentBefore, err := inspectOwnedSymlink(paths.currentPath, paths.toolRoot)
 	if err != nil {
 		return err
@@ -91,10 +91,10 @@ func activateHarnessCommand(home string, paths managedPaths, _ string) (returnEr
 		_ = restoreSymlink(paths.shimPath, shimBefore)
 		_ = restoreSymlink(paths.currentPath, currentBefore)
 	}()
-	if err := atomicSymlink(paths.currentPath, harnessVer); err != nil {
+	if err := atomicSymlink(paths.currentPath, qwenVersion); err != nil {
 		return err
 	}
-	target := filepath.Join(paths.toolRoot, "current", "bin", "dsh")
+	target := filepath.Join(paths.toolRoot, "current", "bin", "qwen")
 	if err := atomicSymlink(paths.shimPath, target); err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func activateHarnessCommand(home string, paths managedPaths, _ string) (returnEr
 }
 
 func atomicSymlink(destination, target string) error {
-	directory, err := os.MkdirTemp(filepath.Dir(destination), ".osverse-dsh-link-")
+	directory, err := os.MkdirTemp(filepath.Dir(destination), ".osverse-qwen-link-")
 	if err != nil {
 		return err
 	}
@@ -119,10 +119,7 @@ func atomicSymlink(destination, target string) error {
 	if err := os.Symlink(target, temporary); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, destination); err != nil {
-		return err
-	}
-	return nil
+	return os.Rename(temporary, destination)
 }
 
 func restoreSymlink(path string, state symlinkState) error {
@@ -170,8 +167,7 @@ const (
 )
 
 func updateProfilePATH(state profileState) error {
-	startCount := bytes.Count(state.content, []byte(pathProfileStart))
-	endCount := bytes.Count(state.content, []byte(pathProfileEnd))
+	startCount, endCount := bytes.Count(state.content, []byte(pathProfileStart)), bytes.Count(state.content, []byte(pathProfileEnd))
 	if startCount != endCount || startCount > 1 {
 		return errors.New("shell profile contains a conflicting Osverse block")
 	}
@@ -195,14 +191,14 @@ func confirmProfileState(expected profileState) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return errors.New("shell profile changed during Harness installation")
+		return errors.New("shell profile changed during Qwen Code installation")
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != expected.mode.Perm() || info.Size() != int64(len(expected.content)) {
-		return errors.New("shell profile changed during Harness installation")
+		return errors.New("shell profile changed during Qwen Code installation")
 	}
 	content, err := os.ReadFile(expected.path)
 	if err != nil || !bytes.Equal(content, expected.content) {
-		return errors.New("shell profile changed during Harness installation")
+		return errors.New("shell profile changed during Qwen Code installation")
 	}
 	return nil
 }
