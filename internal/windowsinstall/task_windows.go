@@ -106,6 +106,9 @@ func (manager *Manager) runTask(ctx context.Context, id string, stored storedPla
 }
 
 func (manager *Manager) updateTask(id string, update progressUpdate) {
+	if !install.IsProgressTaskPhase(update.phase) {
+		return
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	state := manager.tasks[id]
@@ -122,5 +125,5 @@ func (manager *Manager) updateTask(id string, update progressUpdate) {
 }
 
 func terminalPhase(phase string) bool {
-	return phase == "completed" || phase == "failed" || phase == "canceled"
+	return install.IsTerminalTaskPhase(phase)
 }

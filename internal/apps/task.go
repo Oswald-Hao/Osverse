@@ -82,6 +82,9 @@ func (manager *Manager) Cancel(id string) error {
 
 func (manager *Manager) run(ctx context.Context, id string, stored storedPlan, protocol proxyservice.Protocol, port int) {
 	err := manager.execute(ctx, stored.item, protocol, port, func(update progressUpdate) {
+		if !install.IsProgressTaskPhase(update.phase) {
+			return
+		}
 		manager.mu.Lock()
 		if state := manager.tasks[id]; state != nil && !terminal(state.public.Phase) {
 			if update.value < state.public.Progress {
@@ -114,7 +117,7 @@ func (manager *Manager) run(ctx context.Context, id string, stored storedPlan, p
 }
 
 func terminal(phase string) bool {
-	return phase == "completed" || phase == "failed" || phase == "canceled"
+	return install.IsTerminalTaskPhase(phase)
 }
 
 func publicFailure(err error) string {
