@@ -135,6 +135,7 @@ Osverse is deliberately narrower than a generic package manager.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
 - Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. Qwen Code and Copilot CLI extraction reject traversal, links, special entries, and unexpected archive layouts. DeepSeek Harness additionally verifies every npm tarball against an embedded lockfile with SHA-512 and executes no package install scripts.
+- Runtime commit, command entry activation, and PATH updates form one final installation transaction. Failures remove only a newly written version, preserve a reverified existing version, and explicitly report residue that could not be cleaned automatically.
 - Osverse self-update accepts only semantic versions and platform artifacts from the fixed official repository and release-manifest path. Stable builds ignore prereleases; prerelease builds can advance to newer prereleases or stable releases.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.
