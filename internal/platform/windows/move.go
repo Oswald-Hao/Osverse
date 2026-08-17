@@ -42,7 +42,11 @@ func OpenMovableEvidence(path string) (*MovableEvidence, error) {
 		return nil, errors.New("movable path is a reparse point")
 	}
 	finalPath, err := finalPathForHandle(handle)
-	if err != nil || !sameWindowsPath(path, finalPath) {
+	if err != nil {
+		return nil, errors.New("movable path identity unavailable")
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil || !sameWindowsPath(resolvedPath, finalPath) {
 		return nil, errors.New("movable path identity unavailable")
 	}
 	closeOnError = false

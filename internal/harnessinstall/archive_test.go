@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -45,7 +46,7 @@ func TestExtractPackageWritesOnlyPackagePayload(t *testing.T) {
 		t.Fatalf("content = %q, err = %v", content, err)
 	}
 	info, err := os.Stat(filepath.Join(destination, "lib", "bin.js"))
-	if err != nil || info.Mode().Perm()&0o100 == 0 {
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
 		t.Fatalf("executable mode was not preserved: %v, %v", info, err)
 	}
 }
