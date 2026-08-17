@@ -19,6 +19,7 @@
 - Release 标签必须指向 `main` 历史中的提交。
 - 不允许绕过 PR、必需检查、未解决对话或管理员分支保护；不允许强推或删除保护分支。
 - 可以在所有必需检查通过后启用 PR 自动合并，不要求维护者重复手动点击。
+- Dependabot 等自动化工具也必须遵守聚焦分支规则：默认每个直接依赖升级创建一个独立 PR；不得用通配分组把无关依赖或多个跨主版本升级捆绑在一起。
 
 GitHub 已对三个保护分支启用严格状态检查、必须通过 PR、管理员同样受限、禁止强推和删除、必须解决对话。仓库内 `Validate promotion path` 检查继续验证 PR 的来源与目标关系。
 
@@ -41,5 +42,6 @@ fix/feature/test/docs/maintenance branch → dev → beta → main → release t
 - Release tags must point to commits in `main` history.
 - Pull requests, required checks, resolved conversations, and administrator-enforced branch protection may not be bypassed. Force pushes and deletion are disabled.
 - Pull-request auto-merge may be enabled after all required checks pass; a redundant manual merge click is not required.
+- Automation such as Dependabot follows the same focused-branch rule: each direct dependency upgrade gets its own pull request by default, and wildcard groups may not bundle unrelated dependencies or multiple major-version upgrades.
 
 GitHub protection currently enforces strict status checks, pull requests, conversation resolution, administrator inclusion, and force-push/deletion denial on all three branches. The repository's `Validate promotion path` check additionally enforces the permitted source and target relationship.
