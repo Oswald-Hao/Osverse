@@ -36,6 +36,7 @@ type rawLockedPackage struct {
 	Integrity    string            `json:"integrity"`
 	OS           []string          `json:"os"`
 	CPU          []string          `json:"cpu"`
+	LibC         []string          `json:"libc"`
 	Optional     bool              `json:"optional"`
 	Dependencies map[string]string `json:"dependencies"`
 }
@@ -47,6 +48,7 @@ type lockedPackage struct {
 	Integrity []byte
 	OS        []string
 	CPU       []string
+	LibC      []string
 	Optional  bool
 }
 
@@ -102,6 +104,7 @@ func builtInLock() (packageLock, error) {
 			Path: packagePath, Version: item.Version, URL: item.Resolved,
 			Integrity: digest, OS: append([]string(nil), item.OS...),
 			CPU: append([]string(nil), item.CPU...), Optional: item.Optional,
+			LibC: append([]string(nil), item.LibC...),
 		})
 	}
 	return result, nil
@@ -120,7 +123,11 @@ func packagesForTarget(lock packageLock, goos, goarch string) ([]lockedPackage, 
 	}
 	result := make([]lockedPackage, 0, len(lock.Packages))
 	for _, item := range lock.Packages {
-		if targetAllowed(item.OS, item.CPU, npmOS, npmArch) {
+		libc := ""
+		if goos == "linux" {
+			libc = "glibc"
+		}
+		if targetAllowed(item.OS, item.CPU, item.LibC, npmOS, npmArch, libc) {
 			result = append(result, item)
 		}
 	}
@@ -136,8 +143,8 @@ func npmTarget(goos, goarch string) (string, string, error) {
 	return osName, archName, nil
 }
 
-func targetAllowed(osSelectors, cpuSelectors []string, osName, archName string) bool {
-	return selectorAllows(osSelectors, osName) && selectorAllows(cpuSelectors, archName)
+func targetAllowed(osSelectors, cpuSelectors, libcSelectors []string, osName, archName, libcName string) bool {
+	return selectorAllows(osSelectors, osName) && selectorAllows(cpuSelectors, archName) && selectorAllows(libcSelectors, libcName)
 }
 
 func selectorAllows(selectors []string, value string) bool {

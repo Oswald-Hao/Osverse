@@ -27,7 +27,7 @@ func TestBuiltInLockIsClosedAndPlatformFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range filtered {
-		if !targetAllowed(item.OS, item.CPU, "win32", "x64") {
+		if !targetAllowed(item.OS, item.CPU, item.LibC, "win32", "x64", "") {
 			t.Fatalf("incompatible package survived: %s", item.Path)
 		}
 	}
@@ -60,13 +60,16 @@ func TestRuntimeCatalogCoversReleasedTargets(t *testing.T) {
 }
 
 func TestTargetAllowedHandlesPositiveAndNegativeSelectors(t *testing.T) {
-	if !targetAllowed([]string{"linux", "darwin"}, []string{"x64"}, "linux", "x64") {
+	if !targetAllowed([]string{"linux", "darwin"}, []string{"x64"}, nil, "linux", "x64", "glibc") {
 		t.Fatal("positive selector rejected")
 	}
-	if targetAllowed([]string{"!win32"}, nil, "win32", "x64") {
+	if targetAllowed([]string{"!win32"}, nil, nil, "win32", "x64", "") {
 		t.Fatal("negative selector accepted")
 	}
-	if !targetAllowed([]string{"!win32"}, nil, "linux", "x64") {
+	if !targetAllowed([]string{"!win32"}, nil, nil, "linux", "x64", "glibc") {
 		t.Fatal("unrelated negative selector rejected")
+	}
+	if targetAllowed([]string{"linux"}, []string{"x64"}, []string{"musl"}, "linux", "x64", "glibc") {
+		t.Fatal("musl package accepted for glibc release")
 	}
 }

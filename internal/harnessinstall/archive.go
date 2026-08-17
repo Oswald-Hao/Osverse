@@ -28,6 +28,7 @@ func extractNPMPackage(ctx context.Context, source io.Reader, destination string
 	reader := tar.NewReader(gz)
 	var expanded int64
 	entries := 0
+	rootPrefix := ""
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -40,16 +41,37 @@ func extractNPMPackage(ctx context.Context, source io.Reader, destination string
 			return fmt.Errorf("%w: tar", errUnsafeArchive)
 		}
 		entries++
-		if entries > maxArchiveEntries || !strings.HasPrefix(header.Name, "package/") {
+		if entries > maxArchiveEntries {
 			return errUnsafeArchive
 		}
-		name := strings.TrimPrefix(header.Name, "package/")
+		if rootPrefix == "" {
+			separator := strings.IndexByte(header.Name, '/')
+			if separator < 0 && header.Typeflag == tar.TypeDir && safeArchivePath(header.Name) {
+				rootPrefix = header.Name + "/"
+				continue
+			}
+			if separator <= 0 {
+				return errUnsafeArchive
+			}
+			rootPrefix = header.Name[:separator+1]
+			if !safeArchivePath(strings.TrimSuffix(rootPrefix, "/")) {
+				return errUnsafeArchive
+			}
+		}
+		if header.Name == strings.TrimSuffix(rootPrefix, "/") && header.Typeflag == tar.TypeDir {
+			continue
+		}
+		if !strings.HasPrefix(header.Name, rootPrefix) {
+			return errUnsafeArchive
+		}
+		name := strings.TrimPrefix(header.Name, rootPrefix)
 		if name == "" && header.Typeflag == tar.TypeDir {
 			continue
 		}
 		if !safeArchivePath(name) {
 			return errUnsafeArchive
 		}
+		name = path.Clean(name)
 		target := filepath.Join(destination, filepath.FromSlash(name))
 		if !pathWithin(destination, target) {
 			return errUnsafeArchive
@@ -153,6 +175,24 @@ func writeArchiveFile(ctx context.Context, source io.Reader, size int64, root, d
 	}
 	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			existing, openErr := os.Open(destination)
+			if openErr != nil {
+				return errUnsafeArchive
+			}
+			equal, compareErr := equalReadersContext(ctx, existing, io.LimitReader(source, size), size)
+			closeErr := existing.Close()
+			if compareErr != nil {
+				return compareErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			if !equal {
+				return errUnsafeArchive
+			}
+			return nil
+		}
 		return errUnsafeArchive
 	}
 	written, copyErr := copyContext(ctx, output, io.LimitReader(source, size))
@@ -196,14 +236,52 @@ func copyContext(ctx context.Context, destination io.Writer, source io.Reader) (
 	}
 }
 
+func equalReadersContext(ctx context.Context, first, second io.Reader, expected int64) (bool, error) {
+	firstBuffer := make([]byte, 64*1024)
+	secondBuffer := make([]byte, 64*1024)
+	var compared int64
+	for compared < expected {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		remaining := expected - compared
+		chunk := len(firstBuffer)
+		if int64(chunk) > remaining {
+			chunk = int(remaining)
+		}
+		firstRead, firstErr := io.ReadFull(first, firstBuffer[:chunk])
+		secondRead, secondErr := io.ReadFull(second, secondBuffer[:chunk])
+		if firstErr != nil || secondErr != nil || firstRead != secondRead || !bytesEqual(firstBuffer[:firstRead], secondBuffer[:secondRead]) {
+			return false, nil
+		}
+		compared += int64(firstRead)
+	}
+	extra := make([]byte, 1)
+	read, err := first.Read(extra)
+	return read == 0 && errors.Is(err, io.EOF), nil
+}
+
+func bytesEqual(first, second []byte) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	var difference byte
+	for index := range first {
+		difference |= first[index] ^ second[index]
+	}
+	return difference == 0
+}
+
 func safeArchivePath(name string) bool {
 	trimmed := strings.TrimSuffix(name, "/")
-	if trimmed == "" || !utf8.ValidString(name) || strings.ContainsAny(name, "\\\x00") ||
-		strings.HasPrefix(name, "/") || path.Clean(trimmed) != trimmed {
+	if trimmed == "" || !utf8.ValidString(name) || strings.ContainsAny(name, "\\\x00") || strings.HasPrefix(name, "/") {
 		return false
 	}
 	for _, component := range strings.Split(trimmed, "/") {
-		if component == "" || component == "." || component == ".." || strings.TrimRight(component, ". ") != component {
+		if component == "." {
+			continue
+		}
+		if component == "" || component == ".." || strings.TrimRight(component, ". ") != component {
 			return false
 		}
 	}
