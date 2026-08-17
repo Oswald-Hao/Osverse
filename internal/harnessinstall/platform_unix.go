@@ -3,10 +3,10 @@
 package harnessinstall
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type symlinkState struct {
@@ -107,13 +107,19 @@ func activateHarnessCommand(home string, paths managedPaths, _ string) (returnEr
 }
 
 func atomicSymlink(destination, target string) error {
-	temporary := filepath.Join(filepath.Dir(destination), ".osverse-dsh-link")
-	_ = os.Remove(temporary)
+	directory, err := os.MkdirTemp(filepath.Dir(destination), ".osverse-dsh-link-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(directory)
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return err
+	}
+	temporary := filepath.Join(directory, "link")
 	if err := os.Symlink(target, temporary); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, destination); err != nil {
-		_ = os.Remove(temporary)
 		return err
 	}
 	return nil
@@ -157,10 +163,22 @@ func captureProfiles(home string) ([]profileState, error) {
 	return states, nil
 }
 
-const pathProfileBlock = "# >>> Osverse user commands >>>\ncase \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) export PATH=\"$HOME/.local/bin:$PATH\" ;; esac\n# <<< Osverse user commands <<<\n"
+const (
+	pathProfileStart = "# >>> Osverse user commands >>>"
+	pathProfileEnd   = "# <<< Osverse user commands <<<"
+	pathProfileBlock = pathProfileStart + "\ncase \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) export PATH=\"$HOME/.local/bin:$PATH\" ;; esac\n" + pathProfileEnd + "\n"
+)
 
 func updateProfilePATH(state profileState) error {
-	if strings.Contains(string(state.content), "# >>> Osverse user commands >>>") {
+	startCount := bytes.Count(state.content, []byte(pathProfileStart))
+	endCount := bytes.Count(state.content, []byte(pathProfileEnd))
+	if startCount != endCount || startCount > 1 {
+		return errors.New("shell profile contains a conflicting Osverse block")
+	}
+	if err := confirmProfileState(state); err != nil {
+		return err
+	}
+	if startCount == 1 {
 		return nil
 	}
 	content := append([]byte(nil), state.content...)
@@ -169,6 +187,24 @@ func updateProfilePATH(state profileState) error {
 	}
 	content = append(content, []byte(pathProfileBlock)...)
 	return atomicWriteProfile(state.path, content, state.mode)
+}
+
+func confirmProfileState(expected profileState) error {
+	info, err := os.Lstat(expected.path)
+	if !expected.exists {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return errors.New("shell profile changed during Harness installation")
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != expected.mode.Perm() || info.Size() != int64(len(expected.content)) {
+		return errors.New("shell profile changed during Harness installation")
+	}
+	content, err := os.ReadFile(expected.path)
+	if err != nil || !bytes.Equal(content, expected.content) {
+		return errors.New("shell profile changed during Harness installation")
+	}
+	return nil
 }
 
 func restoreProfile(state profileState) error {
