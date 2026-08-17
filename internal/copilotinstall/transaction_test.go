@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-func TestDownloadArtifactPinsBodyAndRejectsRedirects(t *testing.T) {
+func TestDownloadArtifactPinsBodyAndAllowsOnlyOfficialGitHubRedirect(t *testing.T) {
 	body := []byte("verified-copilot-archive")
 	digest := sha256.Sum256(body)
 	item := artifact{URL: "https://github.com/github/copilot-cli/releases/download/v1/archive", Size: int64(len(body)), SHA256: hex.EncodeToString(digest[:])}
@@ -28,6 +28,15 @@ func TestDownloadArtifactPinsBodyAndRejectsRedirects(t *testing.T) {
 	})}
 	if err := downloadArtifact(context.Background(), client, item, filepath.Join(t.TempDir(), "archive"), nil); err != nil {
 		t.Fatal(err)
+	}
+	trustedRedirect := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host == "github.com" {
+			return &http.Response{StatusCode: http.StatusFound, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{"Location": []string{"https://release-assets.githubusercontent.com/github-production-release-asset/1/archive?sig=fixed"}}, Request: request}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, ContentLength: int64(len(body)), Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header), Request: request}, nil
+	})}
+	if err := downloadArtifact(context.Background(), trustedRedirect, item, filepath.Join(t.TempDir(), "archive"), nil); err != nil {
+		t.Fatalf("official redirect failed: %v", err)
 	}
 	redirecting := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusFound, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{"Location": []string{"https://example.invalid/escape"}}}, nil
