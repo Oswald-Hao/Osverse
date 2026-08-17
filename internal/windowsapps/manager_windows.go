@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Oswald-Hao/Osverse/internal/detect"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
@@ -52,6 +53,7 @@ type Manager struct {
 	active   map[string]string
 	runner   platform.CommandRunner
 	client   func(proxyservice.Protocol, int) (*http.Client, error)
+	packages detect.WindowsPackageQuery
 }
 
 func NewManager(home string) (*Manager, error) {
@@ -71,7 +73,7 @@ func NewManager(home string) (*Manager, error) {
 	return &Manager{
 		home: filepath.Clean(resolved), arch: runtime.GOARCH, now: time.Now, randomID: secureID,
 		catalog: catalog, plans: map[string]*storedPlan{}, tasks: map[string]*taskState{}, active: map[string]string{},
-		runner: platformwindows.NewExecRunner(), client: proxyservice.NewHTTPClient,
+		runner: platformwindows.NewExecRunner(), client: proxyservice.NewHTTPClient, packages: detect.RegistryPackageQuery{},
 	}, nil
 }
 

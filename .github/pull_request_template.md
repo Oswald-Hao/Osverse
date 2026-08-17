@@ -4,6 +4,8 @@
 
 ## 目标分支 / Target branch
 
+- [ ] 当前工作来自本任务的独立分支，不是 `dev`、`beta` 或 `main`
+- [ ] 此分支不包含无关问题或功能
 - [ ] 功能或修复分支 → `dev`
 - [ ] `dev` → `beta`
 - [ ] `beta` → `main`

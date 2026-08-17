@@ -44,3 +44,26 @@ type Task struct {
 	StartedAt   time.Time `json:"startedAt"`
 	FinishedAt  time.Time `json:"finishedAt"`
 }
+
+// IsProgressTaskPhase reports whether phase may be emitted by an installer
+// while a task is running. Keeping this contract in the backend prevents an
+// internal implementation detail from becoming an invalid frontend state.
+func IsProgressTaskPhase(phase string) bool {
+	switch phase {
+	case "downloading", "verifying", "installing", "committing":
+		return true
+	default:
+		return false
+	}
+}
+
+// IsTerminalTaskPhase reports whether phase is a final task state.
+func IsTerminalTaskPhase(phase string) bool {
+	return phase == "completed" || phase == "failed" || phase == "canceled"
+}
+
+// IsValidTaskPhase reports whether phase is part of the public install-task
+// contract shared by every installer and the frontend.
+func IsValidTaskPhase(phase string) bool {
+	return phase == "queued" || IsProgressTaskPhase(phase) || IsTerminalTaskPhase(phase)
+}

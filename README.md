@@ -178,7 +178,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 
 ## 从源码运行
 
-固定工具链为 Go 1.25.12、Node.js 22.23.2、Wails 2.13.0。
+固定工具链为 Go 1.25.12、Node.js 22.23.2、Wails 2.14.0。
 
 ```bash
 sudo apt-get update
@@ -191,10 +191,10 @@ go test -race ./...
 go vet ./...
 
 # Ubuntu 22.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_40
 
 # Ubuntu 20.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_36
 ```
 
 Windows 10/11 x64（PowerShell，需 Go、Node.js、WebView2 与 Wails 构建环境）：
@@ -204,15 +204,15 @@ npm --prefix frontend ci
 go test ./...
 go test -race ./...
 go vet ./...
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev
 
 # 生成每用户范围的 NSIS 安装包
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 ```
 
 ## 分支与贡献
 
-代码只按 `功能分支 → dev → beta → main` 单向晋级：功能 PR 在进入 `dev` 前运行一次完整 CI；`dev → beta` 与 `beta → main` 的晋级 PR 复用已验证结果，只检查晋级路径，不重复编译，也不会由 CI 自动推送或同步分支。`main` 只接收通过门禁的候选版，发版标签必须属于 `main` 历史。
+每个问题、功能、依赖升级或文档任务都必须从最新 `origin/dev` 创建独立分支；禁止直接在 `dev`、`beta`、`main` 开发或提交，也不能把无关任务混入同一分支。代码只按 `任务分支 → dev → beta → main` 单向晋级：功能 PR 在进入 `dev` 前运行一次完整 CI；`dev → beta` 与 `beta → main` 的晋级 PR 复用已验证结果，只检查晋级路径，不重复编译，也不会由 CI 自动推送或同步分支。`main` 只接收通过门禁的候选版，发版标签必须属于 `main` 历史。详见[保护分支规则](docs/governance/branch-policy.md)。
 
 欢迎贡献。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，提交聚焦的问题或 PR，并保持现有安全边界。
 

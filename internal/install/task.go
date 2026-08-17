@@ -141,6 +141,9 @@ func (manager *Manager) runTask(
 }
 
 func (manager *Manager) updateTask(id string, update progressUpdate) {
+	if !IsProgressTaskPhase(update.phase) {
+		return
+	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	state := manager.tasks[id]
@@ -159,7 +162,7 @@ func (manager *Manager) updateTask(id string, update progressUpdate) {
 }
 
 func terminalPhase(phase string) bool {
-	return phase == "completed" || phase == "failed" || phase == "canceled"
+	return IsTerminalTaskPhase(phase)
 }
 
 func publicInstallFailure(err error) string {
