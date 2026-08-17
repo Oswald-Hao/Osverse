@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your local control center for AI development tools.</strong><br>
-  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, desktop apps, and third-party API profiles from one place.
+  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, DeepSeek Harness, desktop apps, and third-party API profiles from one place.
 </p>
 
 <p align="center">
@@ -36,6 +36,7 @@
 Moving to a new machine should not mean spending hours rediscovering runtimes, proxy settings, CLI locations, and API configuration formats. Osverse turns that setup work into an inspectable desktop workflow while preserving tools you already installed.
 
 - **Find what is already there.** Claude Code, Codex CLI, and OpenCode are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
+- **Run DeepSeek Harness without environment setup.** Osverse pins the official Harness and Node.js versions, verifies every locked dependency, runs no npm lifecycle scripts, and launches the official web workspace.
 - **Control every real installation.** Multiple locations are shown separately. Before launch, the backend rescans and verifies file identity instead of executing an arbitrary frontend-provided path.
 - **Install without surrendering control.** Every supported CLI install starts with a backend-generated plan, verifies exact size and SHA-256, switches versions atomically, and can recover after interruption.
 - **Preview and recover removals.** User and Osverse-managed files go to the desktop Trash, while system packages use a fixed privileged action. Config, credentials, and sessions are preserved by default.
@@ -48,7 +49,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 
 | Area | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
-| Core CLI | Claude Code, Codex CLI, OpenCode CLI detection and transactional install/update | Detection and pinned-source install/update for the same three CLIs |
+| Core CLI | Claude Code, Codex CLI, OpenCode CLI, and DeepSeek Harness detection plus transactional install/update | Same; Harness uses its own verified per-user runtime |
 | Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, ChatGPT Desktop, and Codex Desktop (detected separately) |
 | API tools | CC Switch, Cockpit Tools | CC Switch, Cockpit Tools |
 | API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
@@ -58,6 +59,18 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 | Auditability | Redacted history, checksums, SPDX SBOM, provenance | Same |
 
 Claude Desktop's official Linux package requires Ubuntu 22.04 or newer, so Osverse reports it as unsupported on Ubuntu 20.04. ChatGPT Desktop has no official Linux build and is not installed by Osverse.
+
+### DeepSeek Harness
+
+Select **DeepSeek Harness** under Core CLI, preview the plan, and confirm installation. Osverse installs the official `@deepseek-ai/dsh`, a private Node.js runtime, and the target's native dependency; no preinstalled Node/npm or global package change is required. Launching it runs:
+
+```bash
+dsh web
+```
+
+The workspace defaults to `http://127.0.0.1:3080`. Add the DeepSeek key—or a compatible protocol, Base URL, and model—in Harness's own Provider settings. Harness writes credentials to `$DSH_HOME/.credentials.yaml`; Osverse never reads, migrates, or removes them. See the [DeepSeek Harness integration guide](docs/guides/deepseek-harness.md) for details.
+
+Harness is currently an upstream Developer Preview. Osverse pins the tested contract instead of silently following npm `latest`; upgrades arrive with a tested Osverse release. Linux x64 and Windows x64 are wired into the app today. The same verified installer is ready for macOS x64/arm64 and will be enabled with the Osverse macOS release.
 
 ## Install
 
@@ -107,7 +120,7 @@ Osverse is deliberately narrower than a generic package manager.
 - Launch and removal rescan and verify target identity; the frontend cannot supply an arbitrary executable path or system package name.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
-- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest.
+- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. DeepSeek Harness additionally verifies every npm tarball against an embedded lockfile with SHA-512 and executes no package install scripts.
 - Osverse self-update accepts only semantic versions and platform artifacts from the fixed official repository and release-manifest path. Stable builds ignore prereleases; prerelease builds can advance to newer prereleases or stable releases.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
 - CLI commits use immutable version directories, atomic symlink replacement, immediate rollback, and a `0600` crash-recovery journal.

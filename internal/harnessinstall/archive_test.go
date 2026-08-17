@@ -42,6 +42,10 @@ func TestExtractPackageWritesOnlyPackagePayload(t *testing.T) {
 	if err != nil || string(content) != "ok" {
 		t.Fatalf("content = %q, err = %v", content, err)
 	}
+	info, err := os.Stat(filepath.Join(destination, "lib", "bin.js"))
+	if err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("executable mode was not preserved: %v, %v", info, err)
+	}
 }
 
 func TestExtractNodeRuntimeFromTarAndZip(t *testing.T) {

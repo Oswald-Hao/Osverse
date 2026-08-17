@@ -86,7 +86,11 @@ func extractNPMPackage(ctx context.Context, source io.Reader, destination string
 				return errUnsafeArchive
 			}
 			expanded += header.Size
-			if err := writeArchiveFile(ctx, reader, header.Size, destination, target); err != nil {
+			mode := os.FileMode(0o600)
+			if header.Mode&0o111 != 0 {
+				mode = 0o700
+			}
+			if err := writeArchiveFile(ctx, reader, header.Size, destination, target, mode); err != nil {
 				return err
 			}
 		default:
@@ -124,7 +128,7 @@ func extractNodeTar(ctx context.Context, source io.Reader, wanted, destination s
 		if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) || header.Size <= 0 || header.Size > expandedLimit {
 			return errUnsafeArchive
 		}
-		if err := writeArchiveFile(ctx, reader, header.Size, filepath.Dir(destination), destination); err != nil {
+		if err := writeArchiveFile(ctx, reader, header.Size, filepath.Dir(destination), destination, 0o700); err != nil {
 			return err
 		}
 		return os.Chmod(destination, 0o755)
@@ -153,7 +157,7 @@ func extractNodeZip(ctx context.Context, source io.ReaderAt, sourceSize int64, w
 		if err != nil {
 			return errUnsafeArchive
 		}
-		err = writeArchiveFile(ctx, input, int64(file.UncompressedSize64), filepath.Dir(destination), destination)
+		err = writeArchiveFile(ctx, input, int64(file.UncompressedSize64), filepath.Dir(destination), destination, 0o700)
 		closeErr := input.Close()
 		if err != nil {
 			return err
@@ -166,14 +170,14 @@ func extractNodeZip(ctx context.Context, source io.ReaderAt, sourceSize int64, w
 	return errUnsafeArchive
 }
 
-func writeArchiveFile(ctx context.Context, source io.Reader, size int64, root, destination string) error {
+func writeArchiveFile(ctx context.Context, source io.Reader, size int64, root, destination string, mode os.FileMode) error {
 	if !pathWithin(root, destination) || size < 0 {
 		return errUnsafeArchive
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
-	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			existing, openErr := os.Open(destination)
