@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
 // This opt-in test exercises every embedded npm package against npm's
@@ -70,5 +72,23 @@ func TestBuildRealLinuxPayloadFromVerifiedCache(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(payload, "app", "node_modules", "node-pty", "build", "Release", "pty.node")); err != nil {
 		t.Fatal(err)
+	}
+
+	installHome := filepath.Join(root, "home")
+	if err := os.Mkdir(installHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{
+		home: installHome, goos: "linux", goarch: "amd64",
+		client: func(proxyservice.Protocol, int) (*http.Client, error) { return client, nil },
+	}
+	if err := manager.execute(ctx, storedPlan{}, "", 0, func(string, int, string) {}); err != nil {
+		t.Fatal(err)
+	}
+	managedCommand := filepath.Join(installHome, ".local", "bin", "dsh")
+	command = exec.CommandContext(ctx, managedCommand, "--version")
+	output, err = command.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(output)) != harnessVer {
+		t.Fatalf("managed dsh output=%q err=%v", output, err)
 	}
 }
