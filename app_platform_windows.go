@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 
+	"github.com/Oswald-Hao/Osverse/internal/harnessinstall"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
@@ -14,6 +15,10 @@ import (
 )
 
 func configurePlatformServices(app *App, home string) {
+	if manager, err := harnessinstall.NewManager(home); err == nil {
+		app.harnessPlanner = manager
+		app.harnessExecutor = manager
+	}
 	if manager, err := windowsinstall.NewManager(home); err == nil {
 		app.installPlanner = manager
 		app.installExecutor = manager

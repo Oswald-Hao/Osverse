@@ -1,0 +1,312 @@
+package harnessinstall
+
+import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
+)
+
+const maxArchiveEntries = 100000
+
+var errUnsafeArchive = errors.New("unsafe Harness archive")
+
+func extractNPMPackage(ctx context.Context, source io.Reader, destination string, expandedLimit int64) error {
+	gz, err := gzip.NewReader(source)
+	if err != nil {
+		return fmt.Errorf("%w: gzip", errUnsafeArchive)
+	}
+	defer gz.Close()
+	reader := tar.NewReader(gz)
+	var expanded int64
+	entries := 0
+	rootPrefix := ""
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("%w: tar", errUnsafeArchive)
+		}
+		entries++
+		if entries > maxArchiveEntries {
+			return errUnsafeArchive
+		}
+		if rootPrefix == "" {
+			separator := strings.IndexByte(header.Name, '/')
+			if separator < 0 && header.Typeflag == tar.TypeDir && safeArchivePath(header.Name) {
+				rootPrefix = header.Name + "/"
+				continue
+			}
+			if separator <= 0 {
+				return errUnsafeArchive
+			}
+			rootPrefix = header.Name[:separator+1]
+			if !safeArchivePath(strings.TrimSuffix(rootPrefix, "/")) {
+				return errUnsafeArchive
+			}
+		}
+		if header.Name == strings.TrimSuffix(rootPrefix, "/") && header.Typeflag == tar.TypeDir {
+			continue
+		}
+		if !strings.HasPrefix(header.Name, rootPrefix) {
+			return errUnsafeArchive
+		}
+		name := strings.TrimPrefix(header.Name, rootPrefix)
+		if name == "" && header.Typeflag == tar.TypeDir {
+			continue
+		}
+		if !safeArchivePath(name) {
+			return errUnsafeArchive
+		}
+		name = path.Clean(name)
+		target := filepath.Join(destination, filepath.FromSlash(name))
+		if !pathWithin(destination, target) {
+			return errUnsafeArchive
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if header.Size < 0 || expanded > expandedLimit-header.Size {
+				return errUnsafeArchive
+			}
+			expanded += header.Size
+			mode := os.FileMode(0o600)
+			if header.Mode&0o111 != 0 {
+				mode = 0o700
+			}
+			if err := writeArchiveFile(ctx, reader, header.Size, destination, target, mode); err != nil {
+				return err
+			}
+		default:
+			return errUnsafeArchive
+		}
+	}
+}
+
+func extractNodeTar(ctx context.Context, source io.Reader, wanted, destination string, expandedLimit int64) error {
+	gz, err := gzip.NewReader(source)
+	if err != nil {
+		return errUnsafeArchive
+	}
+	defer gz.Close()
+	reader := tar.NewReader(gz)
+	entries := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return errUnsafeArchive
+		}
+		if err != nil {
+			return errUnsafeArchive
+		}
+		entries++
+		if entries > maxArchiveEntries || !safeArchivePath(header.Name) {
+			return errUnsafeArchive
+		}
+		if header.Name != wanted {
+			continue
+		}
+		if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) || header.Size <= 0 || header.Size > expandedLimit {
+			return errUnsafeArchive
+		}
+		if err := writeArchiveFile(ctx, reader, header.Size, filepath.Dir(destination), destination, 0o700); err != nil {
+			return err
+		}
+		return os.Chmod(destination, 0o755)
+	}
+}
+
+func extractNodeZip(ctx context.Context, source io.ReaderAt, sourceSize int64, wanted, destination string, expandedLimit int64) error {
+	reader, err := zip.NewReader(source, sourceSize)
+	if err != nil || len(reader.File) > maxArchiveEntries {
+		return errUnsafeArchive
+	}
+	for _, file := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !safeArchivePath(file.Name) {
+			return errUnsafeArchive
+		}
+		if file.Name != wanted {
+			continue
+		}
+		if !file.Mode().IsRegular() || file.UncompressedSize64 == 0 || file.UncompressedSize64 > uint64(expandedLimit) {
+			return errUnsafeArchive
+		}
+		input, err := file.Open()
+		if err != nil {
+			return errUnsafeArchive
+		}
+		err = writeArchiveFile(ctx, input, int64(file.UncompressedSize64), filepath.Dir(destination), destination, 0o700)
+		closeErr := input.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return os.Chmod(destination, 0o755)
+	}
+	return errUnsafeArchive
+}
+
+func writeArchiveFile(ctx context.Context, source io.Reader, size int64, root, destination string, mode os.FileMode) error {
+	if !pathWithin(root, destination) || size < 0 {
+		return errUnsafeArchive
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			existing, openErr := os.Open(destination)
+			if openErr != nil {
+				return errUnsafeArchive
+			}
+			equal, compareErr := equalReadersContext(ctx, existing, io.LimitReader(source, size), size)
+			closeErr := existing.Close()
+			if compareErr != nil {
+				return compareErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			if !equal {
+				return errUnsafeArchive
+			}
+			return nil
+		}
+		return errUnsafeArchive
+	}
+	written, copyErr := copyContext(ctx, output, io.LimitReader(source, size))
+	closeErr := output.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if written != size {
+		return errUnsafeArchive
+	}
+	return nil
+}
+
+func copyContext(ctx context.Context, destination io.Writer, source io.Reader) (int64, error) {
+	buffer := make([]byte, 64*1024)
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		read, readErr := source.Read(buffer)
+		if read > 0 {
+			written, writeErr := destination.Write(buffer[:read])
+			total += int64(written)
+			if writeErr != nil {
+				return total, writeErr
+			}
+			if written != read {
+				return total, io.ErrShortWrite
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return total, nil
+		}
+		if readErr != nil {
+			return total, readErr
+		}
+	}
+}
+
+func equalReadersContext(ctx context.Context, first, second io.Reader, expected int64) (bool, error) {
+	firstBuffer := make([]byte, 64*1024)
+	secondBuffer := make([]byte, 64*1024)
+	var compared int64
+	for compared < expected {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		remaining := expected - compared
+		chunk := len(firstBuffer)
+		if int64(chunk) > remaining {
+			chunk = int(remaining)
+		}
+		firstRead, firstErr := io.ReadFull(first, firstBuffer[:chunk])
+		secondRead, secondErr := io.ReadFull(second, secondBuffer[:chunk])
+		if firstErr != nil || secondErr != nil || firstRead != secondRead || !bytesEqual(firstBuffer[:firstRead], secondBuffer[:secondRead]) {
+			return false, nil
+		}
+		compared += int64(firstRead)
+	}
+	extra := make([]byte, 1)
+	read, err := first.Read(extra)
+	return read == 0 && errors.Is(err, io.EOF), nil
+}
+
+func bytesEqual(first, second []byte) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	var difference byte
+	for index := range first {
+		difference |= first[index] ^ second[index]
+	}
+	return difference == 0
+}
+
+func safeArchivePath(name string) bool {
+	trimmed := strings.TrimSuffix(name, "/")
+	if trimmed == "" || !utf8.ValidString(name) || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") {
+		return false
+	}
+	for _, component := range strings.Split(trimmed, "/") {
+		if component == "." {
+			continue
+		}
+		for _, value := range component {
+			if value < 0x20 {
+				return false
+			}
+		}
+		if component == "" || component == ".." || strings.TrimRight(component, ". ") != component || reservedWindowsName(component) {
+			return false
+		}
+	}
+	return true
+}
+
+func reservedWindowsName(component string) bool {
+	trimmed := strings.TrimRight(component, ". ")
+	base := strings.ToUpper(strings.TrimSuffix(trimmed, path.Ext(trimmed)))
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CLOCK$" {
+		return true
+	}
+	return len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9'
+}
+
+func pathWithin(root, candidate string) bool {
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(candidate))
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}

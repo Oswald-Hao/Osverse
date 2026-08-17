@@ -343,6 +343,45 @@ func TestDesktopInstallPlansAndTasksStayOnDesktopManager(t *testing.T) {
 	}
 }
 
+func TestHarnessInstallPlansAndTasksStayOnHarnessManager(t *testing.T) {
+	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("Harness plan reached generic CLI manager")
+		return install.Plan{}, nil
+	}}}
+	harness := &fakeInstallManager{}
+	harness.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "deepseek-harness" {
+			t.Fatalf("Harness CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "harness-plan", ComponentID: id}, nil
+	}
+	harness.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		return install.Task{ID: "harness-task", PlanID: id, ComponentID: "deepseek-harness"}, nil
+	}
+	harness.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "deepseek-harness", Phase: "completed"}, nil
+	}
+	harness.cancel = func(string) error { return nil }
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.harnessPlanner, app.harnessExecutor = harness, harness
+	plan, err := app.CreateInstallPlan("deepseek-harness")
+	if err != nil || app.planOwners[plan.ID] != "harness" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner=%q", plan, err, app.planOwners[plan.ID])
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "harness-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if current, err := app.GetInstallTask(task.ID); err != nil || current.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", current, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClaudeDesktopInstallPlansStayOnSystemManager(t *testing.T) {
 	cli := &fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
 		t.Fatal("system plan reached CLI manager")

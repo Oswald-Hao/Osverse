@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	appservice "github.com/Oswald-Hao/Osverse/internal/apps"
+	"github.com/Oswald-Hao/Osverse/internal/harnessinstall"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
 	platformlinux "github.com/Oswald-Hao/Osverse/internal/platform/linux"
@@ -21,6 +22,10 @@ func isUnsupportedInstallError(err error) bool {
 }
 
 func configurePlatformServices(app *App, home string) {
+	if manager, err := harnessinstall.NewManager(home); err == nil {
+		app.harnessPlanner = manager
+		app.harnessExecutor = manager
+	}
 	if manager, err := install.NewManager(home); err == nil {
 		app.installPlanner = manager
 		app.installExecutor = manager

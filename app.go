@@ -88,6 +88,8 @@ type App struct {
 	installExecutor   InstallExecutor
 	appPlanner        InstallPlanner
 	appExecutor       InstallExecutor
+	harnessPlanner    InstallPlanner
+	harnessExecutor   InstallExecutor
 	appLauncher       AppLauncher
 	componentLauncher ComponentLauncher
 	removal           RemovalService
@@ -277,6 +279,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	} else if componentID == "claude-desktop" && app.systemPlanner != nil {
 		planner = app.systemPlanner
 		owner = "system"
+	} else if componentID == "deepseek-harness" && app.harnessPlanner != nil {
+		planner = app.harnessPlanner
+		owner = "harness"
 	}
 	app.mu.RUnlock()
 	if planner == nil {
@@ -316,6 +321,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 		executor = app.appExecutor
 	} else if owner == "system" {
 		executor = app.systemExecutor
+	} else if owner == "harness" {
+		executor = app.harnessExecutor
 	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
@@ -349,6 +356,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 		executor = app.appExecutor
 	} else if app.taskOwners[taskID] == "system" {
 		executor = app.systemExecutor
+	} else if app.taskOwners[taskID] == "harness" {
+		executor = app.harnessExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {
@@ -410,6 +419,8 @@ func componentDisplayName(id string) string {
 		return "Codex Desktop"
 	case "opencode-cli":
 		return "OpenCode CLI"
+	case "deepseek-harness":
+		return "DeepSeek Harness"
 	case "claude-desktop":
 		return "Claude Desktop"
 	case "chatgpt-desktop":
@@ -427,7 +438,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
@@ -569,6 +580,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 		executor = app.appExecutor
 	} else if app.taskOwners[taskID] == "system" {
 		executor = app.systemExecutor
+	} else if app.taskOwners[taskID] == "harness" {
+		executor = app.harnessExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {

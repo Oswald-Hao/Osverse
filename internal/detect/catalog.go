@@ -35,5 +35,15 @@ func CoreCLISpecs() []CommandSpec {
 			),
 			MinimumOS: platformMinimumOS(),
 		},
+		{
+			ID:              "deepseek-harness",
+			Name:            "DeepSeek Harness",
+			ExecutableNames: platformExecutableNames("dsh"),
+			VersionArgs:     []string{"--version"},
+			VersionPattern: regexp.MustCompile(
+				`^v?([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$`,
+			),
+			MinimumOS: platformMinimumOS(),
+		},
 	}
 }
