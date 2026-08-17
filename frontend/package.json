@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "pretest": "npm run audit:icons",
     "dev": "vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build",
-    "audit:responsive": "node scripts/responsive-audit.mjs"
+    "audit:responsive": "node scripts/responsive-audit.mjs",
+    "audit:icons": "node scripts/icon-audit.mjs"
   },
   "dependencies": {
     "react": "19.1.1",

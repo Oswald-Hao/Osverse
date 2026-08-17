@@ -1,11 +1,16 @@
-type IconFamily = 'anthropic' | 'openai' | 'opencode' | 'deepseek' | 'qwen' | 'copilot' | 'cc-switch' | 'cockpit'
+import { useId } from 'react'
+
+import ccSwitchIcon from './assets/tool-icons/cc-switch.png'
+import cockpitToolsIcon from './assets/tool-icons/cockpit-tools.png'
+
+type IconFamily = 'anthropic' | 'chatgpt' | 'codex' | 'opencode' | 'deepseek' | 'qwen' | 'copilot' | 'cc-switch' | 'cockpit' | 'generic'
 
 const iconFamilies: Record<string, { family: IconFamily; badge?: string }> = {
   'claude-code': { family: 'anthropic', badge: 'C' },
   'claude-desktop': { family: 'anthropic', badge: 'D' },
-  'codex-cli': { family: 'openai', badge: 'X' },
-  'chatgpt-desktop': { family: 'openai', badge: 'G' },
-  'codex-desktop': { family: 'openai', badge: 'D' },
+  'codex-cli': { family: 'codex', badge: 'CLI' },
+  'chatgpt-desktop': { family: 'chatgpt' },
+  'codex-desktop': { family: 'codex', badge: 'APP' },
   'opencode-cli': { family: 'opencode', badge: 'CLI' },
   'opencode-desktop': { family: 'opencode', badge: 'APP' },
   'deepseek-harness': { family: 'deepseek' },
@@ -23,24 +28,30 @@ const paths: Partial<Record<IconFamily, string>> = {
   copilot: 'M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Z',
 }
 
-function OpenAIIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M12 2.5 16 4.8l4 2.3v9.8l-4 2.3-4 2.3-4-2.3-4-2.3V7.1l4-2.3L12 2.5Zm0 4.1L8.2 8.8v4.4l3.8 2.2 3.8-2.2V8.8L12 6.6Zm0 3.1 1.2.7v1.3l-1.2.7-1.2-.7v-1.3l1.2-.7Z" /></svg>
+function ChatGPTIcon() {
+  return <svg viewBox="0 0 24 24"><path d="M21.55 10.004a5.416 5.416 0 0 0-.478-4.501c-1.217-2.09-3.662-3.166-6.05-2.66A5.59 5.59 0 0 0 10.831 1C8.39.995 6.224 2.546 5.473 4.838A5.553 5.553 0 0 0 1.76 7.496a5.487 5.487 0 0 0 .691 6.5 5.416 5.416 0 0 0 .477 4.502c1.217 2.09 3.662 3.165 6.05 2.66A5.586 5.586 0 0 0 13.168 23c2.443.006 4.61-1.546 5.361-3.84a5.553 5.553 0 0 0 3.715-2.66 5.488 5.488 0 0 0-.693-6.497v.001Zm-8.381 11.558a4.199 4.199 0 0 1-2.675-.954l.132-.074 4.44-2.53a.71.71 0 0 0 .364-.623v-6.176l1.877 1.069a.068.068 0 0 1 .036.05v5.115c-.003 2.274-1.87 4.118-4.174 4.123ZM4.192 17.78a4.059 4.059 0 0 1-.498-2.763l.131.078 4.44 2.53c.225.13.504.13.73 0l5.42-3.088v2.138a.068.068 0 0 1-.027.057L9.9 19.288c-1.999 1.136-4.552.46-5.707-1.51h-.001ZM3.023 8.216A4.15 4.15 0 0 1 5.198 6.41l-.002.151v5.06a.711.711 0 0 0 .364.624l5.42 3.087-1.876 1.07a.067.067 0 0 1-.063.005l-4.489-2.559c-1.995-1.14-2.679-3.658-1.53-5.63h.001Zm15.417 3.54-5.42-3.088L14.896 7.6a.067.067 0 0 1 .063-.006l4.489 2.557c1.998 1.14 2.683 3.662 1.529 5.633a4.163 4.163 0 0 1-2.174 1.807V12.38a.71.71 0 0 0-.363-.623Zm1.867-2.773-.132-.078-4.44-2.53a.731.731 0 0 0-.729 0l-5.42 3.088V7.325a.068.068 0 0 1 .027-.057L14.1 4.713c2-1.137 4.555-.46 5.707 1.513.487.833.664 1.809.499 2.757h.001Zm-11.741 3.81-1.877-1.068a.065.065 0 0 1-.036-.051V6.559c.001-2.277 1.873-4.122 4.181-4.12.976 0 1.92.338 2.671.954l-.131.073-4.44 2.53a.71.71 0 0 0-.365.623l-.003 6.173v.002Zm1.02-2.168L12 9.25l2.414 1.375v2.75L12 14.75l-2.415-1.375v-2.75Z" /></svg>
 }
 
-function CCSwitchIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M5 5h8v3H8v8h5v3H5V5Zm14 2-4-4v3h-4v3h4v3l4-5Zm0 10-4-5v3h-4v3h4v3l4-4Z" /></svg>
+function CodexIcon() {
+  const gradientID = `codex-${useId().replaceAll(':', '')}`
+  return <svg viewBox="0 0 24 24">
+    <path d="M19.503 0H4.496A4.496 4.496 0 0 0 0 4.496v15.007A4.496 4.496 0 0 0 4.496 24h15.007A4.496 4.496 0 0 0 24 19.503V4.496A4.496 4.496 0 0 0 19.503 0Z" fill="#fff" />
+    <path d="M9.064 3.344a4.578 4.578 0 0 1 2.285-.312c1 .115 1.891.54 2.673 1.275a.09.09 0 0 0 .08.021 4.55 4.55 0 0 1 3.046.275l.163.079a4.581 4.581 0 0 1 2.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 0 1-.134 1.223.123.123 0 0 0 .03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 0 1-2.201 1.388.123.123 0 0 0-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 0 0-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 0 1-1.945-.466 4.544 4.544 0 0 1-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 0 1-.37-.961 4.582 4.582 0 0 1-.014-2.298.124.124 0 0 0-.021-.104 4.467 4.467 0 0 1-1.034-1.651 3.896 3.896 0 0 1-.251-1.192 5.189 5.189 0 0 1 .141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 0 0 .065-.066 4.51 4.51 0 0 1 .829-1.615 4.535 4.535 0 0 1 1.837-1.388Zm3.482 10.565a.637.637 0 0 0 0 1.272h3.636a.637.637 0 1 0 0-1.272h-3.636ZM8.462 9.23a.637.637 0 0 0-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 1 0 1.095.649l1.454-2.455a.636.636 0 0 0 .005-.64L8.462 9.23Z" fill={`url(#${gradientID})`} />
+    <defs><linearGradient id={gradientID} x1="12" x2="12" y1="3" y2="21" gradientUnits="userSpaceOnUse"><stop stopColor="#B1A7FF" /><stop offset=".5" stopColor="#7A9DFF" /><stop offset="1" stopColor="#3941FF" /></linearGradient></defs>
+  </svg>
 }
 
-function CockpitIcon() {
+function GenericIcon() {
   return <svg viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0h-3a5 5 0 1 0-10 0H4Zm8-8 1.7 5.1-2.4.8L12 10Zm-7.6 9.5h15.2V22H4.4v-2.5Z" /></svg>
 }
 
 export default function ToolIcon({ id }: { id: string }) {
-  const icon = iconFamilies[id] ?? { family: 'cockpit' as const, badge: '?' }
+  const icon = iconFamilies[id] ?? { family: 'generic' as const, badge: '?' }
   const path = paths[icon.family]
+  const officialRaster = icon.family === 'cc-switch' ? ccSwitchIcon : icon.family === 'cockpit' ? cockpitToolsIcon : null
   return (
     <span className={`tool-icon tool-icon--${icon.family}`} data-tool-icon={id} data-icon-family={icon.family} aria-hidden="true">
-      {path ? <svg viewBox="0 0 24 24"><path d={path} /></svg> : icon.family === 'openai' ? <OpenAIIcon /> : icon.family === 'cc-switch' ? <CCSwitchIcon /> : <CockpitIcon />}
+      {officialRaster ? <img src={officialRaster} alt="" /> : path ? <svg viewBox="0 0 24 24"><path d={path} /></svg> : icon.family === 'chatgpt' ? <ChatGPTIcon /> : icon.family === 'codex' ? <CodexIcon /> : <GenericIcon />}
       {icon.badge && <small>{icon.badge}</small>}
     </span>
   )
