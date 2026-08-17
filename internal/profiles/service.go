@@ -196,7 +196,7 @@ func compatibilityMatrix(result ProbeResult) []TargetCompatibility {
 		{target: TargetOpenCode, protocol: "openai-chat"},
 		{target: TargetQwen, protocol: "openai-chat"},
 	}
-	matrix := make([]TargetCompatibility, 0, len(checks)+1)
+	matrix := make([]TargetCompatibility, 0, len(checks)+2)
 	for _, check := range checks {
 		compatible := result.Authenticated && status[check.protocol] == "compatible"
 		reason := "需要先通过凭据和协议探测"
@@ -217,6 +217,15 @@ func compatibilityMatrix(result ProbeResult) []TargetCompatibility {
 		reason = "将使用 " + protocolDisplayName(harnessProtocol)
 	}
 	matrix = append(matrix, TargetCompatibility{Target: TargetHarness, Compatible: compatible, Reason: reason})
+	kimiProtocol, kimiCompatible := preferredHarnessProtocol(result)
+	kimiReason := "需要先通过凭据和协议探测"
+	if result.Authenticated && !kimiCompatible {
+		kimiReason = "API 未确认 Kimi Code 支持的协议"
+	}
+	if kimiCompatible {
+		kimiReason = "将使用 " + protocolDisplayName(kimiProtocol)
+	}
+	matrix = append(matrix, TargetCompatibility{Target: TargetKimi, Compatible: kimiCompatible, Reason: kimiReason})
 	return matrix
 }
 
@@ -250,7 +259,7 @@ func protocolDisplayName(protocol string) string {
 }
 
 func (service *Service) CreateApplyPlan(ctx context.Context, profileID string, targets []string) (ApplyPlan, error) {
-	if service == nil || len(targets) == 0 || len(targets) > 5 {
+	if service == nil || len(targets) == 0 || len(targets) > 6 {
 		return ApplyPlan{}, ErrApplyPlan
 	}
 	if ctx == nil {
@@ -298,7 +307,7 @@ func (service *Service) CreateApplyPlan(ctx context.Context, profileID string, t
 			return ApplyPlan{}, ErrApplyPlan
 		}
 		seen[target] = struct{}{}
-		if target == TargetHarness {
+		if target == TargetHarness || target == TargetKimi {
 			protocol, ok := preferredHarnessProtocol(observation.result)
 			if !ok {
 				return ApplyPlan{}, ErrProbeRequired
@@ -316,6 +325,8 @@ func (service *Service) CreateApplyPlan(ctx context.Context, profileID string, t
 		})
 		if target == TargetHarness {
 			effects[len(effects)-1].Description = "备份并事务式更新 Harness Provider、默认模型与只写凭据"
+		} else if target == TargetKimi {
+			effects[len(effects)-1].Description = "备份并原子更新 Kimi Code Provider、默认模型与凭据"
 		}
 	}
 	sort.Strings(canonical)

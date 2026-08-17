@@ -89,6 +89,7 @@ var componentRules = map[string]componentRule{
 	"opencode-cli":       {category: "Core CLI", command: "opencode"},
 	"deepseek-harness":   {category: "Core CLI", command: "dsh"},
 	"qwen-code":          {category: "Core CLI", command: "qwen"},
+	"kimi-code":          {category: "Core CLI", command: "kimi"},
 	"github-copilot-cli": {category: "Core CLI", command: "copilot"},
 	"claude-desktop":     {category: "Desktop Applications", packageName: "claude-desktop", command: "claude-desktop", desktopFile: "claude-desktop.desktop"},
 	"chatgpt-desktop":    {category: "Desktop Applications", packageName: "chatgpt-desktop", command: "chatgpt-desktop", desktopFile: "chatgpt-desktop.desktop"},

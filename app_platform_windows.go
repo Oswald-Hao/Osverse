@@ -8,6 +8,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/copilotinstall"
 	"github.com/Oswald-Hao/Osverse/internal/harnessinstall"
 	"github.com/Oswald-Hao/Osverse/internal/install"
+	"github.com/Oswald-Hao/Osverse/internal/kimiinstall"
 	launchservice "github.com/Oswald-Hao/Osverse/internal/launch"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	"github.com/Oswald-Hao/Osverse/internal/qweninstall"
@@ -24,6 +25,10 @@ func configurePlatformServices(app *App, home string) {
 	if manager, err := qweninstall.NewManager(home); err == nil {
 		app.qwenPlanner = manager
 		app.qwenExecutor = manager
+	}
+	if manager, err := kimiinstall.NewManager(home); err == nil {
+		app.kimiPlanner = manager
+		app.kimiExecutor = manager
 	}
 	if manager, err := copilotinstall.NewManager(home); err == nil {
 		app.copilotPlanner = manager

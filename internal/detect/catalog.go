@@ -56,6 +56,16 @@ func CoreCLISpecs() []CommandSpec {
 			MinimumOS: platformMinimumOS(),
 		},
 		{
+			ID:              "kimi-code",
+			Name:            "Kimi Code",
+			ExecutableNames: platformExecutableNames("kimi"),
+			VersionArgs:     []string{"--version"},
+			VersionPattern: regexp.MustCompile(
+				`^v?([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$`,
+			),
+			MinimumOS: platformMinimumOS(),
+		},
+		{
 			ID:              "github-copilot-cli",
 			Name:            "GitHub Copilot CLI",
 			ExecutableNames: platformExecutableNames("copilot"),
