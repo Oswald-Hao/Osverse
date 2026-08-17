@@ -250,7 +250,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          flags=(--verify-tag --title "Osverse ${GITHUB_REF_NAME}" --notes-file docs/release/v0.4.md)
+          version=${GITHUB_REF_NAME#v}
+          release_series=$(printf '%s' "$version" | cut -d. -f1,2)
+          notes_file="docs/release/v${release_series}.md"
+          test -f "$notes_file"
+          flags=(--verify-tag --title "Osverse ${GITHUB_REF_NAME}" --notes-file "$notes_file")
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           else
