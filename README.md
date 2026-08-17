@@ -178,7 +178,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 
 ## 从源码运行
 
-固定工具链为 Go 1.25.12、Node.js 22.23.2、Wails 2.13.0。
+固定工具链为 Go 1.25.12、Node.js 22.23.2、Wails 2.14.0。
 
 ```bash
 sudo apt-get update
@@ -191,10 +191,10 @@ go test -race ./...
 go vet ./...
 
 # Ubuntu 22.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_40
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_40
 
 # Ubuntu 20.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_36
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_36
 ```
 
 Windows 10/11 x64（PowerShell，需 Go、Node.js、WebView2 与 Wails 构建环境）：
@@ -204,10 +204,10 @@ npm --prefix frontend ci
 go test ./...
 go test -race ./...
 go vet ./...
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev
 
 # 生成每用户范围的 NSIS 安装包
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 ```
 
 ## 分支与贡献
