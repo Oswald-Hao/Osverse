@@ -27,6 +27,7 @@ var (
 	errHashMismatch    = errors.New("Qwen Code artifact hash mismatch")
 	errVersion         = errors.New("Qwen Code version verification failed")
 	errExternalCommand = errors.New("Qwen Code command is owned by another program")
+	errRollback        = errors.New("Qwen Code activation rollback failed")
 )
 
 type managedPaths struct {
@@ -86,10 +87,7 @@ func (manager *Manager) execute(ctx context.Context, stored storedPlan, protocol
 		return err
 	}
 	progress("committing", 94, "正在原子切换 qwen 命令入口")
-	if err := commitPayload(payload, paths.finalRoot, manager.goos); err != nil {
-		return err
-	}
-	if err := activateCommand(manager.home, paths, manager.goos); err != nil {
+	if err := commitAndActivatePayload(manager.home, payload, paths, marker, manager.goos, activateCommand); err != nil {
 		return err
 	}
 	progress("committing", 99, "qwen 命令入口已更新")
@@ -281,29 +279,64 @@ func verifyQwenPayload(ctx context.Context, payload, goos, goarch string) error 
 	return nil
 }
 
-func commitPayload(payload, destination, goos string) error {
-	marker, err := os.ReadFile(filepath.Join(payload, ".osverse-qwen-runtime"))
+func commitAndActivatePayload(home, payload string, paths managedPaths, marker []byte, goos string, activate func(string, managedPaths, string) error) error {
+	created, err := commitPayload(payload, paths.finalRoot, goos)
 	if err != nil {
 		return err
 	}
+	if err := activate(home, paths, goos); err != nil {
+		if created {
+			if rollbackErr := removeCommittedPayload(home, paths.finalRoot, ".osverse-qwen-runtime", marker); rollbackErr != nil {
+				return errors.Join(errRollback, err, rollbackErr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func commitPayload(payload, destination, goos string) (bool, error) {
+	marker, err := os.ReadFile(filepath.Join(payload, ".osverse-qwen-runtime"))
+	if err != nil {
+		return false, err
+	}
 	info, err := os.Lstat(destination)
 	if errors.Is(err, os.ErrNotExist) {
-		return os.Rename(payload, destination)
+		if err := os.Rename(payload, destination); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return errVersion
+		return false, errVersion
 	}
 	existing, err := os.ReadFile(filepath.Join(destination, ".osverse-qwen-runtime"))
 	if err != nil || !bytes.Equal(existing, marker) {
-		return errVersion
+		return false, errVersion
 	}
 	for _, relative := range criticalPaths(goos) {
 		equal, err := sameRegularFile(filepath.Join(payload, filepath.FromSlash(relative)), filepath.Join(destination, filepath.FromSlash(relative)))
 		if err != nil || !equal {
-			return errVersion
+			return false, errVersion
 		}
 	}
-	return nil
+	return false, nil
+}
+
+func removeCommittedPayload(home, destination, markerName string, marker []byte) error {
+	home, destination = filepath.Clean(home), filepath.Clean(destination)
+	if !pathWithin(home, destination) || destination == home {
+		return errVersion
+	}
+	info, err := os.Lstat(destination)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errVersion
+	}
+	existing, err := os.ReadFile(filepath.Join(destination, markerName))
+	if err != nil || !bytes.Equal(existing, marker) {
+		return errVersion
+	}
+	return os.RemoveAll(destination)
 }
 
 func criticalPaths(goos string) []string {
@@ -370,6 +403,8 @@ func publicFailure(err error) string {
 		return "Qwen Code 下载文件校验失败，未安装"
 	case errors.Is(err, errUnsafeArchive):
 		return "Qwen Code 安装包内容不安全，已拒绝安装"
+	case errors.Is(err, errRollback):
+		return "Qwen Code 安装未完成且回滚失败，请刷新扫描确认残留状态"
 	case errors.Is(err, errVersion):
 		return "Qwen Code 版本验证失败，未安装"
 	case errors.Is(err, errDownload):

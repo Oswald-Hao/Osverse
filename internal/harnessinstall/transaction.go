@@ -80,10 +80,7 @@ func (manager *Manager) execute(
 		return err
 	}
 	progress("committing", 92, "正在原子切换 dsh 命令入口")
-	if err := commitHarnessPayload(payload, paths.finalRoot, manager.goos); err != nil {
-		return err
-	}
-	if err := activateHarnessCommand(manager.home, paths, manager.goos); err != nil {
+	if err := commitAndActivateHarnessPayload(manager.home, payload, paths, manager.goos, activateHarnessCommand); err != nil {
 		return err
 	}
 	progress("committing", 99, "dsh 命令入口已更新")
@@ -169,19 +166,39 @@ func verifyHarness(ctx context.Context, payload, goos string) error {
 	return nil
 }
 
-func commitHarnessPayload(payload, destination, goos string) error {
+func commitAndActivateHarnessPayload(home, payload string, paths managedPaths, goos string, activate func(string, managedPaths, string) error) error {
 	marker, err := os.ReadFile(filepath.Join(payload, ".osverse-harness-runtime"))
 	if err != nil {
 		return err
 	}
+	created, err := commitHarnessPayload(payload, paths.finalRoot, goos)
+	if err != nil {
+		return err
+	}
+	if err := activate(home, paths, goos); err != nil {
+		if created {
+			if rollbackErr := removeCommittedHarnessPayload(home, paths.finalRoot, marker); rollbackErr != nil {
+				return errors.Join(errRollback, err, rollbackErr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func commitHarnessPayload(payload, destination, goos string) (bool, error) {
+	marker, err := os.ReadFile(filepath.Join(payload, ".osverse-harness-runtime"))
+	if err != nil {
+		return false, err
+	}
 	info, err := os.Lstat(destination)
 	if err == nil {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("Harness version path is unsafe")
+			return false, errors.New("Harness version path is unsafe")
 		}
 		existing, readErr := os.ReadFile(filepath.Join(destination, ".osverse-harness-runtime"))
 		if readErr != nil || !bytes.Equal(existing, marker) {
-			return errors.New("Harness version identity mismatch")
+			return false, errors.New("Harness version identity mismatch")
 		}
 		for _, relative := range criticalHarnessPaths(goos) {
 			equal, compareErr := sameRegularFile(
@@ -189,15 +206,34 @@ func commitHarnessPayload(payload, destination, goos string) error {
 				filepath.Join(destination, filepath.FromSlash(relative)),
 			)
 			if compareErr != nil || !equal {
-				return errVersion
+				return false, errVersion
 			}
 		}
-		return nil
+		return false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
-	return os.Rename(payload, destination)
+	if err := os.Rename(payload, destination); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func removeCommittedHarnessPayload(home, destination string, marker []byte) error {
+	home, destination = filepath.Clean(home), filepath.Clean(destination)
+	if !pathWithin(home, destination) || destination == home {
+		return errVersion
+	}
+	info, err := os.Lstat(destination)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errVersion
+	}
+	existing, err := os.ReadFile(filepath.Join(destination, ".osverse-harness-runtime"))
+	if err != nil || !bytes.Equal(existing, marker) {
+		return errVersion
+	}
+	return os.RemoveAll(destination)
 }
 
 func criticalHarnessPaths(goos string) []string {

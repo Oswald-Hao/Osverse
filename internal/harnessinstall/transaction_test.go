@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -35,7 +36,7 @@ func TestCommitHarnessPayloadRejectsDamagedExistingRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := commitHarnessPayload(payload, destination, "linux"); !errors.Is(err, errVersion) {
+			if _, err := commitHarnessPayload(payload, destination, "linux"); !errors.Is(err, errVersion) {
 				t.Fatalf("commitHarnessPayload() error = %v, want %v", err, errVersion)
 			}
 		})
@@ -60,8 +61,42 @@ func TestCommitHarnessPayloadRejectsSymlinkedExistingRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := commitHarnessPayload(payload, destination, "linux"); !errors.Is(err, errVersion) {
+	if _, err := commitHarnessPayload(payload, destination, "linux"); !errors.Is(err, errVersion) {
 		t.Fatalf("commitHarnessPayload() error = %v, want %v", err, errVersion)
+	}
+}
+
+func TestActivationFailureRemovesOnlyNewHarnessRuntime(t *testing.T) {
+	home := t.TempDir()
+	paths := managedPathsFor(home, "linux", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	activationErr := errors.New("injected activation failure")
+	payload := filepath.Join(home, "payload")
+	writeHarnessFixture(t, payload, "linux", []byte("verified"))
+	if err := commitAndActivateHarnessPayload(home, payload, paths, "linux", func(string, managedPaths, string) error { return activationErr }); !errors.Is(err, activationErr) {
+		t.Fatalf("commitAndActivateHarnessPayload() error = %v", err)
+	}
+	if _, err := os.Lstat(paths.finalRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new runtime remains after activation failure: %v", err)
+	}
+
+	payload = filepath.Join(home, "payload-existing")
+	writeHarnessFixture(t, payload, "linux", []byte("verified"))
+	writeHarnessFixture(t, paths.finalRoot, "linux", []byte("verified"))
+	if err := commitAndActivateHarnessPayload(home, payload, paths, "linux", func(string, managedPaths, string) error { return activationErr }); !errors.Is(err, activationErr) {
+		t.Fatalf("existing commitAndActivateHarnessPayload() error = %v", err)
+	}
+	if _, err := os.Stat(paths.finalRoot); err != nil {
+		t.Fatalf("pre-existing runtime was removed: %v", err)
+	}
+}
+
+func TestRollbackFailureMessageDoesNotClaimCleanRollback(t *testing.T) {
+	message := publicFailure(errors.Join(errRollback, errVersion))
+	if !strings.Contains(message, "回滚失败") || strings.Contains(message, "未安装") {
+		t.Fatalf("publicFailure() = %q", message)
 	}
 }
 
