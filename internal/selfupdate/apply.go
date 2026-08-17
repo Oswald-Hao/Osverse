@@ -162,5 +162,8 @@ func executableFile(path string) (os.FileInfo, error) {
 }
 
 func safeName(value string) bool {
+	if value == "." || value == ".." {
+		return false
+	}
 	return value != "" && filepath.Base(value) == value && !strings.ContainsAny(value, `/\\`)
 }
