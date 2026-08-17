@@ -48,6 +48,7 @@ type CommandRunner interface {
 type LaunchRequest struct {
 	Path                 string
 	ExpectedResolvedPath string
+	Args                 []string
 	Terminal             bool
 }
 

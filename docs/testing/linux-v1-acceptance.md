@@ -27,7 +27,8 @@
 
 ## 安装与回滚
 
-- [x] 三个核心 CLI 都先展示固定计划，再安装到 `~/.local/share/osverse/tools`
+- [x] Claude Code、Codex CLI、OpenCode CLI 三个既有核心 CLI 都先展示固定计划，再安装到 `~/.local/share/osverse/tools`
+- [x] DeepSeek Harness 从嵌入式 lockfile 重建完整运行时，不执行 npm 生命周期脚本；`dsh --version` 与 `dsh web` 真实启动通过
 - [x] 取消、下载截断、SHA 不匹配、版本校验失败时当前命令不改变
 - [x] 进程在链接/配置提交中断后，下次启动从权限为 `0600` 的事务日志恢复旧状态
 - [x] 外部同名命令存在时不覆盖，并显示安全错误
@@ -44,6 +45,7 @@
 - [x] 公网 API 协议探测不产生付费生成请求；重定向和私网 SSRF 默认被拒绝
 - [x] 用户明确确认私网端点后才允许探测
 - [x] Claude/Codex/OpenCode 配置在二次确认后原子写入，非 Osverse 字段保持不变且保留备份
+- [x] Harness Provider 凭据由 Harness 自己保存在 `$DSH_HOME`；Osverse 启动、更新和移除均不读取或删除
 
 ## 发布证据
 
