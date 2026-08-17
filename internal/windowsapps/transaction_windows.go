@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Oswald-Hao/Osverse/internal/detect"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
@@ -88,7 +89,7 @@ func (manager *Manager) execute(ctx context.Context, item artifact, protocol pro
 		return errInstaller
 	}
 	progress(progressUpdate{phase: "verifying", progress: 96, message: "正在确认应用注册结果"})
-	return waitForInstallEvidence(ctx, manager.home, item.ExpectedPaths)
+	return waitForInstallEvidence(ctx, manager.home, item.ID, item.ExpectedPaths, manager.packages)
 }
 
 func (manager *Manager) installStore(ctx context.Context, item artifact, progress func(progressUpdate)) error {
@@ -203,16 +204,38 @@ func validateInstaller(path, kind string) error {
 	return nil
 }
 
-func waitForInstallEvidence(ctx context.Context, home string, expected []string) error {
+func waitForInstallEvidence(ctx context.Context, home, componentID string, expected []string, packages detect.WindowsPackageQuery) error {
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+	spec, hasSpec := windowsDesktopSpec(componentID)
+	var nextPackageCheck time.Time
 	check := func() bool {
 		for _, relative := range expected {
 			path := filepath.Join(home, filepath.FromSlash(strings.ReplaceAll(relative, `\`, `/`)))
-			info, err := os.Lstat(path)
-			if err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			evidence, err := platformwindows.OpenExecutableEvidence(path)
+			if err == nil {
+				_ = evidence.Close()
+				return true
+			}
+		}
+		now := time.Now()
+		if packages == nil || !hasSpec || now.Before(nextPackageCheck) {
+			return false
+		}
+		nextPackageCheck = now.Add(time.Second)
+		evidence, err := packages.Evidence(ctx, spec)
+		if err != nil || !evidence.Installed {
+			return false
+		}
+		if evidence.Source == "msix" {
+			return true
+		}
+		for _, candidate := range evidence.ExecutablePaths {
+			locked, err := platformwindows.OpenExecutableEvidence(candidate)
+			if err == nil {
+				_ = locked.Close()
 				return true
 			}
 		}
@@ -230,6 +253,15 @@ func waitForInstallEvidence(ctx context.Context, home string, expected []string)
 		case <-ticker.C:
 		}
 	}
+}
+
+func windowsDesktopSpec(componentID string) (detect.WindowsDesktopSpec, bool) {
+	for _, spec := range detect.WindowsDesktopSpecs() {
+		if spec.ID == componentID {
+			return spec, true
+		}
+	}
+	return detect.WindowsDesktopSpec{}, false
 }
 
 func ensureManagedDirectories(base string, components ...string) (string, error) {
