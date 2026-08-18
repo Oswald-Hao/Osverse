@@ -24,7 +24,7 @@ const (
 )
 
 var inheritedEnvironment = []string{
-	"USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "SystemRoot",
+	"USERPROFILE", "DSH_HOME", "APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "SystemRoot",
 	"TEMP", "TMP", "ComSpec", "LANG", "TERM",
 }
 
