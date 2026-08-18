@@ -147,7 +147,7 @@ func sameLaunchStat(left, right unix.Stat_t) bool {
 
 func launchEnvironment() []string {
 	names := []string{
-		"HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM",
+		"HOME", "DSH_HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM",
 		"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
 		"XAUTHORITY", "DESKTOP_SESSION", "XDG_CURRENT_DESKTOP", "SSH_AUTH_SOCK",
 	}

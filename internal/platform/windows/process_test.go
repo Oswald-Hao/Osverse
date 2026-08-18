@@ -42,6 +42,22 @@ func TestCommandInvocationRejectsScriptMetacharacters(t *testing.T) {
 	}
 }
 
+func TestCommandEnvironmentPreservesHarnessHome(t *testing.T) {
+	dshHome := `C:\Users\Alice\Harness Profile`
+	t.Setenv("DSH_HOME", dshHome)
+
+	found := false
+	for _, entry := range commandEnvironment(nil) {
+		if strings.EqualFold(entry, "DSH_HOME="+dshHome) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("command environment dropped DSH_HOME")
+	}
+}
+
 func TestWindowsRunnerHelper(t *testing.T) {
 	if os.Getenv("OSVERSE_WINDOWS_RUNNER_HELPER") != "1" {
 		return
