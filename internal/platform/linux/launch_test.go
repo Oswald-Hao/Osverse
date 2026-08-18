@@ -95,6 +95,22 @@ func TestDetachedStarterDetectsReplacementDuringStart(t *testing.T) {
 	}
 }
 
+func TestLaunchEnvironmentPreservesHarnessHome(t *testing.T) {
+	dshHome := filepath.Join(t.TempDir(), "harness-profile")
+	t.Setenv("DSH_HOME", dshHome)
+
+	found := false
+	for _, entry := range launchEnvironment() {
+		if entry == "DSH_HOME="+dshHome {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("launch environment dropped DSH_HOME")
+	}
+}
+
 func writeLaunchExecutable(t *testing.T, root, name string) string {
 	t.Helper()
 	path := filepath.Join(root, name)

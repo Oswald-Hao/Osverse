@@ -250,6 +250,22 @@ jobs:
           go test -race ./...
           go vet ./...
 
+      - name: Exercise a fresh DeepSeek Harness Windows profile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:npm_config_cache = Join-Path $HOME '.npm'
+          npm --prefix internal/harnessinstall/assets ci --ignore-scripts
+          $archive = Join-Path $env:RUNNER_TEMP 'node-v22.23.2-win-x64.zip'
+          Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.23.2/node-v22.23.2-win-x64.zip' -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne '1177b4137ba5adaa56354ae40f1080c7450e8ae09cecb47da459d1c52ac99f97') {
+            throw 'DeepSeek Harness Node archive checksum mismatch.'
+          }
+          $env:OSVERSE_HARNESS_WINDOWS_NODE_ARCHIVE = $archive
+          go test ./internal/harnessinstall -run 'TestBuildOtherPlatformPayloadsFromVerifiedCache/windows-amd64' -count=1 -v
+
       - name: Test and audit frontend
         shell: pwsh
         run: |

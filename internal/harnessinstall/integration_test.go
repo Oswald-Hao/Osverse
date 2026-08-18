@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -177,8 +178,64 @@ func TestBuildOtherPlatformPayloadsFromVerifiedCache(t *testing.T) {
 					t.Fatalf("spawn-helper is not executable: %v, %v", info, err)
 				}
 			}
+			if target.goos == "windows" && runtime.GOOS == "windows" {
+				assertWindowsHarnessWebStarts(t, ctx, node, filepath.Join(payload, "app", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"), root)
+			}
 		})
 	}
+}
+
+func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, script, root string) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	dshHome := filepath.Join(root, "dsh-home")
+	commandContext, stop := context.WithCancel(ctx)
+	command := exec.CommandContext(commandContext, node, script, "web", "--port", strconv.Itoa(port))
+	command.Env = append(os.Environ(), "DSH_HOME="+dshHome, "NO_COLOR=1")
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		stop()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	waited := false
+	defer func() {
+		stop()
+		if !waited {
+			<-done
+		}
+	}()
+
+	endpoint := "http://127.0.0.1:" + strconv.Itoa(port)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		response, requestErr := http.Get(endpoint)
+		if requestErr == nil {
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+			_ = response.Body.Close()
+			if readErr == nil && response.StatusCode == http.StatusOK && bytes.Contains(body, []byte("DeepSeek Harness")) {
+				return
+			}
+		}
+		select {
+		case err := <-done:
+			waited = true
+			t.Fatalf("Harness web exited before startup: %v\n%s", err, output.String())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	stop()
+	<-done
+	waited = true
+	t.Fatalf("Harness web did not start: %s", output.String())
 }
 
 func cachedArtifactClient(t *testing.T, nodeArchive string) *http.Client {
