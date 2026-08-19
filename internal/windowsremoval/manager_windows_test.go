@@ -95,6 +95,7 @@ func TestManagedDeepSeekHarnessRemovalAcceptsCommandWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer manager.expire(plan.ID)
 	if len(plan.Effects) != 3 || !strings.Contains(plan.Effects[1].Path, "deepseek-harness") {
 		t.Fatalf("harness removal plan = %#v", plan)
 	}
