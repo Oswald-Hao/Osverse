@@ -247,13 +247,21 @@ func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, exe
 		stop()
 		t.Fatal(err)
 	}
+	pid := command.Process.Pid
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	waited := false
 	defer func() {
+		if runtime.GOOS == "windows" {
+			_ = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+		}
 		stop()
 		if !waited {
-			<-done
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Errorf("Harness web process tree did not exit after cleanup")
+			}
 		}
 	}()
 
