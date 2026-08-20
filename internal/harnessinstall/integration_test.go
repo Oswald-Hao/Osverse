@@ -180,12 +180,54 @@ func TestBuildOtherPlatformPayloadsFromVerifiedCache(t *testing.T) {
 			}
 			if target.goos == "windows" && runtime.GOOS == "windows" {
 				assertWindowsHarnessWebStarts(t, ctx, node, filepath.Join(payload, "app", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"), root)
+				assertWindowsManagedHarnessShimStarts(t, ctx, payload, root)
 			}
 		})
 	}
 }
 
+func assertWindowsManagedHarnessShimStarts(t *testing.T, ctx context.Context, payload, root string) {
+	t.Helper()
+	home := filepath.Join(root, "managed-home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	paths := managedPathsFor(home, "windows", harnessVer)
+	for _, directory := range []string{paths.root, paths.stagingRoot, paths.toolRoot, paths.binRoot} {
+		if err := ensureManagedDirectory(home, directory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(filepath.Join(payload, "bin", "dsh.cmd")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeHarnessWrapper(payload, "windows", paths.finalRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.finalRoot), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(payload, paths.finalRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := activateHarnessCommand(home, paths, "windows"); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(ctx, paths.shimPath, "--version")
+	command.Env = append(os.Environ(), "DSH_HOME="+filepath.Join(root, "managed-dsh-home"), "NO_COLOR=1")
+	output, err := command.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(output)) != harnessVer {
+		t.Fatalf("managed dsh version output=%q err=%v", output, err)
+	}
+	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, root, "web")
+}
+
 func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, script, root string) {
+	t.Helper()
+	assertWindowsHarnessCommandWebStarts(t, ctx, node, root, script, "web")
+}
+
+func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, executable, root string, prefixArgs ...string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -196,7 +238,8 @@ func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, scri
 
 	dshHome := filepath.Join(root, "dsh-home")
 	commandContext, stop := context.WithCancel(ctx)
-	command := exec.CommandContext(commandContext, node, script, "web", "--port", strconv.Itoa(port))
+	args := append(append([]string(nil), prefixArgs...), "--port", strconv.Itoa(port))
+	command := exec.CommandContext(commandContext, executable, args...)
 	command.Env = append(os.Environ(), "DSH_HOME="+dshHome, "NO_COLOR=1")
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
@@ -204,13 +247,21 @@ func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, scri
 		stop()
 		t.Fatal(err)
 	}
+	pid := command.Process.Pid
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	waited := false
 	defer func() {
+		if runtime.GOOS == "windows" {
+			_ = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+		}
 		stop()
 		if !waited {
-			<-done
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Errorf("Harness web process tree did not exit after cleanup")
+			}
 		}
 	}()
 

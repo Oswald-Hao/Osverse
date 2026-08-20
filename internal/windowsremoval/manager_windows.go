@@ -381,7 +381,17 @@ func validManagedShim(path, componentID, toolRoot string) bool {
 	}
 	target := strings.TrimSuffix(strings.TrimPrefix(lines[3], `"`), `" %*`)
 	target, ok := decodeShimPath(target)
-	return ok && filepath.IsAbs(target) && strings.EqualFold(filepath.Ext(target), ".exe") && pathWithin(toolRoot, filepath.Clean(target))
+	if !ok || !filepath.IsAbs(target) {
+		return false
+	}
+	target = filepath.Clean(target)
+	if !pathWithin(toolRoot, target) {
+		return false
+	}
+	if componentID == "deepseek-harness" {
+		return strings.EqualFold(filepath.Ext(target), ".cmd") && strings.EqualFold(filepath.Base(target), "dsh.cmd")
+	}
+	return strings.EqualFold(filepath.Ext(target), ".exe")
 }
 
 func decodeShimPath(value string) (string, bool) {
