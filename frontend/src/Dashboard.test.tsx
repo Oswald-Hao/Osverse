@@ -500,6 +500,46 @@ describe('environment status dashboard', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
+  it('previews and confirms Windows managed recovery effects', async () => {
+    mockUseEnvironmentScan.mockReturnValue(scanState({ snapshot: {
+      ...snapshot,
+      components: [...snapshot.components, {
+        id: 'deepseek-harness', name: 'DeepSeek Harness', category: 'Core CLI', status: 'installed',
+        installations: [{
+          path: 'C:\\Users\\Alice\\.local\\bin\\dsh.cmd',
+          resolvedPath: 'C:\\Users\\Alice\\.local\\bin\\dsh.cmd',
+          version: '0.1.0-rc.6', source: 'osverse', managed: true,
+        }],
+        message: '已安装', minimumOS: 'Windows 10 1809',
+      }],
+      total: snapshot.total + 1,
+      ready: snapshot.ready + 1,
+    }}))
+    const create = vi.fn().mockResolvedValue({
+      id: 'remove-windows-harness', componentId: 'deepseek-harness', name: 'DeepSeek Harness',
+      effects: [
+        { action: 'recover', path: 'C:\\Users\\Alice\\.local\\bin\\dsh.cmd', description: '将命令入口移入恢复区', recoverable: true },
+        { action: 'manifest', path: 'C:\\Users\\Alice\\AppData\\Local\\Osverse\\recovery\\recovery.json', description: '记录恢复信息', recoverable: true },
+      ],
+      warning: 'Harness 配置、凭据和会话数据不会删除。', createdAt: '', expiresAt: '',
+    })
+    const remove = vi.fn().mockResolvedValue({
+      planId: 'remove-windows-harness', componentId: 'deepseek-harness', removed: true, message: '已移除',
+    })
+    setRemovalOperationsForTests(create, remove)
+    render(<App />)
+    const harness = screen.getByRole('heading', { name: 'DeepSeek Harness' }).closest('article')
+
+    fireEvent.click(within(harness as HTMLElement).getByRole('button', { name: /移除/ }))
+    const dialog = await screen.findByRole('dialog', { name: /确认移除 DeepSeek Harness/ })
+    expect(within(dialog).getByText('C:\\Users\\Alice\\.local\\bin\\dsh.cmd')).toBeVisible()
+    expect(within(dialog).getAllByText('可从恢复区恢复')).toHaveLength(2)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认移除' }))
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('remove-windows-harness'))
+    expect(refresh).toHaveBeenCalled()
+  })
+
   it('shows the actionable backend message when a managed component is still running', async () => {
     const create = vi.fn().mockResolvedValue({
       id: 'remove-running', componentId: 'claude-code', name: 'Claude Code',

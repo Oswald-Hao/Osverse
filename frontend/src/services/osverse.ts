@@ -34,6 +34,7 @@ import type {
   InstallTask,
   InstallTaskPhase,
   HistoryEntry,
+  RemovalAction,
   RemovalPlan,
   RemovalResult,
   ProxyProtocol,
@@ -103,6 +104,9 @@ const proxyProtocols = new Set<string>(['http', 'https-connect', 'socks5'])
 const installTaskPhases = new Set<string>([
   'queued', 'downloading', 'verifying', 'installing', 'committing', 'completed', 'failed', 'canceled',
 ])
+const removalActions = new Set<string>([
+  'trash', 'package', 'recover', 'manifest', 'store', 'msi', 'uninstaller',
+])
 
 function testSeamEnabled(): boolean {
   const meta = import.meta as ImportMeta & { env: { MODE?: string } }
@@ -121,6 +125,14 @@ function proxyProtocol(value: string): ProxyProtocol {
     throw new Error('代理探测返回了无效的协议')
   }
   return value as ProxyProtocol
+}
+
+function removalAction(value: unknown): RemovalAction {
+  const action = stringValue(value)
+  if (!removalActions.has(action)) {
+    throw new Error('移除服务返回了无效操作')
+  }
+  return action as RemovalAction
 }
 
 export async function scanEnvironment(): Promise<EnvironmentSnapshot> {
@@ -369,8 +381,7 @@ export async function createRemovalPlan(componentId: string): Promise<RemovalPla
     id: stringValue(value.id), componentId: stringValue(value.componentId), name: stringValue(value.name),
     effects: effects.map((raw) => {
       const effect = recordValue(raw)
-      const action = stringValue(effect.action)
-      if (action !== 'trash' && action !== 'package') throw new Error('移除服务返回了无效操作')
+      const action = removalAction(effect.action)
       return { action, path: stringValue(effect.path), description: stringValue(effect.description), recoverable: booleanValue(effect.recoverable) }
     }),
     warning: stringValue(value.warning), createdAt: stringValue(value.createdAt), expiresAt: stringValue(value.expiresAt),
