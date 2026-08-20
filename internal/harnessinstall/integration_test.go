@@ -204,11 +204,9 @@ func assertWindowsManagedHarnessShimStarts(t *testing.T, ctx context.Context, pa
 	if err := writeHarnessWrapper(payload, "windows", paths.finalRoot); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.finalRoot), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(payload, paths.finalRoot); err != nil {
-		t.Fatal(err)
+	created, err := commitHarnessPayload(payload, paths.finalRoot, "windows")
+	if err != nil || !created {
+		t.Fatalf("commitHarnessPayload() = (%t, %v)", created, err)
 	}
 	if err := activateHarnessCommand(home, paths, "windows"); err != nil {
 		t.Fatal(err)
