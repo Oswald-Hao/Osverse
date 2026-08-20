@@ -45,7 +45,8 @@ func TestManagerLaunchesDeepSeekHarnessWebProfile(t *testing.T) {
 	if err := manager.Launch(context.Background(), component, component.Installations[0].Path); err != nil {
 		t.Fatal(err)
 	}
-	if len(starter.requests) != 1 || !reflect.DeepEqual(starter.requests[0].Args, []string{"web"}) || !starter.requests[0].Terminal {
+	if len(starter.requests) != 1 || !reflect.DeepEqual(starter.requests[0].Args, []string{"web"}) ||
+		!starter.requests[0].Terminal || !starter.requests[0].LocalWeb {
 		t.Fatalf("DeepSeek Harness launch request = %#v", starter.requests)
 	}
 }

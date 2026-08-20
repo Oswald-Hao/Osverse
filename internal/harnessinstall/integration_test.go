@@ -217,15 +217,21 @@ func assertWindowsManagedHarnessShimStarts(t *testing.T, ctx context.Context, pa
 	if err != nil || strings.TrimSpace(string(output)) != harnessVer {
 		t.Fatalf("managed dsh version output=%q err=%v", output, err)
 	}
-	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, root, "web")
+	managedDSHHome := filepath.Join(root, "managed-dsh-home")
+	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "web")
+	// A second boot covers the persisted profile created by the first run,
+	// rather than proving only the empty-profile path twice.
+	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "web")
+
+	assertWindowsProductionRemoval(t, ctx, home, paths)
 }
 
 func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, script, root string) {
 	t.Helper()
-	assertWindowsHarnessCommandWebStarts(t, ctx, node, root, script, "web")
+	assertWindowsHarnessCommandWebStarts(t, ctx, node, filepath.Join(root, "dsh-home"), script, "web")
 }
 
-func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, executable, root string, prefixArgs ...string) {
+func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, executable, dshHome string, prefixArgs ...string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -234,7 +240,6 @@ func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, exe
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
 
-	dshHome := filepath.Join(root, "dsh-home")
 	commandContext, stop := context.WithCancel(ctx)
 	args := append(append([]string(nil), prefixArgs...), "--port", strconv.Itoa(port))
 	command := exec.CommandContext(commandContext, executable, args...)

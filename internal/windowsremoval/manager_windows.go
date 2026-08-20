@@ -211,7 +211,7 @@ func (manager *Manager) Execute(ctx context.Context, planID string, current doma
 	delete(manager.plans, planID)
 	manager.mu.Unlock()
 	defer stored.close()
-	if !sameComponent(stored.component, current) {
+	if !sameRemovalTarget(stored.component, current) {
 		return removal.Result{}, removal.ErrEvidenceChanged
 	}
 	var err error
@@ -480,8 +480,8 @@ func cloneComponent(component domain.Component) domain.Component {
 	return component
 }
 
-func sameComponent(left, right domain.Component) bool {
-	if left.ID != right.ID || left.Category != right.Category || left.Status != right.Status || len(left.Installations) != len(right.Installations) {
+func sameRemovalTarget(left, right domain.Component) bool {
+	if left.ID != right.ID || left.Category != right.Category || len(left.Installations) != len(right.Installations) {
 		return false
 	}
 	leftItems := append([]domain.Installation(nil), left.Installations...)
@@ -489,7 +489,8 @@ func sameComponent(left, right domain.Component) bool {
 	sort.Slice(leftItems, func(i, j int) bool { return strings.ToLower(leftItems[i].Path) < strings.ToLower(leftItems[j].Path) })
 	sort.Slice(rightItems, func(i, j int) bool { return strings.ToLower(rightItems[i].Path) < strings.ToLower(rightItems[j].Path) })
 	for index := range leftItems {
-		if leftItems[index] != rightItems[index] {
+		if !samePath(leftItems[index].Path, rightItems[index].Path) ||
+			!samePath(leftItems[index].ResolvedPath, rightItems[index].ResolvedPath) {
 			return false
 		}
 	}
