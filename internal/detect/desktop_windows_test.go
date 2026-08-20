@@ -107,7 +107,7 @@ func TestDetectWindowsOpenCodeDesktopUsesRegistryInstallLocation(t *testing.T) {
 func TestRegistryExecutablePathsAcceptsInstallLocationAndDisplayIcon(t *testing.T) {
 	spec := WindowsDesktopSpecs()[3]
 	paths := registryExecutablePaths(spec, `C:\Program Files\OpenCode`, `"D:\Apps\OpenCode\OpenCode.exe",0`)
-	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
+	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\OpenCode Beta.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
 	if len(paths) != len(want) {
 		t.Fatalf("paths = %#v", paths)
 	}
