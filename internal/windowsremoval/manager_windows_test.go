@@ -195,7 +195,7 @@ func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result, err := manager.Execute(context.Background(), plan.ID, component); !errors.Is(err, removal.ErrRemovalFailed) || result.Removed {
+	if result, err := manager.Execute(context.Background(), plan.ID, component); !errors.Is(err, removal.ErrComponentInUse) || result.Removed {
 		_ = locked.Close()
 		t.Fatalf("locked Execute() = (%#v, %v)", result, err)
 	}

@@ -18,6 +18,7 @@ const (
 	ErrHistoryFailed      ErrorCode = "HISTORY_FAILED"
 	ErrRemovalPlanFailed  ErrorCode = "REMOVAL_PLAN_FAILED"
 	ErrRemovalTaskFailed  ErrorCode = "REMOVAL_TASK_FAILED"
+	ErrRemovalInUse       ErrorCode = "REMOVAL_IN_USE"
 	ErrUpdateFailed       ErrorCode = "UPDATE_FAILED"
 )
 
