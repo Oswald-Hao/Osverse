@@ -388,10 +388,15 @@ func validManagedShim(path, componentID, toolRoot string) bool {
 	if !pathWithin(toolRoot, target) {
 		return false
 	}
-	if componentID == "deepseek-harness" {
-		return strings.EqualFold(filepath.Ext(target), ".cmd") && strings.EqualFold(filepath.Base(target), "dsh.cmd")
+	if wrapper, ok := managedCommandWrapper(componentID); ok && strings.EqualFold(filepath.Ext(target), ".cmd") {
+		return strings.EqualFold(filepath.Base(target), wrapper+".cmd")
 	}
 	return strings.EqualFold(filepath.Ext(target), ".exe")
+}
+
+func managedCommandWrapper(componentID string) (string, bool) {
+	rule, ok := componentRules[componentID]
+	return rule.command, ok && rule.category == "Core CLI" && rule.command != ""
 }
 
 func decodeShimPath(value string) (string, bool) {
