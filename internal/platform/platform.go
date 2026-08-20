@@ -22,10 +22,14 @@ type PathProbe interface {
 type CommandRequest struct {
 	Path             string
 	PinnedExecutable *os.File
-	Args             []string
-	Env              []string
-	Timeout          time.Duration
-	OutputLimit      int
+	// ReleasePinnedAfterStart transfers ownership of PinnedExecutable to the
+	// runner. The runner keeps it open through process creation and closes it
+	// on every success or failure path. The zero value preserves caller ownership.
+	ReleasePinnedAfterStart bool
+	Args                    []string
+	Env                     []string
+	Timeout                 time.Duration
+	OutputLimit             int
 }
 
 // CommandResult contains bounded process output and termination details.
