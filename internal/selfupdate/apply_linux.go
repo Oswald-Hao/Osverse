@@ -131,7 +131,8 @@ func extractPortableBinary(archivePath string, archiveSize int64) (string, error
 }
 
 func replaceAndRestart(source, target string) (ApplyResult, error) {
-	lock, err := acquireUpdateLock(filepath.Dir(target))
+	directory := filepath.Dir(target)
+	lock, err := acquireUpdateLock(directory)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -140,7 +141,16 @@ func replaceAndRestart(source, target string) (ApplyResult, error) {
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	directory := filepath.Dir(target)
+	backup := target + ".osverse-previous"
+	hadBackup := false
+	if backupInfo, backupErr := os.Lstat(backup); backupErr == nil {
+		if !backupInfo.Mode().IsRegular() || backupInfo.Mode()&os.ModeSymlink != 0 {
+			return ApplyResult{}, errors.New("update backup path is unsafe")
+		}
+		hadBackup = true
+	} else if !os.IsNotExist(backupErr) {
+		return ApplyResult{}, backupErr
+	}
 	staged, err := os.CreateTemp(directory, ".osverse-replacement-*")
 	if err != nil {
 		return ApplyResult{}, err
@@ -175,41 +185,85 @@ func replaceAndRestart(source, target string) (ApplyResult, error) {
 	if err := staged.Close(); err != nil {
 		return ApplyResult{}, err
 	}
-	backup := target + ".osverse-previous"
-	if backupInfo, backupErr := os.Lstat(backup); backupErr == nil {
-		if !backupInfo.Mode().IsRegular() || backupInfo.Mode()&os.ModeSymlink != 0 {
-			return ApplyResult{}, errors.New("update backup path is unsafe")
-		}
-		if err := os.Remove(backup); err != nil {
-			return ApplyResult{}, err
-		}
-	} else if !os.IsNotExist(backupErr) {
-		return ApplyResult{}, backupErr
-	}
-	if err := os.Rename(target, backup); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Rename(stagedPath, target); err != nil {
-		_ = os.Rename(backup, target)
+	if err := atomicExchange(target, stagedPath); err != nil {
 		return ApplyResult{}, err
 	}
 	cleanup = false
-	if directoryHandle, openErr := os.Open(directory); openErr == nil {
-		_ = directoryHandle.Sync()
-		_ = directoryHandle.Close()
+	if hadBackup {
+		if err := atomicExchange(stagedPath, backup); err != nil {
+			return ApplyResult{}, rollbackPreBackupExchange(target, stagedPath, err, &cleanup)
+		}
+	} else if err := os.Rename(stagedPath, backup); err != nil {
+		return ApplyResult{}, rollbackPreBackupExchange(target, stagedPath, err, &cleanup)
+	}
+	if err := syncUpdateDirectory(directory); err != nil {
+		rollbackErr := rollbackFinalizedUpdate(target, backup, stagedPath, hadBackup)
+		if rollbackErr == nil {
+			cleanup = true
+		}
+		return ApplyResult{}, errors.Join(err, rollbackErr)
 	}
 	process := exec.Command(target)
 	if err := process.Start(); err != nil {
-		failed := target + ".osverse-failed"
-		_ = os.Rename(target, failed)
-		_ = os.Rename(backup, target)
-		_ = os.Remove(failed)
-		return ApplyResult{}, fmt.Errorf("restart updated Osverse: %w", err)
+		rollbackErr := rollbackFinalizedUpdate(target, backup, stagedPath, hadBackup)
+		if rollbackErr == nil {
+			cleanup = true
+		}
+		return ApplyResult{}, fmt.Errorf("restart updated Osverse: %w", errors.Join(err, rollbackErr))
 	}
+	cleanup = true
 	if process.Process != nil {
 		_ = process.Process.Release()
 	}
+	_ = os.Remove(stagedPath)
+	_ = syncUpdateDirectory(directory)
 	return ApplyResult{Started: true, ShouldQuit: true, Message: "更新已安装，正在重新启动 Osverse"}, nil
+}
+
+func atomicExchange(left, right string) error {
+	if !filepath.IsAbs(left) || !filepath.IsAbs(right) || filepath.Clean(left) != left || filepath.Clean(right) != right ||
+		filepath.Dir(left) != filepath.Dir(right) || left == right {
+		return errors.New("atomic update exchange paths are unsafe")
+	}
+	if err := unix.Renameat2(unix.AT_FDCWD, left, unix.AT_FDCWD, right, unix.RENAME_EXCHANGE); err != nil {
+		return fmt.Errorf("atomic update exchange unavailable: %w", err)
+	}
+	return nil
+}
+
+func rollbackPreBackupExchange(target, staged string, cause error, cleanup *bool) error {
+	rollbackErr := atomicExchange(target, staged)
+	if rollbackErr == nil {
+		*cleanup = true
+	}
+	return errors.Join(cause, rollbackErr)
+}
+
+func rollbackFinalizedUpdate(target, backup, staged string, hadBackup bool) error {
+	if err := atomicExchange(target, backup); err != nil {
+		return err
+	}
+	if hadBackup {
+		if err := atomicExchange(backup, staged); err != nil {
+			return err
+		}
+	} else if err := os.Rename(backup, staged); err != nil {
+		return err
+	}
+	if err := os.Remove(staged); err != nil {
+		return err
+	}
+	return syncUpdateDirectory(filepath.Dir(target))
+}
+
+func syncUpdateDirectory(directory string) error {
+	handle, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	syncErr := handle.Sync()
+	closeErr := handle.Close()
+	return errors.Join(syncErr, closeErr)
 }
 
 func acquireUpdateLock(directory string) (*os.File, error) {
