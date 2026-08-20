@@ -166,6 +166,49 @@ func TestManagedCommandWrapperRemovalAcceptsGeneratedWrappers(t *testing.T) {
 	}
 }
 
+func TestManagedHarnessRemovalRevalidatesOwnershipWhenScanProvenanceIsStale(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.now = func() time.Time { return time.Date(2026, time.August, 20, 19, 0, 0, 0, time.UTC) }
+	manager.randomID = func() (string, error) { return "remove-stale-harness", nil }
+
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Detection metadata is advisory. The removal manager must independently
+	// revalidate the fixed shim and managed root before it captures either path.
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: shim, ResolvedPath: shim, Source: "path", Managed: false, Version: "unknown"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.expire(plan.ID)
+	if len(plan.Effects) != 3 || plan.Effects[0].Path != shim || plan.Effects[1].Path != toolRoot {
+		t.Fatalf("stale-provenance removal plan = %#v", plan)
+	}
+}
+
 func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
