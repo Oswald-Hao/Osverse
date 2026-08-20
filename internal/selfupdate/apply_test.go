@@ -328,3 +328,151 @@ func TestLinuxUpdateLockRejectsUnsafeEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestAtomicExecutableExchangeNeverLeavesTheLaunchPathMissing(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	staged := filepath.Join(directory, "replacement")
+	if err := os.WriteFile(target, []byte("old"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged, []byte("new"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	missing := make(chan error, 1)
+	go func() {
+		defer close(done)
+		for {
+			if _, err := os.Lstat(target); err != nil {
+				select {
+				case missing <- err:
+				default:
+				}
+				return
+			}
+			select {
+			case <-stop:
+				return
+			default:
+			}
+		}
+	}()
+	for range 1000 {
+		if err := atomicExchange(target, staged); err != nil {
+			close(stop)
+			<-done
+			t.Fatal(err)
+		}
+	}
+	close(stop)
+	<-done
+	select {
+	case err := <-missing:
+		t.Fatalf("launch path disappeared during exchange: %v", err)
+	default:
+	}
+}
+
+func TestAtomicExecutableExchangeFailureLeavesTargetUnchanged(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	if err := os.WriteFile(target, []byte("current"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicExchange(target, filepath.Join(directory, "missing")); err == nil {
+		t.Fatal("exchange with a missing replacement succeeded")
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil || string(raw) != "current" {
+		t.Fatalf("target changed after failed exchange = (%q, %v)", raw, err)
+	}
+}
+
+func TestReplaceAndRestartAtomicallyRestoresOldBinaryWhenStartFails(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	source := filepath.Join(directory, "next")
+	old := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(target, old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("not an executable"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := replaceAndRestart(source, target); err == nil {
+		t.Fatal("invalid replacement unexpectedly started")
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(raw, old) {
+		t.Fatalf("old target was not restored = (%q, %v)", raw, err)
+	}
+	if _, err := os.Lstat(target + ".osverse-previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed update left a backup or unsafe state: %v", err)
+	}
+}
+
+func TestReplaceAndRestartFailurePreservesAnEarlierBackup(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	backup := target + ".osverse-previous"
+	source := filepath.Join(directory, "next")
+	old := []byte("#!/bin/sh\nexit 0\n")
+	previous := []byte("#!/bin/sh\nprintf previous\n")
+	for path, content := range map[string][]byte{target: old, backup: previous, source: []byte("not an executable")} {
+		if err := os.WriteFile(path, content, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := replaceAndRestart(source, target); err == nil {
+		t.Fatal("invalid replacement unexpectedly started")
+	}
+	for path, want := range map[string][]byte{target: old, backup: previous} {
+		raw, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(raw, want) {
+			t.Errorf("%s after rollback = (%q, %v), want %q", path, raw, err, want)
+		}
+	}
+}
+
+func TestReplaceAndRestartKeepsExactPreviousBinaryAfterSuccessfulStart(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	source := filepath.Join(directory, "next")
+	marker := filepath.Join(directory, "restarted")
+	old := []byte("#!/bin/sh\nexit 0\n")
+	next := []byte("#!/bin/sh\nprintf restarted > " + marker + "\n")
+	if err := os.WriteFile(target, old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, next, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target+".osverse-previous", []byte("older backup"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	result, err := replaceAndRestart(source, target)
+	if err != nil || !result.Started || !result.ShouldQuit {
+		t.Fatalf("replaceAndRestart() = (%#v, %v)", result, err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if raw, err := os.ReadFile(marker); err == nil && string(raw) == "restarted" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("replacement process did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for path, want := range map[string][]byte{target: next, target + ".osverse-previous": old} {
+		raw, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(raw, want) {
+			t.Errorf("%s = (%q, %v), want %q", path, raw, err, want)
+		}
+	}
+	if leftovers, err := filepath.Glob(filepath.Join(directory, ".osverse-replacement-*")); err != nil || len(leftovers) != 0 {
+		t.Errorf("stale replacement files = (%v, %v)", leftovers, err)
+	}
+}
