@@ -500,6 +500,25 @@ describe('environment status dashboard', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
+  it('shows the actionable backend message when a managed component is still running', async () => {
+    const create = vi.fn().mockResolvedValue({
+      id: 'remove-running', componentId: 'claude-code', name: 'Claude Code',
+      effects: [{ action: 'trash', path: '/home/test/.local/bin/claude', description: '移至回收站', recoverable: true }],
+      warning: '配置、凭据和会话数据不会删除。', createdAt: '', expiresAt: '',
+    })
+    const message = 'REMOVAL_IN_USE: 组件正在运行或被占用，请关闭相关终端和应用窗口后重试；原安装保持不变'
+    setRemovalOperationsForTests(create, vi.fn().mockRejectedValue(new Error(message)))
+    render(<App />)
+    const claude = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
+
+    fireEvent.click(within(claude as HTMLElement).getByRole('button', { name: /移除/ }))
+    const dialog = await screen.findByRole('dialog', { name: /确认移除 Claude Code/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认移除' }))
+
+    expect(await screen.findByText(message)).toHaveAttribute('role', 'alert')
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it('announces an initial scan without rendering a stale dashboard', () => {
     mockUseEnvironmentScan.mockReturnValue(
       scanState({ snapshot: null, phase: 'scanning' }),

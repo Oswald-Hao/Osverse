@@ -10,6 +10,7 @@ var (
 	ErrRemovalUnsupported = errors.New("component removal unsupported")
 	ErrPlanUnavailable    = errors.New("removal plan unavailable")
 	ErrEvidenceChanged    = errors.New("removal evidence changed")
+	ErrComponentInUse     = errors.New("component is in use")
 	ErrRemovalFailed      = errors.New("component removal failed")
 )
 

@@ -4,6 +4,7 @@ package windows
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,10 @@ import (
 
 	xwindows "golang.org/x/sys/windows"
 )
+
+// ErrMoveInUse means Windows rejected the final atomic rename because the
+// already-pinned source object, or a child beneath it, still has an open handle.
+var ErrMoveInUse = errors.New("movable path is in use")
 
 // MovableEvidence pins one non-reparse file or directory and can rename that
 // exact object without reopening its source path.
@@ -118,8 +123,24 @@ func (evidence *MovableEvidence) MoveTo(destination string) error {
 	copy(unsafe.Slice(&info.FileName[0], len(name)), name)
 	var status xwindows.IO_STATUS_BLOCK
 	if err := xwindows.NtSetInformationFile(evidence.identity.handle, &status, &buffer[0], uint32(len(buffer)), xwindows.FileRenameInformation); err != nil {
-		return err
+		return classifyRenameError(err)
 	}
 	evidence.identity.finalPath = filepath.Clean(destination)
 	return nil
+}
+
+func classifyRenameError(err error) error {
+	var status xwindows.NTStatus
+	if !errors.As(err, &status) {
+		return err
+	}
+	switch status {
+	case xwindows.STATUS_ACCESS_DENIED,
+		xwindows.STATUS_SHARING_VIOLATION,
+		xwindows.STATUS_FILE_LOCK_CONFLICT,
+		xwindows.STATUS_LOCK_NOT_GRANTED:
+		return fmt.Errorf("%w: %v", ErrMoveInUse, err)
+	default:
+		return err
+	}
 }

@@ -159,6 +159,42 @@ func TestRemovalBridgeRescansBeforePreviewAndConfirmation(t *testing.T) {
 	}
 }
 
+func TestRemovalBridgeReturnsActionableComponentInUseError(t *testing.T) {
+	component := domain.Component{
+		ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: `C:\Users\test\.local\bin\dsh.cmd`, Managed: true}},
+	}
+	service := &fakeRemovalService{
+		create: func(context.Context, domain.Component) (removal.Plan, error) {
+			return removal.Plan{ID: "remove-running-harness", ComponentID: component.ID}, nil
+		},
+		execute: func(context.Context, string, domain.Component) (removal.Result, error) {
+			return removal.Result{}, removal.ErrComponentInUse
+		},
+	}
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{Components: []domain.Component{component}}, nil
+	}}, &fakeProxyProber{})
+	app.removal = service
+	plan, err := app.CreateRemovalPlan(component.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.RemoveComponent(plan.ID)
+	var public *domain.PublicError
+	if !errors.As(err, &public) {
+		t.Fatalf("RemoveComponent() error = %v, want public error", err)
+	}
+	if public.Code != domain.ErrRemovalInUse {
+		t.Errorf("error code = %q, want %q", public.Code, domain.ErrRemovalInUse)
+	}
+	for _, text := range []string{"正在运行", "关闭", "重试", "原安装保持不变"} {
+		if !strings.Contains(public.Message, text) {
+			t.Errorf("public message %q does not contain %q", public.Message, text)
+		}
+	}
+}
+
 func TestLaunchComponentUsesOnlyFreshBackendScanEvidence(t *testing.T) {
 	want := domain.Component{
 		ID: "claude-code", Name: "Claude Code", Category: "Core CLI", Status: domain.StatusInstalled,

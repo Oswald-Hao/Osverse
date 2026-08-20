@@ -574,10 +574,14 @@ func (app *App) RemoveComponent(planID string) (removal.Result, error) {
 	app.mu.Unlock()
 	if err != nil {
 		message := "移除未完成，原安装保持不变"
+		code := domain.ErrRemovalTaskFailed
 		if errors.Is(err, removal.ErrEvidenceChanged) {
 			message = "安装状态已变化，请重新预览"
+		} else if errors.Is(err, removal.ErrComponentInUse) {
+			code = domain.ErrRemovalInUse
+			message = "组件正在运行或被占用，请关闭相关终端和应用窗口后重试；原安装保持不变"
 		}
-		return removal.Result{}, domain.NewPublicError(domain.ErrRemovalTaskFailed, message, err)
+		return removal.Result{}, domain.NewPublicError(code, message, err)
 	}
 	app.appendHistory(historyservice.Input{
 		OperationID: planID, ComponentID: componentID, Name: componentDisplayName(componentID),
