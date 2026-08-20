@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	"golang.org/x/sys/windows/registry"
 )
 
 type fakeWindowsPackageQuery struct {
@@ -106,7 +107,9 @@ func TestDetectWindowsOpenCodeDesktopUsesRegistryInstallLocation(t *testing.T) {
 
 func TestRegistryExecutablePathsAcceptsInstallLocationAndDisplayIcon(t *testing.T) {
 	spec := WindowsDesktopSpecs()[3]
-	paths := registryExecutablePaths(spec, `C:\Program Files\OpenCode`, `"D:\Apps\OpenCode\OpenCode.exe",0`)
+	paths := registryExecutablePaths(spec,
+		`C:\Program Files\OpenCode`, registry.SZ,
+		`"D:\Apps\OpenCode\OpenCode.exe",0`, registry.SZ)
 	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\OpenCode Beta.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
 	if len(paths) != len(want) {
 		t.Fatalf("paths = %#v", paths)
@@ -115,6 +118,45 @@ func TestRegistryExecutablePathsAcceptsInstallLocationAndDisplayIcon(t *testing.
 		if paths[index] != want[index] {
 			t.Fatalf("paths = %#v", paths)
 		}
+	}
+}
+
+func TestRegistryExecutablePathsExpandsOnlyExpandStringValues(t *testing.T) {
+	t.Setenv("OSVERSE_REGISTRY_TEST_ROOT", `D:\Portable Apps`)
+	spec := WindowsDesktopSpecs()[3]
+
+	paths := registryExecutablePaths(spec,
+		`%OSVERSE_REGISTRY_TEST_ROOT%\OpenCode`, registry.EXPAND_SZ,
+		`"%OSVERSE_REGISTRY_TEST_ROOT%\OpenCode\OpenCode.exe",0`, registry.EXPAND_SZ)
+	want := []string{
+		`D:\Portable Apps\OpenCode\OpenCode.exe`,
+		`D:\Portable Apps\OpenCode\OpenCode Beta.exe`,
+		`D:\Portable Apps\OpenCode\opencode-desktop.exe`,
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("expanded paths = %#v, want %#v", paths, want)
+	}
+	for index := range want {
+		if paths[index] != want[index] {
+			t.Fatalf("expanded paths = %#v, want %#v", paths, want)
+		}
+	}
+
+	literal := registryExecutablePaths(spec,
+		`%OSVERSE_REGISTRY_TEST_ROOT%\OpenCode`, registry.SZ,
+		`%OSVERSE_REGISTRY_TEST_ROOT%\OpenCode\OpenCode.exe`, registry.SZ)
+	if len(literal) != 0 {
+		t.Fatalf("REG_SZ values were unexpectedly expanded: %#v", literal)
+	}
+}
+
+func TestRegistryExecutablePathsRejectsUnresolvedExpandStringVariables(t *testing.T) {
+	spec := WindowsDesktopSpecs()[3]
+	paths := registryExecutablePaths(spec,
+		`C:\%OSVERSE_REGISTRY_VARIABLE_DOES_NOT_EXIST%\OpenCode`, registry.EXPAND_SZ,
+		`C:\%OSVERSE_REGISTRY_VARIABLE_DOES_NOT_EXIST%\OpenCode.exe,0`, registry.EXPAND_SZ)
+	if len(paths) != 0 {
+		t.Fatalf("unresolved REG_EXPAND_SZ paths accepted: %#v", paths)
 	}
 }
 
