@@ -199,8 +199,17 @@ export interface APIApplyResult {
   message: string
 }
 
+export type RemovalAction =
+  | 'trash'
+  | 'package'
+  | 'recover'
+  | 'manifest'
+  | 'store'
+  | 'msi'
+  | 'uninstaller'
+
 export interface RemovalEffect {
-  action: 'trash' | 'package'
+  action: RemovalAction
   path: string
   description: string
   recoverable: boolean
