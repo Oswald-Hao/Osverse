@@ -300,6 +300,81 @@ func TestManagedHarnessRemovalRevalidatesOwnershipWhenScanProvenanceIsStale(t *t
 	}
 }
 
+func TestBrokenLegacyHarnessCanBeRemovedWhenRuntimeTargetIsMissing(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-broken-legacy-harness", nil }
+
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	if err := os.MkdirAll(toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Beta 2 through Beta 10 all wrote this exact v1 marker and target layout.
+	// Model the real half-install: the owned shim remains, but its wrapper was
+	// never committed (or was damaged), so detection reports "broken".
+	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusBroken}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatalf("CreatePlan() for legacy broken Harness = %v", err)
+	}
+	if len(plan.Effects) != 3 || plan.Effects[0].Path != shim || plan.Effects[1].Path != toolRoot {
+		t.Fatalf("legacy recovery effects = %#v", plan.Effects)
+	}
+	result, err := manager.Execute(context.Background(), plan.ID, component)
+	if err != nil || !result.Removed {
+		t.Fatalf("Execute() for legacy broken Harness = (%#v, %v)", result, err)
+	}
+	for _, removed := range []string{shim, toolRoot} {
+		if _, err := os.Lstat(removed); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("legacy broken path remains: %s: %v", removed, err)
+		}
+	}
+}
+
+func TestBrokenLegacyHarnessShimOnlyRemovalRejectsExternalTarget(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-shim-only-harness", nil }
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(home, "Documents", "dsh.cmd")
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + external + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusBroken}
+	if _, err := manager.CreatePlan(context.Background(), component); !errors.Is(err, removal.ErrRemovalUnsupported) {
+		t.Fatalf("external legacy target CreatePlan() = %v, want ErrRemovalUnsupported", err)
+	}
+	if _, err := os.Lstat(shim); err != nil {
+		t.Fatalf("rejected external shim was changed: %v", err)
+	}
+}
+
 func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

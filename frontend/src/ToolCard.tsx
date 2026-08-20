@@ -32,8 +32,9 @@ function ToolCard({ component, onInstall, onLaunch, onRemove }: {
   const launchable = ['installed', 'update_available', 'conflict'].includes(component.status)
   const canLaunch = launchable &&
     component.installations.length === 1
-  const canRemove = ['installed', 'update_available', 'conflict'].includes(component.status) &&
-	(component.installations.length > 0 || component.category === 'Desktop Applications')
+  const brokenHarnessRecovery = component.id === 'deepseek-harness' && component.status === 'broken'
+  const canRemove = (['installed', 'update_available', 'conflict'].includes(component.status) || brokenHarnessRecovery) &&
+	(component.installations.length > 0 || component.category === 'Desktop Applications' || brokenHarnessRecovery)
 
   return (
     <li>
