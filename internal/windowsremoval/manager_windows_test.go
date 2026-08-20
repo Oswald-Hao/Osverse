@@ -4,6 +4,7 @@ package windowsremoval
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -103,17 +104,111 @@ func TestManagedCommandWrapperRemovalAcceptsGeneratedWrappers(t *testing.T) {
 			if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			profile := filepath.Join(home, "AppData", "Roaming", "Osverse-test", tc.command+".json")
+			if err := os.MkdirAll(filepath.Dir(profile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(profile, []byte("preserve-profile"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			component := domain.Component{ID: tc.componentID, Name: tc.name, Category: "Core CLI", Status: domain.StatusInstalled,
 				Installations: []domain.Installation{{Path: shim, ResolvedPath: shim, Source: "osverse", Managed: true, Version: tc.version}}}
 			plan, err := manager.CreatePlan(context.Background(), component)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer manager.expire(plan.ID)
 			if len(plan.Effects) != 3 || !strings.Contains(plan.Effects[1].Path, tc.componentID) {
 				t.Fatalf("wrapper removal plan = %#v", plan)
 			}
+			result, err := manager.Execute(context.Background(), plan.ID, component)
+			if err != nil || !result.Removed {
+				t.Fatalf("Execute() = (%#v, %v)", result, err)
+			}
+			for _, removed := range []string{shim, toolRoot} {
+				if _, err := os.Lstat(removed); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("managed path remains after removal: %s: %v", removed, err)
+				}
+			}
+			raw, err := os.ReadFile(profile)
+			if err != nil || string(raw) != "preserve-profile" {
+				t.Fatalf("profile changed = (%q, %v)", raw, err)
+			}
+			recovery := filepath.Join(home, "AppData", "Local", "Osverse", "recovery", plan.ID)
+			manifestRaw, err := os.ReadFile(filepath.Join(recovery, "recovery.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var manifest struct {
+				SchemaVersion int               `json:"schemaVersion"`
+				ComponentID   string            `json:"componentId"`
+				Paths         map[string]string `json:"paths"`
+			}
+			if err := json.Unmarshal(manifestRaw, &manifest); err != nil || manifest.SchemaVersion != 1 ||
+				manifest.ComponentID != tc.componentID || len(manifest.Paths) != 2 {
+				t.Fatalf("recovery manifest = (%#v, %v)", manifest, err)
+			}
+			for destination, original := range manifest.Paths {
+				if _, err := os.Lstat(destination); err != nil {
+					t.Fatalf("recovery destination missing: %s: %v", destination, err)
+				}
+				if original != shim && original != toolRoot {
+					t.Fatalf("unexpected recovery source: %s", original)
+				}
+			}
 		})
+	}
+}
+
+func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-locked-harness", nil }
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: shim, ResolvedPath: shim, Source: "osverse", Managed: true, Version: "0.1.0-rc.6"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, err := os.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := manager.Execute(context.Background(), plan.ID, component); !errors.Is(err, removal.ErrRemovalFailed) || result.Removed {
+		_ = locked.Close()
+		t.Fatalf("locked Execute() = (%#v, %v)", result, err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, preserved := range []string{shim, toolRoot, target} {
+		if _, err := os.Lstat(preserved); err != nil {
+			t.Fatalf("rollback did not preserve %s: %v", preserved, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(home, "AppData", "Local", "Osverse", "recovery", plan.ID, "recovery.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial recovery manifest exists: %v", err)
 	}
 }
 
