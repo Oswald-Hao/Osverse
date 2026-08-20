@@ -22,7 +22,11 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/removal"
 )
 
-const planLifetime = 3 * time.Minute
+const (
+	planLifetime            = 3 * time.Minute
+	transientMoveAttempts   = 26
+	transientMoveRetryDelay = 200 * time.Millisecond
+)
 
 type componentRule struct {
 	category         string
@@ -65,12 +69,15 @@ type storedPlan struct {
 }
 
 type Manager struct {
-	mu       sync.Mutex
-	home     string
-	now      func() time.Time
-	randomID func() (string, error)
-	plans    map[string]*storedPlan
-	runner   platform.CommandRunner
+	mu           sync.Mutex
+	home         string
+	now          func() time.Time
+	randomID     func() (string, error)
+	plans        map[string]*storedPlan
+	runner       platform.CommandRunner
+	moveAttempts int
+	moveDelay    time.Duration
+	wait         func(context.Context, time.Duration) error
 }
 
 func NewManager(home string) (*Manager, error) {
@@ -85,6 +92,7 @@ func NewManager(home string) (*Manager, error) {
 	return &Manager{
 		home: filepath.Clean(resolved), now: time.Now, randomID: secureID,
 		plans: make(map[string]*storedPlan), runner: platformwindows.NewExecRunner(),
+		moveAttempts: transientMoveAttempts, moveDelay: transientMoveRetryDelay, wait: waitForRemovalRetry,
 	}, nil
 }
 
@@ -264,7 +272,9 @@ func (manager *Manager) moveToRecovery(ctx context.Context, stored *storedPlan) 
 			return err
 		}
 		destination := filepath.Join(recovery, strings.Join([]string{string(rune('0' + index)), filepath.Base(captured.original)}, "-"))
-		if err := captured.evidence.MoveTo(destination); err != nil {
+		if err := retryTransientMove(ctx, manager.moveAttempts, manager.moveDelay, manager.wait, func() error {
+			return captured.evidence.MoveTo(destination)
+		}); err != nil {
 			return err
 		}
 		moved = append(moved, movedPath{captured: captured, destination: destination})
@@ -291,6 +301,33 @@ func (manager *Manager) moveToRecovery(ctx context.Context, stored *storedPlan) 
 	}
 	returnErr = file.Close()
 	return returnErr
+}
+
+func retryTransientMove(ctx context.Context, attempts int, delay time.Duration, wait func(context.Context, time.Duration) error, move func() error) error {
+	if attempts < 1 || delay < 0 || wait == nil || move == nil {
+		return errors.New("invalid transient move retry")
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		err := move()
+		if err == nil || !errors.Is(err, platformwindows.ErrMoveInUse) || attempt == attempts-1 {
+			return err
+		}
+		if err := wait(ctx, delay); err != nil {
+			return err
+		}
+	}
+	return errors.New("transient move retry exhausted")
+}
+
+func waitForRemovalRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (manager *Manager) uninstallDesktop(ctx context.Context, stored *storedPlan) error {
