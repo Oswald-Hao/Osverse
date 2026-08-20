@@ -171,8 +171,28 @@ func commitAndActivateHarnessPayload(home, payload string, paths managedPaths, g
 	if err != nil {
 		return err
 	}
+	quarantined, err := quarantineDamagedHarnessPayload(home, payload, paths, goos)
+	if err != nil {
+		return err
+	}
+	restoreQuarantined := func() error {
+		if quarantined == "" {
+			return nil
+		}
+		if _, statErr := os.Lstat(paths.finalRoot); statErr == nil {
+			if removeErr := removeCommittedHarnessPayload(home, paths.finalRoot, marker); removeErr != nil {
+				return removeErr
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		return commitHarnessRename(quarantined, paths.finalRoot)
+	}
 	created, err := commitHarnessPayload(payload, paths.finalRoot, goos)
 	if err != nil {
+		if restoreErr := restoreQuarantined(); restoreErr != nil {
+			return errors.Join(errRollback, err, restoreErr)
+		}
 		return err
 	}
 	if err := activate(home, paths, goos); err != nil {
@@ -181,9 +201,63 @@ func commitAndActivateHarnessPayload(home, payload string, paths managedPaths, g
 				return errors.Join(errRollback, err, rollbackErr)
 			}
 		}
+		if restoreErr := restoreQuarantined(); restoreErr != nil {
+			return errors.Join(errRollback, err, restoreErr)
+		}
 		return err
 	}
 	return nil
+}
+
+// quarantineDamagedHarnessPayload recognizes only a fixed-version runtime
+// carrying the exact manifest of the newly verified payload. Damaged legacy
+// bytes are moved into Osverse's recovery area before replacement, so repair
+// is reversible and never expands into user profiles or third-party installs.
+func quarantineDamagedHarnessPayload(home, payload string, paths managedPaths, goos string) (string, error) {
+	info, err := os.Lstat(paths.finalRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("Harness version path is unsafe")
+	}
+	expectedMarker, err := os.ReadFile(filepath.Join(payload, ".osverse-harness-runtime"))
+	if err != nil {
+		return "", err
+	}
+	existingMarker, err := os.ReadFile(filepath.Join(paths.finalRoot, ".osverse-harness-runtime"))
+	if err != nil || !bytes.Equal(existingMarker, expectedMarker) {
+		return "", errors.New("Harness version identity mismatch")
+	}
+	damaged := false
+	for _, relative := range criticalHarnessPaths(goos) {
+		equal, compareErr := sameRegularFile(
+			filepath.Join(payload, filepath.FromSlash(relative)),
+			filepath.Join(paths.finalRoot, filepath.FromSlash(relative)),
+		)
+		if compareErr != nil || !equal {
+			damaged = true
+			break
+		}
+	}
+	if !damaged {
+		return "", nil
+	}
+	recoveryRoot := filepath.Join(paths.root, "recovery")
+	if err := ensureManagedDirectory(home, recoveryRoot); err != nil {
+		return "", err
+	}
+	quarantine, err := os.MkdirTemp(recoveryRoot, "install-"+componentID+"-")
+	if err != nil {
+		return "", err
+	}
+	if err := os.Remove(quarantine); err != nil {
+		return "", err
+	}
+	if err := commitHarnessRename(paths.finalRoot, quarantine); err != nil {
+		return "", err
+	}
+	return quarantine, nil
 }
 
 func commitHarnessPayload(payload, destination, goos string) (bool, error) {

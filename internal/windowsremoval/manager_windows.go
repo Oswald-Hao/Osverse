@@ -104,8 +104,10 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 		return removal.Plan{}, err
 	}
 	rule, known := componentRules[component.ID]
-	if manager == nil || !known || component.Category != rule.category || (len(component.Installations) == 0 && component.Category == "Core CLI") ||
-		(component.Status != domain.StatusInstalled && component.Status != domain.StatusUpdateAvailable && component.Status != domain.StatusConflict) {
+	brokenHarnessRecovery := component.ID == "deepseek-harness" && component.Category == "Core CLI" && component.Status == domain.StatusBroken
+	if manager == nil || !known || component.Category != rule.category ||
+		(len(component.Installations) == 0 && component.Category == "Core CLI" && !brokenHarnessRecovery) ||
+		(component.Status != domain.StatusInstalled && component.Status != domain.StatusUpdateAvailable && component.Status != domain.StatusConflict && !brokenHarnessRecovery) {
 		return removal.Plan{}, removal.ErrRemovalUnsupported
 	}
 	id, err := manager.randomID()
@@ -159,6 +161,12 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 			}
 		}
 	}
+	// A legacy Osverse Harness shim can remain after its target disappears. In
+	// that state the command detector has no trustworthy installation to report,
+	// so use the exact fixed shim path and marker as the ownership boundary.
+	if component.ID == "deepseek-harness" && component.Status == domain.StatusBroken && validManagedShim(shim, component.ID, toolRoot) {
+		found = true
+	}
 	if !found {
 		if matchedPath {
 			return nil, nil, errors.New("managed command shim validation failed")
@@ -166,8 +174,12 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 		return nil, nil, errors.New("managed command shim was not present in the fresh scan")
 	}
 	paths := make([]capturedPath, 0, 2)
+	effects := make([]removal.Effect, 0, 3)
 	for _, path := range []string{shim, toolRoot} {
 		evidence, err := platformwindows.OpenMovableEvidence(path)
+		if errors.Is(err, os.ErrNotExist) && samePath(path, toolRoot) {
+			continue
+		}
 		if err != nil {
 			for _, captured := range paths {
 				_ = captured.evidence.Close()
@@ -175,13 +187,14 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 			return nil, nil, err
 		}
 		paths = append(paths, capturedPath{original: path, evidence: evidence})
+		description := "将 Osverse 命令入口移入恢复区"
+		if samePath(path, toolRoot) {
+			description = "将 Osverse 管理的程序文件移入恢复区"
+		}
+		effects = append(effects, removal.Effect{Action: "recover", Path: path, Description: description, Recoverable: true})
 	}
 	recovery := filepath.Join(manager.home, "AppData", "Local", "Osverse", "recovery", planID)
-	effects := []removal.Effect{
-		{Action: "recover", Path: shim, Description: "将 Osverse 命令入口移入恢复区", Recoverable: true},
-		{Action: "recover", Path: toolRoot, Description: "将 Osverse 管理的程序文件移入恢复区", Recoverable: true},
-		{Action: "manifest", Path: filepath.Join(recovery, "recovery.json"), Description: "记录原始路径以便恢复", Recoverable: true},
-	}
+	effects = append(effects, removal.Effect{Action: "manifest", Path: filepath.Join(recovery, "recovery.json"), Description: "记录原始路径以便恢复", Recoverable: true})
 	return paths, effects, nil
 }
 
@@ -449,12 +462,20 @@ func validManagedShim(path, componentID, toolRoot string) bool {
 	if !ok || !filepath.IsAbs(target) {
 		return false
 	}
+	target = filepath.Clean(target)
 	resolvedRoot, rootErr := filepath.EvalSymlinks(toolRoot)
-	resolvedTarget, targetErr := filepath.EvalSymlinks(filepath.Clean(target))
-	if rootErr != nil || targetErr != nil || !pathWithin(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget)) {
-		return false
+	resolvedTarget, targetErr := filepath.EvalSymlinks(target)
+	if rootErr == nil && targetErr == nil {
+		if !pathWithin(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget)) {
+			return false
+		}
+		target = filepath.Clean(resolvedTarget)
+	} else {
+		rootMissing, targetMissing := errors.Is(rootErr, os.ErrNotExist), errors.Is(targetErr, os.ErrNotExist)
+		if (!rootMissing && rootErr != nil) || (!targetMissing && targetErr != nil) || !pathWithin(toolRoot, target) {
+			return false
+		}
 	}
-	target = filepath.Clean(resolvedTarget)
 	if wrapper, ok := managedCommandWrapper(componentID); ok && strings.EqualFold(filepath.Ext(target), ".cmd") {
 		return strings.EqualFold(filepath.Base(target), wrapper+".cmd")
 	}
