@@ -98,15 +98,15 @@ func (RegistryPackageQuery) Evidence(ctx context.Context, spec WindowsDesktopSpe
 			display, _, displayErr := entry.GetStringValue("DisplayName")
 			if displayErr == nil && matchesRegistryDisplayName(spec.RegistryNames, strings.TrimSpace(display)) {
 				version, _, _ := entry.GetStringValue("DisplayVersion")
-				installLocation, _, _ := entry.GetStringValue("InstallLocation")
-				displayIcon, _, _ := entry.GetStringValue("DisplayIcon")
+				installLocation, installLocationType, _ := entry.GetStringValue("InstallLocation")
+				displayIcon, displayIconType, _ := entry.GetStringValue("DisplayIcon")
 				_ = entry.Close()
 				found.Installed, found.Source = true, "registry"
 				if candidateVersion := cleanVersion(version); found.Version == "" || found.Version == "unknown" {
 					found.Version = candidateVersion
 				}
 				found.ExecutablePaths = appendUniqueWindowsPaths(found.ExecutablePaths,
-					registryExecutablePaths(spec, installLocation, displayIcon)...)
+					registryExecutablePaths(spec, installLocation, installLocationType, displayIcon, displayIconType)...)
 				continue
 			}
 			_ = entry.Close()
@@ -136,7 +136,7 @@ func appendUniqueWindowsPaths(existing []string, candidates ...string) []string 
 	return existing
 }
 
-func registryExecutablePaths(spec WindowsDesktopSpec, installLocation, displayIcon string) []string {
+func registryExecutablePaths(spec WindowsDesktopSpec, installLocation string, installLocationType uint32, displayIcon string, displayIconType uint32) []string {
 	result, seen := make([]string, 0, len(spec.ExecutableNames)+1), make(map[string]bool)
 	add := func(candidate string) {
 		candidate = strings.Trim(strings.TrimSpace(candidate), `"`)
@@ -150,18 +150,49 @@ func registryExecutablePaths(spec WindowsDesktopSpec, installLocation, displayIc
 			result = append(result, candidate)
 		}
 	}
-	location := strings.Trim(strings.TrimSpace(installLocation), `"`)
+	location := strings.Trim(strings.TrimSpace(registryPathValue(installLocation, installLocationType)), `"`)
 	if filepath.IsAbs(location) {
 		for _, name := range spec.ExecutableNames {
 			add(filepath.Join(location, name))
 		}
 	}
-	icon := strings.TrimSpace(displayIcon)
+	icon := strings.TrimSpace(registryPathValue(displayIcon, displayIconType))
 	if comma := strings.LastIndex(icon, ","); comma > 0 {
 		icon = icon[:comma]
 	}
 	add(icon)
 	return result
+}
+
+func registryPathValue(value string, valueType uint32) string {
+	switch valueType {
+	case registry.SZ:
+		return value
+	case registry.EXPAND_SZ:
+		expanded, err := registry.ExpandString(value)
+		if err != nil || containsWindowsEnvironmentReference(expanded) {
+			return ""
+		}
+		return expanded
+	default:
+		return ""
+	}
+}
+
+func containsWindowsEnvironmentReference(value string) bool {
+	for offset := 0; offset < len(value); {
+		start := strings.IndexByte(value[offset:], '%')
+		if start < 0 {
+			return false
+		}
+		start += offset
+		end := strings.IndexByte(value[start+1:], '%')
+		if end >= 0 {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
 }
 
 type registryLocation struct {
