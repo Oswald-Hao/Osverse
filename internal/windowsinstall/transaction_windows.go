@@ -487,7 +487,22 @@ func validManagedShim(content []byte, componentID, managedRoot string) bool {
 		return false
 	}
 	target, ok := decodeShimPath(strings.TrimSuffix(strings.TrimPrefix(line, `"`), `" %*`))
-	return ok && filepath.IsAbs(target) && within(managedRoot, filepath.Clean(target))
+	return ok && filepath.IsAbs(target) && managedShimTargetWithin(managedRoot, filepath.Clean(target))
+}
+
+func managedShimTargetWithin(managedRoot, target string) bool {
+	resolvedRoot, rootErr := filepath.EvalSymlinks(managedRoot)
+	resolvedTarget, targetErr := filepath.EvalSymlinks(target)
+	if rootErr == nil && targetErr == nil {
+		return within(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget))
+	}
+	// An otherwise valid owned shim may outlive a failed/removed runtime. Keep
+	// that repairable only when its literal target remains confined.
+	rootMissing, targetMissing := errors.Is(rootErr, os.ErrNotExist), errors.Is(targetErr, os.ErrNotExist)
+	if (rootMissing || targetMissing) && (rootErr == nil || rootMissing) && (targetErr == nil || targetMissing) {
+		return within(managedRoot, target)
+	}
+	return false
 }
 
 func decodeShimPath(value string) (string, bool) {

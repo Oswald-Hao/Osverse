@@ -412,10 +412,12 @@ func validManagedShim(path, componentID, toolRoot string) bool {
 	if !ok || !filepath.IsAbs(target) {
 		return false
 	}
-	target = filepath.Clean(target)
-	if !pathWithin(toolRoot, target) {
+	resolvedRoot, rootErr := filepath.EvalSymlinks(toolRoot)
+	resolvedTarget, targetErr := filepath.EvalSymlinks(filepath.Clean(target))
+	if rootErr != nil || targetErr != nil || !pathWithin(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget)) {
 		return false
 	}
+	target = filepath.Clean(resolvedTarget)
 	if wrapper, ok := managedCommandWrapper(componentID); ok && strings.EqualFold(filepath.Ext(target), ".cmd") {
 		return strings.EqualFold(filepath.Base(target), wrapper+".cmd")
 	}
