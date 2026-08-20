@@ -70,6 +70,9 @@ func launchInvocation(request platform.LaunchRequest) (string, []string, uint32,
 		}
 	}
 	line := quoteCMD(request.Path)
+	if launchesBatchScript(request.Path) {
+		line = "call " + line
+	}
 	for _, argument := range request.Args {
 		line += " " + quoteCMD(argument)
 	}
@@ -79,6 +82,11 @@ func launchInvocation(request platform.LaunchRequest) (string, []string, uint32,
 		return terminal, []string{"new-tab", "--", shell, "/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP, nil
 	}
 	return shell, []string{"/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
+}
+
+func launchesBatchScript(path string) bool {
+	extension := strings.ToLower(filepath.Ext(path))
+	return extension == ".cmd" || extension == ".bat"
 }
 
 func validRegularFile(path string) bool {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,45 @@ func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(recovery, name)); err != nil {
 			t.Errorf("recovery %s: %v", name, err)
 		}
+	}
+}
+
+func TestManagedDeepSeekHarnessRemovalAcceptsCommandWrapper(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.now = func() time.Time { return time.Date(2026, time.August, 19, 11, 0, 0, 0, time.UTC) }
+	manager.randomID = func() (string, error) { return "remove-harness-test", nil }
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: shim, ResolvedPath: shim, Source: "osverse", Managed: true, Version: "0.1.0-rc.6"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.expire(plan.ID)
+	if len(plan.Effects) != 3 || !strings.Contains(plan.Effects[1].Path, "deepseek-harness") {
+		t.Fatalf("harness removal plan = %#v", plan)
 	}
 }
 
