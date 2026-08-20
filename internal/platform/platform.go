@@ -54,6 +54,10 @@ type LaunchRequest struct {
 	ExpectedResolvedPath string
 	Args                 []string
 	Terminal             bool
+	// LocalWeb asks the platform starter to allocate a loopback port, append it
+	// to the command, verify the HTTP surface became ready, and open it in the
+	// user's browser. It is reserved for fixed backend-owned component routes.
+	LocalWeb bool
 }
 
 // ProcessStarter starts a detached component without involving a shell.

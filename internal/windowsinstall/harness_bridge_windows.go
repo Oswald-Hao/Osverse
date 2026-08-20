@@ -35,7 +35,7 @@ func ActivateManagedCommand(home, componentID, command, target string) error {
 		return err
 	}
 	managedRoot := filepath.Join(root, "tools")
-	if !filepath.IsAbs(target) || !within(managedRoot, filepath.Clean(target)) {
+	if !filepath.IsAbs(target) || !managedShimTargetWithin(managedRoot, filepath.Clean(target)) {
 		return errors.New("Harness command target is outside the managed root")
 	}
 	binRoot, err := ensureManagedDirectories(home, ".local", "bin")

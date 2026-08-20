@@ -3,10 +3,13 @@
 package windows
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	xwindows "golang.org/x/sys/windows"
@@ -18,6 +21,24 @@ func TestNormalizeFinalPath(t *testing.T) {
 	}
 	if got := normalizeFinalPath(`\\?\UNC\server\share\tool.exe`); got != `\\server\share\tool.exe` {
 		t.Fatalf("normalizeFinalPath UNC = %q", got)
+	}
+}
+
+func TestLocalWebLaunchAllocatesLoopbackPortAndWaitsForHarness(t *testing.T) {
+	request, endpoint, err := prepareLocalWebLaunch(platform.LaunchRequest{
+		Path: `C:\Users\Alice\.local\bin\dsh.cmd`, Args: []string{"web"}, Terminal: true, LocalWeb: true,
+	})
+	if err != nil || !strings.HasPrefix(endpoint, "http://127.0.0.1:") || len(request.Args) != 3 ||
+		request.Args[0] != "web" || request.Args[1] != "--port" || request.Args[2] == "0" {
+		t.Fatalf("prepareLocalWebLaunch() = (%#v, %q, %v)", request, endpoint, err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_, _ = response.Write([]byte("<title>DeepSeek Harness</title>"))
+	}))
+	defer server.Close()
+	if err := waitForLocalWeb(server.URL, time.Second); err != nil {
+		t.Fatalf("waitForLocalWeb() error = %v", err)
 	}
 }
 

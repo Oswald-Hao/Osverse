@@ -23,6 +23,21 @@ func (run commandRunnerFunc) Run(ctx context.Context, request platform.CommandRe
 	return run(ctx, request)
 }
 
+func TestSamePathUsesWindowsFileIdentityForAlternatePathSpellings(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "managed-shim.cmd")
+	alias := filepath.Join(root, "alternate-shim.cmd")
+	if err := os.WriteFile(original, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, alias); err != nil {
+		t.Fatal(err)
+	}
+	if strings.EqualFold(filepath.Clean(original), filepath.Clean(alias)) || !samePath(original, alias) {
+		t.Fatalf("samePath(%q, %q) did not use file identity", original, alias)
+	}
+}
+
 func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -206,6 +221,26 @@ func TestManagedHarnessRemovalRevalidatesOwnershipWhenScanProvenanceIsStale(t *t
 	defer manager.expire(plan.ID)
 	if len(plan.Effects) != 3 || plan.Effects[0].Path != shim || plan.Effects[1].Path != toolRoot {
 		t.Fatalf("stale-provenance removal plan = %#v", plan)
+	}
+
+	// Version probing is an advisory display operation and can cross the
+	// three-second timeout boundary between the preview scan and confirmation
+	// scan. The already-pinned paths remain the removal trust boundary.
+	current := component
+	current.Status = domain.StatusBroken
+	current.Message = "版本检测失败"
+	current.Installations = append([]domain.Installation(nil), component.Installations...)
+	current.Installations[0].Version = "0.1.0-rc.6"
+	current.Installations[0].Source = "osverse"
+	current.Installations[0].Managed = true
+	result, err := manager.Execute(context.Background(), plan.ID, current)
+	if err != nil || !result.Removed {
+		t.Fatalf("Execute() with refreshed display metadata = (%#v, %v)", result, err)
+	}
+	for _, removed := range []string{shim, toolRoot} {
+		if _, err := os.Lstat(removed); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("managed path remains after metadata drift: %s: %v", removed, err)
+		}
 	}
 }
 

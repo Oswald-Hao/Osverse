@@ -3,12 +3,18 @@
 package windows
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	xwindows "golang.org/x/sys/windows"
@@ -29,6 +35,14 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 	defer xwindows.CloseHandle(locked.handle)
 	if !sameWindowsPath(locked.finalPath, request.ExpectedResolvedPath) {
 		return errors.New("launch target changed")
+	}
+	localWebURL := ""
+	if request.LocalWeb {
+		var err error
+		request, localWebURL, err = prepareLocalWebLaunch(request)
+		if err != nil {
+			return err
+		}
 	}
 
 	path, args, flags, err := launchInvocation(request)
@@ -53,7 +67,63 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 	if !locked.same(after) || !sameWindowsPath(after.finalPath, request.ExpectedResolvedPath) {
 		return errors.New("launch target changed")
 	}
+	if localWebURL != "" {
+		if err := waitForLocalWeb(localWebURL, 30*time.Second); err != nil {
+			return err
+		}
+		if err := openLocalWeb(localWebURL); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func prepareLocalWebLaunch(request platform.LaunchRequest) (platform.LaunchRequest, string, error) {
+	if !request.LocalWeb || !request.Terminal {
+		return platform.LaunchRequest{}, "", errors.New("invalid local web launch")
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return platform.LaunchRequest{}, "", err
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		return platform.LaunchRequest{}, "", err
+	}
+	request.Args = append(append([]string(nil), request.Args...), "--port", strconv.Itoa(port))
+	return request, "http://127.0.0.1:" + strconv.Itoa(port), nil
+}
+
+func waitForLocalWeb(endpoint string, timeout time.Duration) error {
+	if !strings.HasPrefix(endpoint, "http://127.0.0.1:") || timeout <= 0 {
+		return errors.New("invalid local web endpoint")
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: time.Second}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		response, err := client.Get(endpoint)
+		if err == nil {
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+			_ = response.Body.Close()
+			if readErr == nil && response.StatusCode == http.StatusOK && bytes.Contains(body, []byte("DeepSeek Harness")) {
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.New("DeepSeek Harness web profile did not become ready")
+}
+
+func openLocalWeb(endpoint string) error {
+	verb, err := xwindows.UTF16PtrFromString("open")
+	if err != nil {
+		return err
+	}
+	target, err := xwindows.UTF16PtrFromString(endpoint)
+	if err != nil {
+		return err
+	}
+	return xwindows.ShellExecute(0, verb, target, nil, nil, xwindows.SW_SHOWNORMAL)
 }
 
 func launchInvocation(request platform.LaunchRequest) (string, []string, uint32, error) {
