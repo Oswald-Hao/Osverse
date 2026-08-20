@@ -137,7 +137,10 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 	toolRoot := filepath.Join(manager.home, "AppData", "Local", "Osverse", "tools", component.ID)
 	found := false
 	for _, installation := range component.Installations {
-		if installation.Managed && installation.Source == "osverse" && samePath(installation.Path, shim) && validManagedShim(shim, component.ID, toolRoot) {
+		// Scan provenance is display metadata, not the removal trust boundary.
+		// Independently revalidate the exact fixed shim before capturing either
+		// Osverse path so a stale/partially degraded scan cannot strand a runtime.
+		if samePath(installation.Path, shim) && validManagedShim(shim, component.ID, toolRoot) {
 			found = true
 			break
 		}
