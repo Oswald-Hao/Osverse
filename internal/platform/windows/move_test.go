@@ -7,7 +7,26 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	xwindows "golang.org/x/sys/windows"
 )
+
+func TestClassifyRenameErrorReportsOnlyLockStatusesAsInUse(t *testing.T) {
+	for _, status := range []xwindows.NTStatus{
+		xwindows.STATUS_ACCESS_DENIED,
+		xwindows.STATUS_SHARING_VIOLATION,
+		xwindows.STATUS_FILE_LOCK_CONFLICT,
+		xwindows.STATUS_LOCK_NOT_GRANTED,
+	} {
+		if err := classifyRenameError(status); !errors.Is(err, ErrMoveInUse) {
+			t.Errorf("classifyRenameError(%v) = %v, want ErrMoveInUse", status, err)
+		}
+	}
+	other := xwindows.STATUS_OBJECT_PATH_NOT_FOUND
+	if err := classifyRenameError(other); errors.Is(err, ErrMoveInUse) || !errors.Is(err, other) {
+		t.Errorf("classifyRenameError(%v) = %v, want unchanged", other, err)
+	}
+}
 
 func TestMovableEvidenceRenamesThePinnedFile(t *testing.T) {
 	root := t.TempDir()

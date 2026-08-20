@@ -221,6 +221,9 @@ func (manager *Manager) Execute(ctx context.Context, planID string, current doma
 		if errors.Is(err, context.Canceled) || errors.Is(err, removal.ErrEvidenceChanged) {
 			return removal.Result{}, err
 		}
+		if errors.Is(err, platformwindows.ErrMoveInUse) {
+			return removal.Result{}, removal.ErrComponentInUse
+		}
 		return removal.Result{}, removal.ErrRemovalFailed
 	}
 	return removal.Result{PlanID: planID, ComponentID: stored.public.ComponentID, Removed: true, Message: "组件已移除，配置、凭据和用户数据已保留"}, nil
