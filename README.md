@@ -71,7 +71,7 @@ Claude Desktop 官方 Linux 包的最低要求是 Ubuntu 22.04，所以在 Ubunt
 dsh web
 ```
 
-浏览器工作台默认位于 `http://127.0.0.1:3080`。你既可以在 Harness 自己的 Models 页面添加 Provider，也可以在 Osverse 的“API 配置”中保存档案、完成协议探测，再勾选 **DeepSeek Harness**。Osverse 会选择已确认的 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages 协议，备份并事务式更新 `$DSH_HOME/settings.yaml` 与 `$DSH_HOME/.credentials.yaml`，创建独立的 `osverse` Provider，并把精确模型设为新会话默认值。Key 只写入 Harness 的凭据文件；设置文件只保存 `OSVERSE_API_KEY` 引用。无关 Provider、注释和已有凭据会保留，运行中的 Harness 通过其官方 `.lock` 协议与 Osverse 协调写入，移除 Harness 时这些数据仍默认保留。更完整的使用与安全说明见 [DeepSeek Harness 接入指南](docs/guides/deepseek-harness.md)。
+Linux 浏览器工作台默认位于 `http://127.0.0.1:3080`；Windows 会自动选择空闲的本机端口，等真实页面可访问后再打开默认浏览器。启动时出现的终端承载 Harness 服务，请在移除或更新 Harness 前先关闭该终端。你既可以在 Harness 自己的 Models 页面添加 Provider，也可以在 Osverse 的“API 配置”中保存档案、完成协议探测，再勾选 **DeepSeek Harness**。Osverse 会选择已确认的 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages 协议，备份并事务式更新 `$DSH_HOME/settings.yaml` 与 `$DSH_HOME/.credentials.yaml`，创建独立的 `osverse` Provider，并把精确模型设为新会话默认值。Key 只写入 Harness 的凭据文件；设置文件只保存 `OSVERSE_API_KEY` 引用。无关 Provider、注释和已有凭据会保留，运行中的 Harness 通过其官方 `.lock` 协议与 Osverse 协调写入，移除 Harness 时这些数据仍默认保留。更完整的使用与安全说明见 [DeepSeek Harness 接入指南](docs/guides/deepseek-harness.md)。
 
 Harness 目前仍是官方 Developer Preview。Osverse 将安装契约固定在已测试版本，不会静默追随 npm 的 `latest`；升级会随新的 Osverse 版本经过测试后提供。Linux x64 和 Windows x64 已接入应用，macOS x64/arm64 的同一校验安装器已经就绪，会随 Osverse macOS 版启用。
 

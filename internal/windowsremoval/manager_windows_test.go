@@ -14,6 +14,7 @@ import (
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
 	"github.com/Oswald-Hao/Osverse/internal/platform"
+	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
 )
 
@@ -21,6 +22,76 @@ type commandRunnerFunc func(context.Context, platform.CommandRequest) (platform.
 
 func (run commandRunnerFunc) Run(ctx context.Context, request platform.CommandRequest) (platform.CommandResult, error) {
 	return run(ctx, request)
+}
+
+func TestRetryTransientMoveWaitsOnlyForInUseErrors(t *testing.T) {
+	attempts, waits := 0, 0
+	err := retryTransientMove(context.Background(), 4, 200*time.Millisecond, func(_ context.Context, delay time.Duration) error {
+		waits++
+		if delay != 200*time.Millisecond {
+			t.Fatalf("retry delay = %v", delay)
+		}
+		return nil
+	}, func() error {
+		attempts++
+		if attempts < 3 {
+			return platformwindows.ErrMoveInUse
+		}
+		return nil
+	})
+	if err != nil || attempts != 3 || waits != 2 {
+		t.Fatalf("retryTransientMove() = (attempts=%d, waits=%d, err=%v)", attempts, waits, err)
+	}
+
+	want := errors.New("permanent move failure")
+	waits = 0
+	err = retryTransientMove(context.Background(), 4, 0, func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}, func() error { return want })
+	if !errors.Is(err, want) || waits != 0 {
+		t.Fatalf("permanent retry = (waits=%d, err=%v)", waits, err)
+	}
+}
+
+func TestRetryTransientMoveStopsAtBoundAndCancellation(t *testing.T) {
+	attempts, waits := 0, 0
+	err := retryTransientMove(context.Background(), 3, 0, func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}, func() error {
+		attempts++
+		return platformwindows.ErrMoveInUse
+	})
+	if !errors.Is(err, platformwindows.ErrMoveInUse) || attempts != 3 || waits != 2 {
+		t.Fatalf("bounded retry = (attempts=%d, waits=%d, err=%v)", attempts, waits, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	attempts = 0
+	err = retryTransientMove(ctx, 3, time.Second, waitForRemovalRetry, func() error {
+		attempts++
+		return platformwindows.ErrMoveInUse
+	})
+	if !errors.Is(err, context.Canceled) || attempts != 1 {
+		t.Fatalf("canceled retry = (attempts=%d, err=%v)", attempts, err)
+	}
+}
+
+func TestSamePathUsesWindowsFileIdentityForAlternatePathSpellings(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "managed-shim.cmd")
+	alias := filepath.Join(root, "alternate-shim.cmd")
+	if err := os.WriteFile(original, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, alias); err != nil {
+		t.Fatal(err)
+	}
+	if strings.EqualFold(filepath.Clean(original), filepath.Clean(alias)) || !samePath(original, alias) {
+		t.Fatalf("samePath(%q, %q) did not use file identity", original, alias)
+	}
 }
 
 func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
@@ -207,6 +278,26 @@ func TestManagedHarnessRemovalRevalidatesOwnershipWhenScanProvenanceIsStale(t *t
 	if len(plan.Effects) != 3 || plan.Effects[0].Path != shim || plan.Effects[1].Path != toolRoot {
 		t.Fatalf("stale-provenance removal plan = %#v", plan)
 	}
+
+	// Version probing is an advisory display operation and can cross the
+	// three-second timeout boundary between the preview scan and confirmation
+	// scan. The already-pinned paths remain the removal trust boundary.
+	current := component
+	current.Status = domain.StatusBroken
+	current.Message = "版本检测失败"
+	current.Installations = append([]domain.Installation(nil), component.Installations...)
+	current.Installations[0].Version = "0.1.0-rc.6"
+	current.Installations[0].Source = "osverse"
+	current.Installations[0].Managed = true
+	result, err := manager.Execute(context.Background(), plan.ID, current)
+	if err != nil || !result.Removed {
+		t.Fatalf("Execute() with refreshed display metadata = (%#v, %v)", result, err)
+	}
+	for _, removed := range []string{shim, toolRoot} {
+		if _, err := os.Lstat(removed); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("managed path remains after metadata drift: %s: %v", removed, err)
+		}
+	}
 }
 
 func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
@@ -218,6 +309,7 @@ func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	manager.moveAttempts = 1
 	manager.randomID = func() (string, error) { return "remove-locked-harness", nil }
 	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
 	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")

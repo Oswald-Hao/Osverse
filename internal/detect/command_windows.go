@@ -224,7 +224,9 @@ func managedWindowsShim(candidatePath, managedRoot, componentID string) bool {
 	if !ok || !filepath.IsAbs(target) {
 		return false
 	}
-	return pathWithinWindows(managedRoot, filepath.Clean(target))
+	resolvedRoot, rootErr := filepath.EvalSymlinks(managedRoot)
+	resolvedTarget, targetErr := filepath.EvalSymlinks(filepath.Clean(target))
+	return rootErr == nil && targetErr == nil && pathWithinWindows(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget))
 }
 
 func decodeWindowsShimPath(value string) (string, bool) {

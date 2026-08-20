@@ -59,6 +59,9 @@ func TestManagedWindowsShimRequiresExactMarkerAndContainedTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(target, []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	shim := filepath.Join(home, "claude.cmd")
 	content := "@rem Osverse managed shim v1: claude-code\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" %*\r\n"
 	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {

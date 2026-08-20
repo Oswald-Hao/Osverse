@@ -22,7 +22,11 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/removal"
 )
 
-const planLifetime = 3 * time.Minute
+const (
+	planLifetime            = 3 * time.Minute
+	transientMoveAttempts   = 26
+	transientMoveRetryDelay = 200 * time.Millisecond
+)
 
 type componentRule struct {
 	category         string
@@ -65,12 +69,15 @@ type storedPlan struct {
 }
 
 type Manager struct {
-	mu       sync.Mutex
-	home     string
-	now      func() time.Time
-	randomID func() (string, error)
-	plans    map[string]*storedPlan
-	runner   platform.CommandRunner
+	mu           sync.Mutex
+	home         string
+	now          func() time.Time
+	randomID     func() (string, error)
+	plans        map[string]*storedPlan
+	runner       platform.CommandRunner
+	moveAttempts int
+	moveDelay    time.Duration
+	wait         func(context.Context, time.Duration) error
 }
 
 func NewManager(home string) (*Manager, error) {
@@ -85,6 +92,7 @@ func NewManager(home string) (*Manager, error) {
 	return &Manager{
 		home: filepath.Clean(resolved), now: time.Now, randomID: secureID,
 		plans: make(map[string]*storedPlan), runner: platformwindows.NewExecRunner(),
+		moveAttempts: transientMoveAttempts, moveDelay: transientMoveRetryDelay, wait: waitForRemovalRetry,
 	}, nil
 }
 
@@ -113,6 +121,9 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 	}
 	if err != nil || len(stored.public.Effects) == 0 {
 		stored.close()
+		if err != nil {
+			return removal.Plan{}, errors.Join(removal.ErrRemovalUnsupported, err)
+		}
 		return removal.Plan{}, removal.ErrRemovalUnsupported
 	}
 	warning := "Osverse 管理的命令入口和程序文件将移入恢复区；API 配置、凭据和会话数据不会删除。"
@@ -135,18 +146,24 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 func (manager *Manager) captureManagedCLI(component domain.Component, rule componentRule, planID string) ([]capturedPath, []removal.Effect, error) {
 	shim := filepath.Join(manager.home, ".local", "bin", rule.command+".cmd")
 	toolRoot := filepath.Join(manager.home, "AppData", "Local", "Osverse", "tools", component.ID)
-	found := false
+	found, matchedPath := false, false
 	for _, installation := range component.Installations {
 		// Scan provenance is display metadata, not the removal trust boundary.
 		// Independently revalidate the exact fixed shim before capturing either
 		// Osverse path so a stale/partially degraded scan cannot strand a runtime.
-		if samePath(installation.Path, shim) && validManagedShim(shim, component.ID, toolRoot) {
-			found = true
-			break
+		if samePath(installation.Path, shim) {
+			matchedPath = true
+			if validManagedShim(shim, component.ID, toolRoot) {
+				found = true
+				break
+			}
 		}
 	}
 	if !found {
-		return nil, nil, removal.ErrRemovalUnsupported
+		if matchedPath {
+			return nil, nil, errors.New("managed command shim validation failed")
+		}
+		return nil, nil, errors.New("managed command shim was not present in the fresh scan")
 	}
 	paths := make([]capturedPath, 0, 2)
 	for _, path := range []string{shim, toolRoot} {
@@ -211,7 +228,7 @@ func (manager *Manager) Execute(ctx context.Context, planID string, current doma
 	delete(manager.plans, planID)
 	manager.mu.Unlock()
 	defer stored.close()
-	if !sameComponent(stored.component, current) {
+	if !sameRemovalTarget(stored.component, current) {
 		return removal.Result{}, removal.ErrEvidenceChanged
 	}
 	var err error
@@ -255,7 +272,9 @@ func (manager *Manager) moveToRecovery(ctx context.Context, stored *storedPlan) 
 			return err
 		}
 		destination := filepath.Join(recovery, strings.Join([]string{string(rune('0' + index)), filepath.Base(captured.original)}, "-"))
-		if err := captured.evidence.MoveTo(destination); err != nil {
+		if err := retryTransientMove(ctx, manager.moveAttempts, manager.moveDelay, manager.wait, func() error {
+			return captured.evidence.MoveTo(destination)
+		}); err != nil {
 			return err
 		}
 		moved = append(moved, movedPath{captured: captured, destination: destination})
@@ -282,6 +301,33 @@ func (manager *Manager) moveToRecovery(ctx context.Context, stored *storedPlan) 
 	}
 	returnErr = file.Close()
 	return returnErr
+}
+
+func retryTransientMove(ctx context.Context, attempts int, delay time.Duration, wait func(context.Context, time.Duration) error, move func() error) error {
+	if attempts < 1 || delay < 0 || wait == nil || move == nil {
+		return errors.New("invalid transient move retry")
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		err := move()
+		if err == nil || !errors.Is(err, platformwindows.ErrMoveInUse) || attempt == attempts-1 {
+			return err
+		}
+		if err := wait(ctx, delay); err != nil {
+			return err
+		}
+	}
+	return errors.New("transient move retry exhausted")
+}
+
+func waitForRemovalRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (manager *Manager) uninstallDesktop(ctx context.Context, stored *storedPlan) error {
@@ -403,10 +449,12 @@ func validManagedShim(path, componentID, toolRoot string) bool {
 	if !ok || !filepath.IsAbs(target) {
 		return false
 	}
-	target = filepath.Clean(target)
-	if !pathWithin(toolRoot, target) {
+	resolvedRoot, rootErr := filepath.EvalSymlinks(toolRoot)
+	resolvedTarget, targetErr := filepath.EvalSymlinks(filepath.Clean(target))
+	if rootErr != nil || targetErr != nil || !pathWithin(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget)) {
 		return false
 	}
+	target = filepath.Clean(resolvedTarget)
 	if wrapper, ok := managedCommandWrapper(componentID); ok && strings.EqualFold(filepath.Ext(target), ".cmd") {
 		return strings.EqualFold(filepath.Base(target), wrapper+".cmd")
 	}
@@ -480,8 +528,8 @@ func cloneComponent(component domain.Component) domain.Component {
 	return component
 }
 
-func sameComponent(left, right domain.Component) bool {
-	if left.ID != right.ID || left.Category != right.Category || left.Status != right.Status || len(left.Installations) != len(right.Installations) {
+func sameRemovalTarget(left, right domain.Component) bool {
+	if left.ID != right.ID || left.Category != right.Category || len(left.Installations) != len(right.Installations) {
 		return false
 	}
 	leftItems := append([]domain.Installation(nil), left.Installations...)
@@ -489,7 +537,8 @@ func sameComponent(left, right domain.Component) bool {
 	sort.Slice(leftItems, func(i, j int) bool { return strings.ToLower(leftItems[i].Path) < strings.ToLower(leftItems[j].Path) })
 	sort.Slice(rightItems, func(i, j int) bool { return strings.ToLower(rightItems[i].Path) < strings.ToLower(rightItems[j].Path) })
 	for index := range leftItems {
-		if leftItems[index] != rightItems[index] {
+		if !samePath(leftItems[index].Path, rightItems[index].Path) ||
+			!samePath(leftItems[index].ResolvedPath, rightItems[index].ResolvedPath) {
 			return false
 		}
 	}
@@ -509,5 +558,10 @@ func pathWithin(root, target string) bool {
 }
 
 func samePath(left, right string) bool {
-	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	if strings.EqualFold(filepath.Clean(left), filepath.Clean(right)) {
+		return true
+	}
+	leftInfo, leftErr := os.Lstat(left)
+	rightInfo, rightErr := os.Lstat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

@@ -45,13 +45,38 @@ const chrome = spawn(
   { detached: process.platform !== 'win32', stdio: 'ignore' },
 )
 
-function terminate(child) {
-  if (!child.pid || child.killed) return
+function terminate(child, signal = 'SIGTERM') {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
   try {
-    if (process.platform === 'win32') child.kill('SIGTERM')
-    else process.kill(-child.pid, 'SIGTERM')
+    if (process.platform === 'win32') child.kill(signal)
+    else process.kill(-child.pid, signal)
   } catch (error) {
     if (error?.code !== 'ESRCH') throw error
+  }
+}
+
+function waitForChildExit(child, timeout) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    let timer
+    const finish = (exited) => {
+      clearTimeout(timer)
+      child.removeListener('exit', onExit)
+      resolve(exited)
+    }
+    const onExit = () => finish(true)
+    child.once('exit', onExit)
+    timer = setTimeout(() => finish(false), timeout)
+    if (child.exitCode !== null || child.signalCode !== null) finish(true)
+  })
+}
+
+async function stopChild(child) {
+  terminate(child)
+  if (await waitForChildExit(child, 2_000)) return
+  terminate(child, 'SIGKILL')
+  if (!(await waitForChildExit(child, 2_000))) {
+    throw new Error(`Timed out stopping audit process ${child.pid}`)
   }
 }
 
@@ -235,8 +260,6 @@ try {
   }
 } finally {
   socket?.close()
-  terminate(preview)
-  terminate(chrome)
-  await delay(100)
-  rmSync(profile, { recursive: true, force: true })
+  await Promise.all([stopChild(preview), stopChild(chrome)])
+  rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
 }
