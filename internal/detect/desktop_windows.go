@@ -41,8 +41,8 @@ func WindowsDesktopSpecs() []WindowsDesktopSpec {
 			ExecutableNames: []string{"Codex.exe"}, RegistryNames: []string{"Codex"}, AppModelPrefixes: []string{"OpenAI.Codex"},
 			RelativeExecutables: []string{`AppData\Local\Microsoft\WindowsApps\Codex.exe`}, MinimumOS: "Windows 10 1809"},
 		{ID: "opencode-desktop", Name: "OpenCode Desktop", Category: "Desktop Applications",
-			ExecutableNames: []string{"OpenCode.exe", "opencode-desktop.exe"}, RegistryNames: []string{"OpenCode", "opencode", "@opencode/aidesktop", "@opencode-aidesktop"},
-			RelativeExecutables: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
+			ExecutableNames: []string{"OpenCode.exe", "OpenCode Beta.exe", "opencode-desktop.exe"}, RegistryNames: []string{"OpenCode", "OpenCode Beta", "opencode", "@opencode/aidesktop", "@opencode-aidesktop"},
+			RelativeExecutables: []string{`AppData\Local\Programs\OpenCode\OpenCode.exe`, `AppData\Local\Programs\OpenCode Beta\OpenCode Beta.exe`, `AppData\Local\Programs\opencode\OpenCode.exe`, `AppData\Local\Programs\@opencode-aidesktop\OpenCode.exe`},
 			MinimumOS:           "Windows 10 1809"},
 		{ID: "cc-switch", Name: "CC Switch", Category: "Management Tools",
 			ExecutableNames: []string{"CC Switch.exe", "cc-switch.exe"}, RegistryNames: []string{"CC Switch"},
@@ -375,7 +375,7 @@ func windowsDesktopExecutables(ctx context.Context, spec WindowsDesktopSpec, pat
 		}
 	}
 	for _, directory := range paths {
-		for _, name := range spec.ExecutableNames {
+		for _, name := range windowsDesktopPathExecutableNames(spec) {
 			add(filepath.Join(directory, name))
 		}
 	}
@@ -403,6 +403,27 @@ func windowsDesktopExecutables(ctx context.Context, spec WindowsDesktopSpec, pat
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Path) < strings.ToLower(result[j].Path) })
 	return result
+}
+
+// Windows resolves executable names case-insensitively. Claude.exe, Codex.exe,
+// and OpenCode.exe are also the corresponding CLI names, so PATH alone cannot
+// prove that those files are desktop applications. Fixed per-user paths and
+// uninstall-registry evidence remain eligible for all desktop executable names.
+func windowsDesktopPathExecutableNames(spec WindowsDesktopSpec) []string {
+	switch spec.ID {
+	case "claude-desktop", "codex-desktop":
+		return nil
+	case "opencode-desktop":
+		result := make([]string, 0, len(spec.ExecutableNames))
+		for _, name := range spec.ExecutableNames {
+			if !strings.EqualFold(name, "OpenCode.exe") {
+				result = append(result, name)
+			}
+		}
+		return result
+	default:
+		return append([]string(nil), spec.ExecutableNames...)
+	}
 }
 
 func validWindowsDesktopSpec(spec WindowsDesktopSpec) bool {
