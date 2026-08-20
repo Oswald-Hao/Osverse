@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 )
 
+func commitHarnessRename(source, destination string) error {
+	return os.Rename(source, destination)
+}
+
 type symlinkState struct {
 	exists bool
 	target string
