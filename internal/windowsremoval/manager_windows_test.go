@@ -165,3 +165,32 @@ func TestCodexStoreRemovalPlanUsesExactProductID(t *testing.T) {
 		t.Fatalf("store removal plan = %#v", plan)
 	}
 }
+
+func TestOpenCodeBetaRemovalUsesOfficialPerUserUninstaller(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	uninstaller := filepath.Join(home, "AppData", "Local", "Programs", "OpenCode Beta", "Uninstall OpenCode Beta.exe")
+	if err := os.MkdirAll(filepath.Dir(uninstaller), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(uninstaller, []byte("MZ fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-opencode-beta", nil }
+	component := domain.Component{ID: "opencode-desktop", Name: "OpenCode Desktop", Category: "Desktop Applications", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: filepath.Join(filepath.Dir(uninstaller), "OpenCode Beta.exe"), Version: "1.18.18", Source: "registry"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.expire(plan.ID)
+	if len(plan.Effects) != 1 || plan.Effects[0].Path != uninstaller {
+		t.Fatalf("OpenCode Beta removal plan = %#v", plan)
+	}
+}

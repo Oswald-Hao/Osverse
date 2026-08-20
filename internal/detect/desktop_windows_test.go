@@ -107,7 +107,7 @@ func TestDetectWindowsOpenCodeDesktopUsesRegistryInstallLocation(t *testing.T) {
 func TestRegistryExecutablePathsAcceptsInstallLocationAndDisplayIcon(t *testing.T) {
 	spec := WindowsDesktopSpecs()[3]
 	paths := registryExecutablePaths(spec, `C:\Program Files\OpenCode`, `"D:\Apps\OpenCode\OpenCode.exe",0`)
-	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
+	want := []string{`C:\Program Files\OpenCode\OpenCode.exe`, `C:\Program Files\OpenCode\OpenCode Beta.exe`, `C:\Program Files\OpenCode\opencode-desktop.exe`, `D:\Apps\OpenCode\OpenCode.exe`}
 	if len(paths) != len(want) {
 		t.Fatalf("paths = %#v", paths)
 	}
@@ -139,5 +139,95 @@ func TestKnownDesktopVersionOnlyOffersNewerPinnedRelease(t *testing.T) {
 		if got := knownVersionIsNewer(test.known, test.installed); got != test.want {
 			t.Errorf("knownVersionIsNewer(%q,%q)=%v", test.known, test.installed, got)
 		}
+	}
+}
+
+func TestWindowsOpenCodeDesktopSpecIncludesOfficialBetaChannel(t *testing.T) {
+	spec := WindowsDesktopSpecs()[3]
+	if !containsFold(spec.ExecutableNames, "OpenCode Beta.exe") ||
+		!containsFold(spec.RegistryNames, "OpenCode Beta") {
+		t.Fatalf("OpenCode Beta identity missing from spec: %#v", spec)
+	}
+	want := `AppData\Local\Programs\OpenCode Beta\OpenCode Beta.exe`
+	if !containsFold(spec.RelativeExecutables, want) {
+		t.Fatalf("OpenCode Beta path missing from spec: %#v", spec.RelativeExecutables)
+	}
+}
+
+func TestWindowsDesktopPathFallbackExcludesCLICollisions(t *testing.T) {
+	tests := []struct {
+		id   string
+		want []string
+	}{
+		{id: "claude-desktop", want: nil},
+		{id: "codex-desktop", want: nil},
+		{id: "opencode-desktop", want: []string{"OpenCode Beta.exe", "opencode-desktop.exe"}},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			var spec WindowsDesktopSpec
+			for _, candidate := range WindowsDesktopSpecs() {
+				if candidate.ID == test.id {
+					spec = candidate
+					break
+				}
+			}
+			got := windowsDesktopPathExecutableNames(spec)
+			if len(got) != len(test.want) {
+				t.Fatalf("PATH fallback names = %#v, want %#v", got, test.want)
+			}
+			for index := range test.want {
+				if got[index] != test.want[index] {
+					t.Fatalf("PATH fallback names = %#v, want %#v", got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestDetectWindowsDesktopDoesNotTreatCLIOnPathAsDesktop(t *testing.T) {
+	tests := []struct {
+		id      string
+		cliName string
+	}{
+		{id: "claude-desktop", cliName: "claude.exe"},
+		{id: "codex-desktop", cliName: "codex.exe"},
+		{id: "opencode-desktop", cliName: "opencode.exe"},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			directory := t.TempDir()
+			if err := os.WriteFile(filepath.Join(directory, test.cliName), []byte("MZ CLI fixture"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var spec WindowsDesktopSpec
+			for _, candidate := range WindowsDesktopSpecs() {
+				if candidate.ID == test.id {
+					spec = candidate
+					break
+				}
+			}
+			component, err := DetectWindowsDesktop(context.Background(), spec, domain.SystemInfo{Supported: true},
+				[]string{directory}, fakeWindowsPackageQuery{}, t.TempDir())
+			if err != nil || component.Status != domain.StatusMissing || len(component.Installations) != 0 {
+				t.Fatalf("CLI PATH collision = (%#v, %v), want missing desktop", component, err)
+			}
+		})
+	}
+}
+
+func TestDetectWindowsOpenCodeBetaAtOfficialPath(t *testing.T) {
+	home := t.TempDir()
+	executable := filepath.Join(home, "AppData", "Local", "Programs", "OpenCode Beta", "OpenCode Beta.exe")
+	if err := os.MkdirAll(filepath.Dir(executable), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(executable, []byte("MZ OpenCode Beta fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component, err := DetectWindowsDesktop(context.Background(), WindowsDesktopSpecs()[3],
+		domain.SystemInfo{Supported: true}, nil, fakeWindowsPackageQuery{}, home)
+	if err != nil || component.Status != domain.StatusInstalled || len(component.Installations) != 1 || component.Installations[0].Path != executable {
+		t.Fatalf("OpenCode Beta detection = (%#v, %v)", component, err)
 	}
 }
