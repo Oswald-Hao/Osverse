@@ -12,7 +12,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
+
+const linuxUpdateLockName = ".osverse-update.lock"
 
 func applyArtifact(staged string, artifact Artifact) (ApplyResult, error) {
 	switch artifact.Format {
@@ -127,6 +131,11 @@ func extractPortableBinary(archivePath string, archiveSize int64) (string, error
 }
 
 func replaceAndRestart(source, target string) (ApplyResult, error) {
+	lock, err := acquireUpdateLock(filepath.Dir(target))
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	defer lock.Close()
 	info, err := executableFile(target)
 	if err != nil {
 		return ApplyResult{}, err
@@ -201,4 +210,40 @@ func replaceAndRestart(source, target string) (ApplyResult, error) {
 		_ = process.Process.Release()
 	}
 	return ApplyResult{Started: true, ShouldQuit: true, Message: "更新已安装，正在重新启动 Osverse"}, nil
+}
+
+func acquireUpdateLock(directory string) (*os.File, error) {
+	if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
+		return nil, errors.New("update lock directory is unsafe")
+	}
+	path := filepath.Join(directory, linuxUpdateLockName)
+	descriptor, err := unix.Open(path, unix.O_RDWR|unix.O_CREAT|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = unix.Close(descriptor)
+		}
+	}()
+	var stat unix.Stat_t
+	if err := unix.Fstat(descriptor, &stat); err != nil {
+		return nil, err
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o777 != 0o600 {
+		return nil, errors.New("update lock evidence is unsafe")
+	}
+	if err := unix.Flock(descriptor, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return nil, ErrUpdateInProgress
+		}
+		return nil, err
+	}
+	file := os.NewFile(uintptr(descriptor), path)
+	if file == nil {
+		return nil, errors.New("update lock handle is unavailable")
+	}
+	closeOnError = false
+	return file, nil
 }

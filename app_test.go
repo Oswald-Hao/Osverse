@@ -945,6 +945,7 @@ type fakeAppUpdater struct {
 	checkErr        error
 	appliedPlan     string
 	result          selfupdate.ApplyResult
+	applyErr        error
 }
 
 func (updater *fakeAppUpdater) Check(_ context.Context, protocol proxyservice.Protocol, port int) (selfupdate.Info, error) {
@@ -975,7 +976,7 @@ func TestAppUpdateBridgeDistinguishesRateLimitFromNetworkFailure(t *testing.T) {
 
 func (updater *fakeAppUpdater) Apply(_ context.Context, planID string, protocol proxyservice.Protocol, port int) (selfupdate.ApplyResult, error) {
 	updater.appliedPlan, updater.checkedProtocol, updater.checkedPort = planID, protocol, port
-	return updater.result, nil
+	return updater.result, updater.applyErr
 }
 
 func TestAppUpdateBridgeUsesSelectedProxyAndOpaquePlan(t *testing.T) {
@@ -990,6 +991,26 @@ func TestAppUpdateBridgeUsesSelectedProxyAndOpaquePlan(t *testing.T) {
 	result, err := app.StartAppUpdate(info.PlanID)
 	if err != nil || !result.Started || updater.appliedPlan != "update-plan" {
 		t.Fatalf("StartAppUpdate() = (%#v, %v), plan=%q", result, err, updater.appliedPlan)
+	}
+}
+
+func TestAppUpdateBridgeReportsAnotherUpdatingInstance(t *testing.T) {
+	app := newAppWithServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{})
+	app.updater = &fakeAppUpdater{applyErr: selfupdate.ErrUpdateInProgress}
+	_, err := app.StartAppUpdate("update-plan")
+	var public *domain.PublicError
+	if !errors.As(err, &public) {
+		t.Fatalf("StartAppUpdate() error = %v, want public error", err)
+	}
+	if public.Code != domain.ErrUpdateInProgress {
+		t.Errorf("error code = %q, want %q", public.Code, domain.ErrUpdateInProgress)
+	}
+	for _, text := range []string{"另一 Osverse 实例", "更新", "稍后重试"} {
+		if !strings.Contains(public.Message, text) {
+			t.Errorf("public message %q does not contain %q", public.Message, text)
+		}
 	}
 }
 
