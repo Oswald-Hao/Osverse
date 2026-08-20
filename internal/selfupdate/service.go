@@ -30,9 +30,10 @@ const (
 )
 
 var (
-	ErrNoPlan       = errors.New("update plan is unavailable")
-	ErrInvalidReply = errors.New("invalid update metadata")
-	ErrRateLimited  = errors.New("update service rate limited")
+	ErrNoPlan           = errors.New("update plan is unavailable")
+	ErrInvalidReply     = errors.New("invalid update metadata")
+	ErrRateLimited      = errors.New("update service rate limited")
+	ErrUpdateInProgress = errors.New("another Osverse instance is updating")
 )
 
 type clientFactory func(proxyservice.Protocol, int) (*http.Client, error)

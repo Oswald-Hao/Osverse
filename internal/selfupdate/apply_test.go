@@ -9,9 +9,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,5 +177,154 @@ func TestExecutableFileRejectsDirectoryAndLink(t *testing.T) {
 	}
 	if _, err := executableFile(link); err == nil {
 		t.Fatal("symlink accepted as executable")
+	}
+}
+
+func TestLinuxUpdateLockSerializesProcessesAndAllowsStaleFileReuse(t *testing.T) {
+	directory := t.TempDir()
+	first, err := acquireUpdateLock(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second, err := acquireUpdateLock(directory); !errors.Is(err, ErrUpdateInProgress) {
+		if second != nil {
+			_ = second.Close()
+		}
+		t.Fatalf("second acquire = (%v, %v), want ErrUpdateInProgress", second, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	third, err := acquireUpdateLock(directory)
+	if err != nil {
+		t.Fatalf("stale lock file blocked later update: %v", err)
+	}
+	if err := third.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLinuxUpdateLockReleasesAfterHolderProcessTerminates(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "holder-ready")
+	command := exec.Command(os.Args[0], "-test.run=^TestLinuxUpdateLockSubprocessHelper$")
+	command.Env = append(os.Environ(), "OSVERSE_UPDATE_LOCK_HELPER="+directory, "OSVERSE_UPDATE_LOCK_MARKER="+marker)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		_ = command.Wait()
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("lock holder did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if lock, err := acquireUpdateLock(directory); !errors.Is(err, ErrUpdateInProgress) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("acquire while child holds lock = (%v, %v)", lock, err)
+	}
+	if err := command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = command.Wait()
+	command.Process = nil
+	lock, err := acquireUpdateLock(directory)
+	if err != nil {
+		t.Fatalf("terminated holder left a blocking lock: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLinuxUpdateLockSubprocessHelper(t *testing.T) {
+	directory := os.Getenv("OSVERSE_UPDATE_LOCK_HELPER")
+	if directory == "" {
+		return
+	}
+	lock, err := acquireUpdateLock(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := os.WriteFile(os.Getenv("OSVERSE_UPDATE_LOCK_MARKER"), []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(30 * time.Second)
+}
+
+func TestReplaceAndRestartDoesNotTouchTargetWhenAnotherProcessUpdates(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "osverse")
+	source := filepath.Join(directory, "next")
+	if err := os.WriteFile(target, []byte("current"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("next"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := acquireUpdateLock(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if _, err := replaceAndRestart(source, target); !errors.Is(err, ErrUpdateInProgress) {
+		t.Fatalf("replaceAndRestart() error = %v, want ErrUpdateInProgress", err)
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil || string(raw) != "current" {
+		t.Fatalf("target changed = (%q, %v)", raw, err)
+	}
+	if _, err := os.Lstat(target + ".osverse-previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("backup was touched: %v", err)
+	}
+}
+
+func TestLinuxUpdateLockRejectsUnsafeEvidence(t *testing.T) {
+	tests := map[string]func(*testing.T, string){
+		"symlink": func(t *testing.T, path string) {
+			target := filepath.Join(t.TempDir(), "outside")
+			if err := os.WriteFile(target, []byte("outside"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"hard link": func(t *testing.T, path string) {
+			target := filepath.Join(t.TempDir(), "outside")
+			if err := os.WriteFile(target, []byte("outside"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Link(target, path); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"permissive": func(t *testing.T, path string) {
+			if err := os.WriteFile(path, []byte("lock"), 0o666); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, prepare := range tests {
+		t.Run(name, func(t *testing.T) {
+			directory := t.TempDir()
+			prepare(t, filepath.Join(directory, linuxUpdateLockName))
+			if lock, err := acquireUpdateLock(directory); err == nil {
+				_ = lock.Close()
+				t.Fatal("unsafe update lock accepted")
+			}
+		})
 	}
 }
