@@ -35,13 +35,14 @@ type componentKind struct {
 	category       string
 	managedDesktop bool
 	launchArgs     []string
+	localWeb       bool
 }
 
 var fixedComponents = map[string]componentKind{
 	"claude-code":        {category: "Core CLI"},
 	"codex-cli":          {category: "Core CLI"},
 	"opencode-cli":       {category: "Core CLI"},
-	"deepseek-harness":   {category: "Core CLI", launchArgs: []string{"web"}},
+	"deepseek-harness":   {category: "Core CLI", launchArgs: []string{"web"}, localWeb: true},
 	"qwen-code":          {category: "Core CLI"},
 	"kimi-code":          {category: "Core CLI"},
 	"github-copilot-cli": {category: "Core CLI"},
@@ -98,6 +99,7 @@ func (manager *Manager) Launch(ctx context.Context, component domain.Component, 
 		ExpectedResolvedPath: installation.ResolvedPath,
 		Args:                 append([]string(nil), kind.launchArgs...),
 		Terminal:             component.Category == "Core CLI",
+		LocalWeb:             kind.localWeb,
 	}); err != nil {
 		return ErrLaunchFailed
 	}

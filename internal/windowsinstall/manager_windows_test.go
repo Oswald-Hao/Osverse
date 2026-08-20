@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	xwindows "golang.org/x/sys/windows"
 )
 
 func TestWindowsCatalogPinsVerifiedOfficialArtifacts(t *testing.T) {
@@ -91,6 +93,46 @@ func TestManagedShimEscapesPercentInUserPath(t *testing.T) {
 		!validManagedShim([]byte(content), "claude-code", managedRoot) {
 		t.Fatalf("managed shim = %q", content)
 	}
+}
+
+func TestManagedShimAcceptsWindowsShortPathTarget(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "managed directory with a long name", "tools")
+	target := filepath.Join(root, "deepseek-harness", "0.1.0-rc.6", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shortTarget := windowsShortPath(t, target)
+	if strings.EqualFold(shortTarget, target) {
+		t.Skip("8.3 short path names are disabled on this volume")
+	}
+	content := managedShim("deepseek-harness", shortTarget)
+	if !validManagedShim(content, "deepseek-harness", root) {
+		t.Fatalf("short target %q was not recognized inside long root %q", shortTarget, root)
+	}
+}
+
+func windowsShortPath(t *testing.T, path string) string {
+	t.Helper()
+	longPath, err := xwindows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required, err := xwindows.GetShortPathName(longPath, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if required == 0 {
+		t.Fatal("GetShortPathName returned an empty path")
+	}
+	buffer := make([]uint16, required)
+	written, err := xwindows.GetShortPathName(longPath, &buffer[0], uint32(len(buffer)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return xwindows.UTF16ToString(buffer[:written])
 }
 
 func TestWindowsActivationFailureRollsBackNewPayload(t *testing.T) {
