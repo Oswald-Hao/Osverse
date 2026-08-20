@@ -231,3 +231,58 @@ func TestDetectWindowsOpenCodeBetaAtOfficialPath(t *testing.T) {
 		t.Fatalf("OpenCode Beta detection = (%#v, %v)", component, err)
 	}
 }
+
+func TestAppModelPackageIdentityRequiresExactBoundary(t *testing.T) {
+	tests := []struct {
+		name      string
+		prefixes  []string
+		candidate string
+		want      bool
+	}{
+		{name: "Codex exact", prefixes: []string{"OpenAI.Codex"}, candidate: "OpenAI.Codex_26.721.3996.0_x64__8wekyb3d8bbwe", want: true},
+		{name: "Codex case insensitive", prefixes: []string{"OpenAI.Codex"}, candidate: "openai.codex_26.721.3996.0_x64__8wekyb3d8bbwe", want: true},
+		{name: "Claude configured boundary", prefixes: []string{"Claude_"}, candidate: "Claude_1.2.3.4_x64__publisher", want: true},
+		{name: "sibling preview", prefixes: []string{"OpenAI.Codex"}, candidate: "OpenAI.CodexPreview_26.721.3996.0_x64__publisher", want: false},
+		{name: "identity without version boundary", prefixes: []string{"OpenAI.Codex"}, candidate: "OpenAI.Codex", want: false},
+		{name: "hyphenated sibling", prefixes: []string{"OpenAI.Codex"}, candidate: "OpenAI.Codex-Beta_26.721.3996.0_x64__publisher", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := matchesAppModelPackageName(test.prefixes, test.candidate); got != test.want {
+				t.Fatalf("matchesAppModelPackageName(%#v, %q) = %t, want %t", test.prefixes, test.candidate, got, test.want)
+			}
+		})
+	}
+}
+
+func TestAppModelEvidenceSelectsNewestVersionIndependentlyOfEnumerationOrder(t *testing.T) {
+	spec := WindowsDesktopSpecs()[2]
+	names := []string{
+		"OpenAI.Codex_26.721.9.0_x64__publisher",
+		"OpenAI.CodexPreview_99.0.0.0_x64__publisher",
+		"OpenAI.Codex_26.721.3996.0_x64__publisher",
+		"OpenAI.Codex_26.800.1.0_x64__publisher",
+	}
+	first, ok := appModelEvidenceFromNames(spec, names)
+	if !ok || !first.Installed || first.Source != "msix" || first.Version != "26.800.1.0" {
+		t.Fatalf("AppModel evidence = (%#v, %t)", first, ok)
+	}
+	for left, right := 0, len(names)-1; left < right; left, right = left+1, right-1 {
+		names[left], names[right] = names[right], names[left]
+	}
+	second, ok := appModelEvidenceFromNames(spec, names)
+	if !ok || second.Installed != first.Installed || second.Version != first.Version || second.Source != first.Source || len(second.ExecutablePaths) != 0 {
+		t.Fatalf("reversed AppModel evidence = (%#v, %t), want %#v", second, ok, first)
+	}
+}
+
+func TestAppModelEvidenceUsesStableUnknownFallback(t *testing.T) {
+	spec := WindowsDesktopSpecs()[2]
+	evidence, ok := appModelEvidenceFromNames(spec, []string{
+		"OpenAI.Codex_preview_x64__publisher",
+		"OpenAI.Codex_unversioned_x64__publisher",
+	})
+	if !ok || !evidence.Installed || evidence.Version != "unknown" || evidence.Source != "msix" {
+		t.Fatalf("unknown AppModel evidence = (%#v, %t)", evidence, ok)
+	}
+}

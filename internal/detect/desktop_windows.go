@@ -194,17 +194,67 @@ func appModelEvidence(ctx context.Context, spec WindowsDesktopSpec) (WindowsPack
 	if err != nil {
 		return WindowsPackageEvidence{}, err
 	}
-	for _, name := range names {
+	for range names {
 		if err := ctx.Err(); err != nil {
 			return WindowsPackageEvidence{}, err
 		}
-		for _, prefix := range spec.AppModelPrefixes {
-			if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
-				return WindowsPackageEvidence{Installed: true, Version: appModelVersion(name), Source: "msix"}, nil
-			}
-		}
+	}
+	if evidence, ok := appModelEvidenceFromNames(spec, names); ok {
+		return evidence, nil
 	}
 	return WindowsPackageEvidence{}, nil
+}
+
+func matchesAppModelPackageName(prefixes []string, candidate string) bool {
+	candidate = strings.ToLower(candidate)
+	for _, prefix := range prefixes {
+		prefix = strings.ToLower(strings.TrimSpace(prefix))
+		if prefix == "" {
+			continue
+		}
+		if !strings.HasSuffix(prefix, "_") {
+			prefix += "_"
+		}
+		if strings.HasPrefix(candidate, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func appModelEvidenceFromNames(spec WindowsDesktopSpec, names []string) (WindowsPackageEvidence, bool) {
+	ordered := append([]string(nil), names...)
+	sort.Slice(ordered, func(i, j int) bool {
+		left, right := strings.ToLower(ordered[i]), strings.ToLower(ordered[j])
+		if left == right {
+			return ordered[i] < ordered[j]
+		}
+		return left < right
+	})
+	found, selectedKnown := false, false
+	selectedVersion := "unknown"
+	var selectedParts []int
+	for _, name := range ordered {
+		if !matchesAppModelPackageName(spec.AppModelPrefixes, name) {
+			continue
+		}
+		version := appModelVersion(name)
+		parts, known := parseWindowsNumericVersion(version)
+		if !found {
+			found = true
+			if known {
+				selectedKnown, selectedVersion, selectedParts = true, version, parts
+			}
+			continue
+		}
+		if known && (!selectedKnown || compareWindowsNumericVersions(parts, selectedParts) > 0) {
+			selectedKnown, selectedVersion, selectedParts = true, version, parts
+		}
+	}
+	if !found {
+		return WindowsPackageEvidence{}, false
+	}
+	return WindowsPackageEvidence{Installed: true, Version: selectedVersion, Source: "msix"}, true
 }
 
 func appModelVersion(name string) string {
@@ -304,31 +354,36 @@ func DetectWindowsDesktop(ctx context.Context, spec WindowsDesktopSpec, system d
 }
 
 func knownVersionIsNewer(known, installed string) bool {
-	parse := func(value string) ([]int, bool) {
-		value = strings.TrimPrefix(strings.TrimSpace(value), "v")
-		value, _, _ = strings.Cut(value, "-")
-		parts := strings.Split(value, ".")
-		if len(parts) < 2 || len(parts) > 4 {
-			return nil, false
-		}
-		result := make([]int, len(parts))
-		for index, part := range parts {
-			if part == "" {
-				return nil, false
-			}
-			number, err := strconv.Atoi(part)
-			if err != nil || number < 0 {
-				return nil, false
-			}
-			result[index] = number
-		}
-		return result, true
-	}
-	left, leftOK := parse(known)
-	right, rightOK := parse(installed)
+	left, leftOK := parseWindowsNumericVersion(known)
+	right, rightOK := parseWindowsNumericVersion(installed)
 	if !leftOK || !rightOK {
 		return false
 	}
+	return compareWindowsNumericVersions(left, right) > 0
+}
+
+func parseWindowsNumericVersion(value string) ([]int, bool) {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+	value, _, _ = strings.Cut(value, "-")
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 || len(parts) > 4 {
+		return nil, false
+	}
+	result := make([]int, len(parts))
+	for index, part := range parts {
+		if part == "" {
+			return nil, false
+		}
+		number, err := strconv.Atoi(part)
+		if err != nil || number < 0 {
+			return nil, false
+		}
+		result[index] = number
+	}
+	return result, true
+}
+
+func compareWindowsNumericVersions(left, right []int) int {
 	limit := len(left)
 	if len(right) > limit {
 		limit = len(right)
@@ -342,10 +397,13 @@ func knownVersionIsNewer(known, installed string) bool {
 			rightValue = right[index]
 		}
 		if leftValue != rightValue {
-			return leftValue > rightValue
+			if leftValue > rightValue {
+				return 1
+			}
+			return -1
 		}
 	}
-	return false
+	return 0
 }
 
 func windowsDesktopExecutables(ctx context.Context, spec WindowsDesktopSpec, paths []string, home string, packageEvidence WindowsPackageEvidence) []domain.Installation {
