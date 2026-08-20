@@ -2,6 +2,8 @@
 
 package windows
 
+import "os"
+
 // ExecutableEvidence keeps a Windows file handle open without write/delete
 // sharing, preventing ordinary replacement while the caller verifies or
 // starts the exact path.
@@ -31,6 +33,22 @@ func (evidence *ExecutableEvidence) Close() error {
 	err := closeWindowsHandle(evidence.identity.handle)
 	evidence.identity.handle = 0
 	return err
+}
+
+// TakeFile transfers ownership of the pinned Windows handle to an os.File.
+// The evidence becomes inert, so its Close method remains safe to call.
+func (evidence *ExecutableEvidence) TakeFile() *os.File {
+	if evidence == nil || evidence.identity.handle == 0 {
+		return nil
+	}
+	handle := evidence.identity.handle
+	name := evidence.identity.finalPath
+	evidence.identity.handle = 0
+	file := os.NewFile(uintptr(handle), name)
+	if file == nil {
+		_ = closeWindowsHandle(handle)
+	}
+	return file
 }
 
 func (evidence *ExecutableEvidence) Unchanged(path string) bool {

@@ -309,8 +309,18 @@ func (manager *Manager) uninstallDesktop(ctx context.Context, stored *storedPlan
 		return removal.ErrRemovalUnsupported
 	}
 	var evidence *platformwindows.ExecutableEvidence
+	var pinnedExecutable *os.File
+	releasePinnedAfterStart := false
 	if stored.rule.uninstallKind == "exe" {
 		evidence = stored.uninstaller
+		if !evidence.Unchanged(path) {
+			return removal.ErrEvidenceChanged
+		}
+		pinnedExecutable = evidence.TakeFile()
+		if pinnedExecutable == nil {
+			return removal.ErrRemovalFailed
+		}
+		releasePinnedAfterStart = true
 	} else {
 		var err error
 		evidence, err = platformwindows.OpenExecutableEvidence(path)
@@ -319,8 +329,11 @@ func (manager *Manager) uninstallDesktop(ctx context.Context, stored *storedPlan
 		}
 		defer evidence.Close()
 	}
-	result, runErr := manager.runner.Run(ctx, platform.CommandRequest{Path: path, Args: args, Timeout: 20 * time.Minute, OutputLimit: 256 * 1024})
-	if !evidence.Unchanged(path) || result.TimedOut || result.Truncated || (result.ExitCode != 0 && result.ExitCode != 3010) {
+	result, runErr := manager.runner.Run(ctx, platform.CommandRequest{
+		Path: path, PinnedExecutable: pinnedExecutable, ReleasePinnedAfterStart: releasePinnedAfterStart,
+		Args: args, Timeout: 20 * time.Minute, OutputLimit: 256 * 1024,
+	})
+	if (!releasePinnedAfterStart && !evidence.Unchanged(path)) || result.TimedOut || result.Truncated || (result.ExitCode != 0 && result.ExitCode != 3010) {
 		return removal.ErrRemovalFailed
 	}
 	if runErr != nil && result.ExitCode != 3010 {

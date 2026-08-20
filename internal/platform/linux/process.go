@@ -34,6 +34,18 @@ func NewExecRunner() platform.CommandRunner {
 
 func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platform.CommandResult, error) {
 	result := platform.CommandResult{ExitCode: -1}
+	if req.ReleasePinnedAfterStart && req.PinnedExecutable == nil {
+		return result, commandFailedError(errors.New("transferred pinned executable is missing"))
+	}
+	var transferredPinned *os.File
+	if req.ReleasePinnedAfterStart {
+		transferredPinned = req.PinnedExecutable
+		defer func() {
+			if transferredPinned != nil {
+				_ = transferredPinned.Close()
+			}
+		}()
+	}
 	if req.Path == "" {
 		return result, commandFailedError(nil)
 	}
@@ -82,6 +94,15 @@ func (execRunner) Run(ctx context.Context, req platform.CommandRequest) (platfor
 
 	if err := cmd.Start(); err != nil {
 		return result, commandFailedError(err)
+	}
+	if transferredPinned != nil {
+		closeErr := transferredPinned.Close()
+		transferredPinned = nil
+		if closeErr != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return result, commandFailedError(closeErr)
+		}
 	}
 	if pidfd < 0 {
 		terminationErr := terminateOwnedProcessGroup(cmd.Process)

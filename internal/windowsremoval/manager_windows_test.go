@@ -13,8 +13,15 @@ import (
 	"time"
 
 	"github.com/Oswald-Hao/Osverse/internal/domain"
+	"github.com/Oswald-Hao/Osverse/internal/platform"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
 )
+
+type commandRunnerFunc func(context.Context, platform.CommandRequest) (platform.CommandResult, error)
+
+func (run commandRunnerFunc) Run(ctx context.Context, request platform.CommandRequest) (platform.CommandResult, error) {
+	return run(ctx, request)
+}
 
 func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
@@ -287,5 +294,52 @@ func TestOpenCodeBetaRemovalUsesOfficialPerUserUninstaller(t *testing.T) {
 	defer manager.expire(plan.ID)
 	if len(plan.Effects) != 1 || plan.Effects[0].Path != uninstaller {
 		t.Fatalf("OpenCode Beta removal plan = %#v", plan)
+	}
+}
+
+func TestOpenCodeRemovalAllowsTheValidatedUninstallerToDeleteItself(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	uninstaller := filepath.Join(home, "AppData", "Local", "Programs", "OpenCode", "Uninstall OpenCode.exe")
+	if err := os.MkdirAll(filepath.Dir(uninstaller), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(uninstaller, []byte("MZ fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-self-deleting-opencode", nil }
+	manager.runner = commandRunnerFunc(func(_ context.Context, request platform.CommandRequest) (platform.CommandResult, error) {
+		if request.Path != uninstaller || request.PinnedExecutable == nil || !request.ReleasePinnedAfterStart {
+			t.Fatalf("uninstaller request = %#v", request)
+		}
+		if err := os.Rename(uninstaller, uninstaller+".replaced"); err == nil {
+			t.Fatal("uninstaller could be replaced before process start")
+		}
+		if err := request.PinnedExecutable.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(uninstaller); err != nil {
+			t.Fatalf("self-delete after process start failed: %v", err)
+		}
+		return platform.CommandResult{ExitCode: 0}, nil
+	})
+	component := domain.Component{ID: "opencode-desktop", Name: "OpenCode Desktop", Category: "Desktop Applications", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: filepath.Join(filepath.Dir(uninstaller), "OpenCode.exe"), Version: "1.18.18", Source: "registry"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := manager.Execute(context.Background(), plan.ID, component)
+	if err != nil || !result.Removed {
+		t.Fatalf("Execute() = (%#v, %v)", result, err)
+	}
+	if _, err := os.Lstat(uninstaller); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("uninstaller remains: %v", err)
 	}
 }
