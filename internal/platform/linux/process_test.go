@@ -64,6 +64,22 @@ func TestExecRunnerPinnedExecutableIgnoresReplacedPath(t *testing.T) {
 	}
 }
 
+func TestExecRunnerClosesTransferredPinnedExecutable(t *testing.T) {
+	pinned, err := os.Open(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := helperRequest("argv0")
+	req.PinnedExecutable = pinned
+	req.ReleasePinnedAfterStart = true
+	if _, err := NewExecRunner().Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pinned.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("transferred pinned executable remains open: %v", err)
+	}
+}
+
 func TestExecRunnerDirectEnvShellScriptPreservesPathSiblingAndStdinEOF(t *testing.T) {
 	directory := t.TempDir()
 	commandPath := filepath.Join(directory, "command")
