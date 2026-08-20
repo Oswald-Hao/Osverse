@@ -103,3 +103,87 @@ func TestRetryWindowsHarnessRenameDoesNotRetryAfterDestinationAppears(t *testing
 		t.Fatalf("destination race = %v, calls=%d sleeps=%d", err, calls, sleeps)
 	}
 }
+
+func TestWindowsCommitAndActivateRepairsOwnedDamagedRuntime(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := managedPathsFor(home, "windows", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload-repair")
+	writeWindowsHarnessFixture(t, payload, []byte("verified"))
+	writeWindowsHarnessFixture(t, paths.finalRoot, []byte("verified"))
+	damagedNode := filepath.Join(paths.finalRoot, "runtime", "node.exe")
+	if err := os.WriteFile(damagedNode, []byte("damaged beta runtime"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := commitAndActivateHarnessPayload(home, payload, paths, "windows", func(string, managedPaths, string) error { return nil }); err != nil {
+		t.Fatalf("Windows repair = %v", err)
+	}
+	got, err := os.ReadFile(damagedNode)
+	if err != nil || string(got) != "verified" {
+		t.Fatalf("repaired node = (%q, %v)", got, err)
+	}
+	entries, err := os.ReadDir(filepath.Join(paths.root, "recovery"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("Windows repair recovery = (%v, %v)", entries, err)
+	}
+	preserved, err := os.ReadFile(filepath.Join(paths.root, "recovery", entries[0].Name(), "runtime", "node.exe"))
+	if err != nil || string(preserved) != "damaged beta runtime" {
+		t.Fatalf("preserved damaged node = (%q, %v)", preserved, err)
+	}
+}
+
+func TestWindowsFailedActivationRestoresDamagedRuntime(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := managedPathsFor(home, "windows", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload-rollback")
+	writeWindowsHarnessFixture(t, payload, []byte("verified"))
+	writeWindowsHarnessFixture(t, paths.finalRoot, []byte("verified"))
+	damagedNode := filepath.Join(paths.finalRoot, "runtime", "node.exe")
+	if err := os.WriteFile(damagedNode, []byte("damaged beta runtime"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	activationErr := errors.New("injected activation failure")
+
+	err = commitAndActivateHarnessPayload(home, payload, paths, "windows", func(string, managedPaths, string) error { return activationErr })
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("Windows repair rollback = %v, want activation error", err)
+	}
+	got, readErr := os.ReadFile(damagedNode)
+	if readErr != nil || string(got) != "damaged beta runtime" {
+		t.Fatalf("restored damaged node = (%q, %v)", got, readErr)
+	}
+}
+
+func writeWindowsHarnessFixture(t *testing.T, root string, content []byte) {
+	t.Helper()
+	for _, relative := range []string{
+		".osverse-harness-runtime",
+		"runtime/node.exe",
+		"app/node_modules/@deepseek-ai/dsh/lib/bin.js",
+		"bin/dsh.cmd",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		value := content
+		if relative == ".osverse-harness-runtime" {
+			value = []byte("component=deepseek-harness\nharness=0.1.0-rc.6\nnode=22.23.2\ntarget=windows/amd64\npackages=1\n")
+		}
+		if err := os.WriteFile(path, value, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

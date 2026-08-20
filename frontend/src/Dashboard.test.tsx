@@ -476,6 +476,19 @@ describe('environment status dashboard', () => {
     expect(within(card as HTMLElement).queryByRole('button', { name: /启动/ })).not.toBeInTheDocument()
   })
 
+  it('offers recovery removal for a broken Windows Harness installation', () => {
+    mockUseEnvironmentScan.mockReturnValue(scanState({ snapshot: {
+      ...snapshot,
+      components: [...snapshot.components, {
+        id: 'deepseek-harness', name: 'DeepSeek Harness', category: 'Core CLI', status: 'broken',
+        installations: [], message: '版本检测失败', minimumOS: 'Windows 10 1809',
+      }],
+    }}))
+    render(<App />)
+    const card = screen.getByRole('heading', { name: 'DeepSeek Harness' }).closest('article')
+    expect(within(card as HTMLElement).getByRole('button', { name: /移除/ })).toBeEnabled()
+  })
+
   it('previews exact recoverable effects before removing a detected installation', async () => {
     const create = vi.fn().mockResolvedValue({
       id: 'remove-plan', componentId: 'claude-code', name: 'Claude Code',

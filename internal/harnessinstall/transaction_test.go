@@ -93,6 +93,85 @@ func TestActivationFailureRemovesOnlyNewHarnessRuntime(t *testing.T) {
 	}
 }
 
+func TestCommitAndActivateRepairsOwnedDamagedRuntime(t *testing.T) {
+	home := t.TempDir()
+	paths := managedPathsFor(home, "linux", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload-repair")
+	writeHarnessFixture(t, payload, "linux", []byte("verified"))
+	writeHarnessFixture(t, paths.finalRoot, "linux", []byte("verified"))
+	damagedNode := filepath.Join(paths.finalRoot, "runtime", "bin", "node")
+	if err := os.WriteFile(damagedNode, []byte("damaged legacy runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := commitAndActivateHarnessPayload(home, payload, paths, "linux", func(string, managedPaths, string) error { return nil }); err != nil {
+		t.Fatalf("commitAndActivateHarnessPayload() repair error = %v", err)
+	}
+	got, err := os.ReadFile(damagedNode)
+	if err != nil || string(got) != "verified" {
+		t.Fatalf("repaired runtime = (%q, %v)", got, err)
+	}
+	recoveryRoot := filepath.Join(paths.root, "recovery")
+	entries, err := os.ReadDir(recoveryRoot)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("repair recovery entries = (%v, %v)", entries, err)
+	}
+	preserved, err := os.ReadFile(filepath.Join(recoveryRoot, entries[0].Name(), "runtime", "bin", "node"))
+	if err != nil || string(preserved) != "damaged legacy runtime" {
+		t.Fatalf("preserved legacy runtime = (%q, %v)", preserved, err)
+	}
+}
+
+func TestFailedActivationRestoresOwnedDamagedRuntime(t *testing.T) {
+	home := t.TempDir()
+	paths := managedPathsFor(home, "linux", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload-repair-rollback")
+	writeHarnessFixture(t, payload, "linux", []byte("verified"))
+	writeHarnessFixture(t, paths.finalRoot, "linux", []byte("verified"))
+	damagedNode := filepath.Join(paths.finalRoot, "runtime", "bin", "node")
+	if err := os.WriteFile(damagedNode, []byte("damaged legacy runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	activationErr := errors.New("injected activation failure")
+
+	err := commitAndActivateHarnessPayload(home, payload, paths, "linux", func(string, managedPaths, string) error { return activationErr })
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("commitAndActivateHarnessPayload() = %v, want activation error", err)
+	}
+	got, readErr := os.ReadFile(damagedNode)
+	if readErr != nil || string(got) != "damaged legacy runtime" {
+		t.Fatalf("restored damaged runtime = (%q, %v)", got, readErr)
+	}
+}
+
+func TestRepairRejectsRuntimeWithoutMatchingOwnershipMarker(t *testing.T) {
+	home := t.TempDir()
+	paths := managedPathsFor(home, "linux", harnessVer)
+	if err := os.MkdirAll(paths.toolRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(home, "payload-unowned")
+	writeHarnessFixture(t, payload, "linux", []byte("verified"))
+	writeHarnessFixture(t, paths.finalRoot, "linux", []byte("damaged"))
+	if err := os.WriteFile(filepath.Join(paths.finalRoot, ".osverse-harness-runtime"), []byte("foreign marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := commitAndActivateHarnessPayload(home, payload, paths, "linux", func(string, managedPaths, string) error { return nil }); err == nil {
+		t.Fatal("runtime without matching ownership marker was replaced")
+	}
+	marker, err := os.ReadFile(filepath.Join(paths.finalRoot, ".osverse-harness-runtime"))
+	if err != nil || string(marker) != "foreign marker" {
+		t.Fatalf("foreign runtime changed = (%q, %v)", marker, err)
+	}
+}
+
 func TestRollbackFailureMessageDoesNotClaimCleanRollback(t *testing.T) {
 	message := publicFailure(errors.Join(errRollback, errVersion))
 	if !strings.Contains(message, "回滚失败") || strings.Contains(message, "未安装") {
