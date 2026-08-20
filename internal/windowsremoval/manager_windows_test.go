@@ -23,6 +23,21 @@ func (run commandRunnerFunc) Run(ctx context.Context, request platform.CommandRe
 	return run(ctx, request)
 }
 
+func TestSamePathUsesWindowsFileIdentityForAlternatePathSpellings(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "managed-shim.cmd")
+	alias := filepath.Join(root, "alternate-shim.cmd")
+	if err := os.WriteFile(original, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, alias); err != nil {
+		t.Fatal(err)
+	}
+	if strings.EqualFold(filepath.Clean(original), filepath.Clean(alias)) || !samePath(original, alias) {
+		t.Fatalf("samePath(%q, %q) did not use file identity", original, alias)
+	}
+}
+
 func TestManagedCLIRemovalMovesFilesToRecovery(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

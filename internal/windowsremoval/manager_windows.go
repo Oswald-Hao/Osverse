@@ -519,5 +519,10 @@ func pathWithin(root, target string) bool {
 }
 
 func samePath(left, right string) bool {
-	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	if strings.EqualFold(filepath.Clean(left), filepath.Clean(right)) {
+		return true
+	}
+	leftInfo, leftErr := os.Lstat(left)
+	rightInfo, rightErr := os.Lstat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
