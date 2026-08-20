@@ -214,7 +214,7 @@ func commitHarnessPayload(payload, destination, goos string) (bool, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	if err := os.Rename(payload, destination); err != nil {
+	if err := commitHarnessRename(payload, destination); err != nil {
 		return false, err
 	}
 	return true, nil
