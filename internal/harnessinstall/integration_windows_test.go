@@ -27,6 +27,8 @@ func assertWindowsProductionRemoval(t *testing.T, ctx context.Context, home stri
 	if component.ID != componentID || len(component.Installations) != 1 {
 		t.Fatalf("production Harness detection = %#v", component)
 	}
+	shim, readErr := os.ReadFile(paths.shimPath)
+	t.Logf("production Harness component=%#v shim=%q readErr=%v", component, shim, readErr)
 	remover, err := windowsremoval.NewManager(home)
 	if err != nil {
 		t.Fatal(err)

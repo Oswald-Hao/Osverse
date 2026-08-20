@@ -113,6 +113,9 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 	}
 	if err != nil || len(stored.public.Effects) == 0 {
 		stored.close()
+		if err != nil {
+			return removal.Plan{}, errors.Join(removal.ErrRemovalUnsupported, err)
+		}
 		return removal.Plan{}, removal.ErrRemovalUnsupported
 	}
 	warning := "Osverse 管理的命令入口和程序文件将移入恢复区；API 配置、凭据和会话数据不会删除。"
@@ -135,18 +138,24 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 func (manager *Manager) captureManagedCLI(component domain.Component, rule componentRule, planID string) ([]capturedPath, []removal.Effect, error) {
 	shim := filepath.Join(manager.home, ".local", "bin", rule.command+".cmd")
 	toolRoot := filepath.Join(manager.home, "AppData", "Local", "Osverse", "tools", component.ID)
-	found := false
+	found, matchedPath := false, false
 	for _, installation := range component.Installations {
 		// Scan provenance is display metadata, not the removal trust boundary.
 		// Independently revalidate the exact fixed shim before capturing either
 		// Osverse path so a stale/partially degraded scan cannot strand a runtime.
-		if samePath(installation.Path, shim) && validManagedShim(shim, component.ID, toolRoot) {
-			found = true
-			break
+		if samePath(installation.Path, shim) {
+			matchedPath = true
+			if validManagedShim(shim, component.ID, toolRoot) {
+				found = true
+				break
+			}
 		}
 	}
 	if !found {
-		return nil, nil, removal.ErrRemovalUnsupported
+		if matchedPath {
+			return nil, nil, errors.New("managed command shim validation failed")
+		}
+		return nil, nil, errors.New("managed command shim was not present in the fresh scan")
 	}
 	paths := make([]capturedPath, 0, 2)
 	for _, path := range []string{shim, toolRoot} {
