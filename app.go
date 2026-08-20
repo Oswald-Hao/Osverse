@@ -823,10 +823,14 @@ func (app *App) StartAppUpdate(planID string) (selfupdate.ApplyResult, error) {
 	result, err := updater.Apply(app.appContext(), planID, selection.Protocol, selection.Port)
 	if err != nil {
 		message := "更新失败，请重新检查后再试"
+		code := domain.ErrUpdateFailed
 		if errors.Is(err, selfupdate.ErrNoPlan) {
 			message = "更新计划已过期，请重新检查"
+		} else if errors.Is(err, selfupdate.ErrUpdateInProgress) {
+			code = domain.ErrUpdateInProgress
+			message = "另一 Osverse 实例正在更新，请等待其完成后稍后重试"
 		}
-		return selfupdate.ApplyResult{}, domain.NewPublicError(domain.ErrUpdateFailed, message, err)
+		return selfupdate.ApplyResult{}, domain.NewPublicError(code, message, err)
 	}
 	if result.ShouldQuit && quit != nil {
 		ctx := app.appContext()

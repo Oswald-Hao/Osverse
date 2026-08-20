@@ -20,6 +20,7 @@ const (
 	ErrRemovalTaskFailed  ErrorCode = "REMOVAL_TASK_FAILED"
 	ErrRemovalInUse       ErrorCode = "REMOVAL_IN_USE"
 	ErrUpdateFailed       ErrorCode = "UPDATE_FAILED"
+	ErrUpdateInProgress   ErrorCode = "UPDATE_IN_PROGRESS"
 )
 
 // PublicError exposes a stable code and safe message while retaining its cause
