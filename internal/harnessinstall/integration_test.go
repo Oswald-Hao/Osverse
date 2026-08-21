@@ -218,17 +218,17 @@ func assertWindowsManagedHarnessShimStarts(t *testing.T, ctx context.Context, pa
 		t.Fatalf("managed dsh version output=%q err=%v", output, err)
 	}
 	managedDSHHome := filepath.Join(root, "managed-dsh-home")
-	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "web")
+	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "--profile", "web")
 	// A second boot covers the persisted profile created by the first run,
 	// rather than proving only the empty-profile path twice.
-	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "web")
+	assertWindowsHarnessCommandWebStarts(t, ctx, paths.shimPath, managedDSHHome, "--profile", "web")
 
 	assertWindowsProductionRemoval(t, ctx, home, paths)
 }
 
 func assertWindowsHarnessWebStarts(t *testing.T, ctx context.Context, node, script, root string) {
 	t.Helper()
-	assertWindowsHarnessCommandWebStarts(t, ctx, node, filepath.Join(root, "dsh-home"), script, "web")
+	assertWindowsHarnessCommandWebStarts(t, ctx, node, filepath.Join(root, "dsh-home"), script, "--profile", "web")
 }
 
 func assertWindowsHarnessCommandWebStarts(t *testing.T, ctx context.Context, executable, dshHome string, prefixArgs ...string) {
