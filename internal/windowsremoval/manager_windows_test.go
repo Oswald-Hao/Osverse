@@ -16,6 +16,7 @@ import (
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	platformwindows "github.com/Oswald-Hao/Osverse/internal/platform/windows"
 	"github.com/Oswald-Hao/Osverse/internal/removal"
+	xwindows "golang.org/x/sys/windows"
 )
 
 type commandRunnerFunc func(context.Context, platform.CommandRequest) (platform.CommandResult, error)
@@ -511,6 +512,76 @@ func TestBrokenHarnessRecoversEditedOwnedShimButPreservesExternalShim(t *testing
 			}
 		})
 	}
+}
+
+func TestHarnessRemovalRecognizesShortTargetInsideLongManagedRoot(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-short-harness-target", nil }
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shortTarget := removalWindowsShortPath(t, target)
+	if strings.EqualFold(shortTarget, target) {
+		t.Skip("8.3 short path names are disabled on this volume")
+	}
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + shortTarget + "\" %*\r\n"
+	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: shim, ResolvedPath: shim}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Effects) != 3 || plan.Effects[0].Path != shim || plan.Effects[1].Path != toolRoot {
+		t.Fatalf("short-target effects = %#v", plan.Effects)
+	}
+	if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{shim, toolRoot} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("managed path remains after short-target removal: %s: %v", path, err)
+		}
+	}
+}
+
+func removalWindowsShortPath(t *testing.T, path string) string {
+	t.Helper()
+	longPath, err := xwindows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required, err := xwindows.GetShortPathName(longPath, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if required == 0 {
+		t.Fatal("GetShortPathName returned an empty path")
+	}
+	buffer := make([]uint16, required)
+	written, err := xwindows.GetShortPathName(longPath, &buffer[0], uint32(len(buffer)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return xwindows.UTF16ToString(buffer[:written])
 }
 
 func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {

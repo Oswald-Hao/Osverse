@@ -247,11 +247,21 @@ func ownedBrokenHarnessShim(path, toolRoot string) bool {
 			return false
 		}
 		target, ok := decodeShimPath(lines[3][1 : closingQuote+1])
-		if !ok || !filepath.IsAbs(target) || !pathWithin(toolRoot, filepath.Clean(target)) {
+		if !ok || !filepath.IsAbs(target) || !managedTargetWithin(toolRoot, filepath.Clean(target)) {
 			return false
 		}
 	}
 	return true
+}
+
+func managedTargetWithin(toolRoot, target string) bool {
+	resolvedRoot, rootErr := filepath.EvalSymlinks(toolRoot)
+	resolvedTarget, targetErr := filepath.EvalSymlinks(target)
+	if rootErr == nil && targetErr == nil {
+		return pathWithin(filepath.Clean(resolvedRoot), filepath.Clean(resolvedTarget))
+	}
+	rootMissing, targetMissing := errors.Is(rootErr, os.ErrNotExist), errors.Is(targetErr, os.ErrNotExist)
+	return (rootErr == nil || rootMissing) && (targetErr == nil || targetMissing) && pathWithin(toolRoot, target)
 }
 
 func (manager *Manager) desktopEffects(rule componentRule) (*platformwindows.ExecutableEvidence, []removal.Effect, error) {
