@@ -58,6 +58,12 @@ type capturedPath struct {
 	evidence *platformwindows.MovableEvidence
 }
 
+type recoveryCandidate struct {
+	path        string
+	description string
+	required    bool
+}
+
 type storedPlan struct {
 	public      removal.Plan
 	component   domain.Component
@@ -148,6 +154,21 @@ func (manager *Manager) CreatePlan(ctx context.Context, component domain.Compone
 func (manager *Manager) captureManagedCLI(component domain.Component, rule componentRule, planID string) ([]capturedPath, []removal.Effect, error) {
 	shim := filepath.Join(manager.home, ".local", "bin", rule.command+".cmd")
 	toolRoot := filepath.Join(manager.home, "AppData", "Local", "Osverse", "tools", component.ID)
+	// Harness recovery is path-owned rather than health-owned: an edited shim can
+	// still answer --version and therefore scan as installed while being unusable
+	// from the dashboard. Always reclaim independently verified Osverse residue.
+	if component.ID == "deepseek-harness" {
+		candidates := make([]recoveryCandidate, 0, 2)
+		if ownedBrokenHarnessShim(shim, toolRoot) {
+			candidates = append(candidates, recoveryCandidate{
+				path: shim, description: "将 Osverse 命令入口移入恢复区",
+			})
+		}
+		candidates = append(candidates, recoveryCandidate{
+			path: toolRoot, description: "将 Osverse 管理的程序文件移入恢复区",
+		})
+		return manager.captureRecoveryCandidates(candidates, planID)
+	}
 	found, matchedPath := false, false
 	for _, installation := range component.Installations {
 		// Scan provenance is display metadata, not the removal trust boundary.
@@ -161,23 +182,24 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 			}
 		}
 	}
-	// A legacy Osverse Harness shim can remain after its target disappears. In
-	// that state the command detector has no trustworthy installation to report,
-	// so use the exact fixed shim path and marker as the ownership boundary.
-	if component.ID == "deepseek-harness" && component.Status == domain.StatusBroken && validManagedShim(shim, component.ID, toolRoot) {
-		found = true
-	}
 	if !found {
 		if matchedPath {
 			return nil, nil, errors.New("managed command shim validation failed")
 		}
 		return nil, nil, errors.New("managed command shim was not present in the fresh scan")
 	}
-	paths := make([]capturedPath, 0, 2)
-	effects := make([]removal.Effect, 0, 3)
-	for _, path := range []string{shim, toolRoot} {
-		evidence, err := platformwindows.OpenMovableEvidence(path)
-		if errors.Is(err, os.ErrNotExist) && samePath(path, toolRoot) {
+	return manager.captureRecoveryCandidates([]recoveryCandidate{
+		{path: shim, description: "将 Osverse 命令入口移入恢复区", required: true},
+		{path: toolRoot, description: "将 Osverse 管理的程序文件移入恢复区"},
+	}, planID)
+}
+
+func (manager *Manager) captureRecoveryCandidates(candidates []recoveryCandidate, planID string) ([]capturedPath, []removal.Effect, error) {
+	paths := make([]capturedPath, 0, len(candidates))
+	effects := make([]removal.Effect, 0, len(candidates)+1)
+	for _, candidate := range candidates {
+		evidence, err := platformwindows.OpenMovableEvidence(candidate.path)
+		if errors.Is(err, os.ErrNotExist) && !candidate.required {
 			continue
 		}
 		if err != nil {
@@ -186,16 +208,50 @@ func (manager *Manager) captureManagedCLI(component domain.Component, rule compo
 			}
 			return nil, nil, err
 		}
-		paths = append(paths, capturedPath{original: path, evidence: evidence})
-		description := "将 Osverse 命令入口移入恢复区"
-		if samePath(path, toolRoot) {
-			description = "将 Osverse 管理的程序文件移入恢复区"
-		}
-		effects = append(effects, removal.Effect{Action: "recover", Path: path, Description: description, Recoverable: true})
+		paths = append(paths, capturedPath{original: candidate.path, evidence: evidence})
+		effects = append(effects, removal.Effect{
+			Action: "recover", Path: candidate.path, Description: candidate.description, Recoverable: true,
+		})
+	}
+	if len(paths) == 0 {
+		return nil, nil, errors.New("no Osverse-managed residual paths were found")
 	}
 	recovery := filepath.Join(manager.home, "AppData", "Local", "Osverse", "recovery", planID)
 	effects = append(effects, removal.Effect{Action: "manifest", Path: filepath.Join(recovery, "recovery.json"), Description: "记录原始路径以便恢复", Recoverable: true})
 	return paths, effects, nil
+}
+
+// ownedBrokenHarnessShim deliberately accepts an incomplete or edited shim.
+// The fixed per-user path and exact first-line ownership marker identify a
+// partial shim; any surviving target must also stay inside the managed root.
+// A user-authored dsh shim without this marker is never captured.
+func ownedBrokenHarnessShim(path, toolRoot string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 16*1024 {
+		return false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	if lines[0] != "@rem Osverse managed shim v1: deepseek-harness" {
+		return false
+	}
+	// If a surviving command line exposes its target, it must still point into
+	// the fixed Osverse tool root. A partial shim without a command line remains
+	// recoverable because its ownership marker is the only usable evidence.
+	if len(lines) > 3 && strings.HasPrefix(lines[3], `"`) {
+		closingQuote := strings.IndexByte(lines[3][1:], '"')
+		if closingQuote < 0 {
+			return false
+		}
+		target, ok := decodeShimPath(lines[3][1 : closingQuote+1])
+		if !ok || !filepath.IsAbs(target) || !pathWithin(toolRoot, filepath.Clean(target)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (manager *Manager) desktopEffects(rule componentRule) (*platformwindows.ExecutableEvidence, []removal.Effect, error) {

@@ -375,6 +375,144 @@ func TestBrokenLegacyHarnessShimOnlyRemovalRejectsExternalTarget(t *testing.T) {
 	}
 }
 
+func TestBrokenHarnessResidualToolRootCanBeRemovedWithoutShim(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-residual-tool-root", nil }
+	toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+	if err := os.MkdirAll(filepath.Join(toolRoot, "incomplete"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolRoot, "incomplete", "download.part"), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusBroken}
+
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatalf("CreatePlan() for residual tool root = %v", err)
+	}
+	if len(plan.Effects) != 2 || plan.Effects[0].Path != toolRoot || plan.Effects[1].Action != "manifest" {
+		t.Fatalf("residual tool-root effects = %#v", plan.Effects)
+	}
+	result, err := manager.Execute(context.Background(), plan.ID, component)
+	if err != nil || !result.Removed {
+		t.Fatalf("Execute() for residual tool root = (%#v, %v)", result, err)
+	}
+	if _, err := os.Lstat(toolRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("residual tool root remains: %v", err)
+	}
+}
+
+func TestBrokenHarnessIncompleteOwnedShimCanBeRemovedWithoutToolRoot(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-incomplete-shim", nil }
+	shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shim, []byte("@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusBroken}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Effects) != 2 || plan.Effects[0].Path != shim {
+		t.Fatalf("incomplete shim effects = %#v", plan.Effects)
+	}
+	if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(shim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("incomplete owned shim remains: %v", err)
+	}
+}
+
+func TestBrokenHarnessRecoversEditedOwnedShimButPreservesExternalShim(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		shim        func(string) string
+		status      domain.ComponentStatus
+		wantMoved   bool
+		wantEffects int
+	}{
+		{
+			name: "owned marker with explicit profile arguments",
+			shim: func(target string) string {
+				return "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + target + "\" --profile web %*\r\n"
+			},
+			status:    domain.StatusInstalled,
+			wantMoved: true, wantEffects: 3,
+		},
+		{
+			name: "external user shim",
+			shim: func(target string) string {
+				return "@echo off\r\n\"" + target + "\" %*\r\n"
+			},
+			status:    domain.StatusBroken,
+			wantMoved: false, wantEffects: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := NewManager(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager.randomID = func() (string, error) { return "remove-edited-owned-shim", nil }
+			toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", "deepseek-harness")
+			if err := os.MkdirAll(toolRoot, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			shim := filepath.Join(home, ".local", "bin", "dsh.cmd")
+			if err := os.MkdirAll(filepath.Dir(shim), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(toolRoot, "0.1.0-rc.6", "bin", "dsh.cmd")
+			if err := os.WriteFile(shim, []byte(tc.shim(target)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: tc.status,
+				Installations: []domain.Installation{{Path: shim, ResolvedPath: target}}}
+			plan, err := manager.CreatePlan(context.Background(), component)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Effects) != tc.wantEffects {
+				t.Fatalf("effects = %#v", plan.Effects)
+			}
+			if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+				t.Fatal(err)
+			}
+			_, shimErr := os.Lstat(shim)
+			if tc.wantMoved && !errors.Is(shimErr, os.ErrNotExist) {
+				t.Fatalf("owned shim remains: %v", shimErr)
+			}
+			if !tc.wantMoved && shimErr != nil {
+				t.Fatalf("external shim was changed: %v", shimErr)
+			}
+		})
+	}
+}
+
 func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
