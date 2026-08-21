@@ -26,10 +26,10 @@ func TestNormalizeFinalPath(t *testing.T) {
 
 func TestLocalWebLaunchAllocatesLoopbackPortAndWaitsForHarness(t *testing.T) {
 	request, endpoint, err := prepareLocalWebLaunch(platform.LaunchRequest{
-		Path: `C:\Users\Alice\.local\bin\dsh.cmd`, Args: []string{"web"}, Terminal: true, LocalWeb: true,
+		Path: `C:\Users\Alice\.local\bin\dsh.cmd`, Args: []string{"--profile", "web"}, Terminal: true, LocalWeb: true,
 	})
-	if err != nil || !strings.HasPrefix(endpoint, "http://127.0.0.1:") || len(request.Args) != 3 ||
-		request.Args[0] != "web" || request.Args[1] != "--port" || request.Args[2] == "0" {
+	if err != nil || !strings.HasPrefix(endpoint, "http://127.0.0.1:") || len(request.Args) != 4 ||
+		request.Args[0] != "--profile" || request.Args[1] != "web" || request.Args[2] != "--port" || request.Args[3] == "0" {
 		t.Fatalf("prepareLocalWebLaunch() = (%#v, %q, %v)", request, endpoint, err)
 	}
 
@@ -62,7 +62,7 @@ func TestLockedIdentityDetectsReplacement(t *testing.T) {
 
 func TestLaunchInvocationCallsCommandScriptsInTerminal(t *testing.T) {
 	path := `C:\Users\Alice\.local\bin\dsh.cmd`
-	executable, args, _, err := launchInvocation(platform.LaunchRequest{Path: path, Args: []string{"web"}, Terminal: true})
+	executable, args, _, err := launchInvocation(platform.LaunchRequest{Path: path, Args: []string{"--profile", "web"}, Terminal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestLaunchInvocationCallsCommandScriptsInTerminal(t *testing.T) {
 		t.Fatalf("launchInvocation() = executable %q args %#v", executable, args)
 	}
 	line := args[len(args)-1]
-	if !strings.HasPrefix(line, `call "`+path+`"`) || !strings.Contains(line, `"web"`) {
+	if !strings.HasPrefix(line, `call "`+path+`"`) || !strings.Contains(line, `"--profile" "web"`) {
 		t.Fatalf("terminal command line = %q", line)
 	}
 }
