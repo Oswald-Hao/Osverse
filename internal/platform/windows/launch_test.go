@@ -89,6 +89,10 @@ func TestLaunchInvocationCallsEveryManagedCommandScriptInSystemConsole(t *testin
 					t.Fatalf("terminal command line %q omitted %q", line, argument)
 				}
 			}
+			raw, err := terminalCommandLine(executable, args)
+			if err != nil || !strings.HasPrefix(raw, quoteCMD(executable)+" /d /k call ") || !strings.HasSuffix(raw, line) {
+				t.Fatalf("terminalCommandLine() = (%q, %v)", raw, err)
+			}
 		})
 	}
 }
