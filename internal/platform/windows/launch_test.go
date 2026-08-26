@@ -76,7 +76,7 @@ func TestLaunchInvocationCallsEveryManagedCommandScriptInSystemConsole(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			if executable != comspec() || len(args) != 4 || args[0] != "/d" || args[1] != "/s" || args[2] != "/k" ||
+			if executable != comspec() || len(args) != 3 || args[0] != "/d" || args[1] != "/k" ||
 				flags&xwindows.CREATE_NEW_CONSOLE == 0 {
 				t.Fatalf("launchInvocation() = executable %q args %#v", executable, args)
 			}

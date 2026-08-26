@@ -150,7 +150,7 @@ func launchInvocation(request platform.LaunchRequest) (string, []string, uint32,
 	// packaged application behind it is unavailable to this process. In that
 	// state Start succeeds inconsistently (or wt exits immediately) and the
 	// managed .cmd/.bat entry is never executed.
-	return shell, []string{"/d", "/s", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
+	return shell, []string{"/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
 }
 
 func launchesBatchScript(path string) bool {
