@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -50,9 +49,21 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 		return err
 	}
 	command := exec.Command(path, args...)
+	attributes := &syscall.SysProcAttr{CreationFlags: flags}
+	if request.Terminal {
+		raw, err := terminalCommandLine(path, args)
+		if err != nil {
+			return err
+		}
+		// cmd.exe does not use the CommandLineToArgvW quoting convention
+		// applied by os/exec. Pass its already-validated command line
+		// verbatim so quoted batch paths survive process creation.
+		command = exec.Command(path)
+		attributes.CmdLine = raw
+	}
 	command.Env = commandEnvironment(nil)
 	command.Stdin, command.Stdout, command.Stderr = nil, nil, nil
-	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
+	command.SysProcAttr = attributes
 	if err := command.Start(); err != nil {
 		return err
 	}
@@ -146,11 +157,11 @@ func launchInvocation(request platform.LaunchRequest) (string, []string, uint32,
 	for _, argument := range request.Args {
 		line += " " + quoteCMD(argument)
 	}
-	local := os.Getenv("LOCALAPPDATA")
-	terminal := filepath.Join(local, "Microsoft", "WindowsApps", "wt.exe")
-	if validRegularFile(terminal) {
-		return terminal, []string{"new-tab", "--", shell, "/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP, nil
-	}
+	// Always ask the system command processor to create the console itself.
+	// Windows Terminal's app-execution alias can be a regular file while the
+	// packaged application behind it is unavailable to this process. In that
+	// state Start succeeds inconsistently (or wt exits immediately) and the
+	// managed .cmd/.bat entry is never executed.
 	return shell, []string{"/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
 }
 
@@ -159,12 +170,12 @@ func launchesBatchScript(path string) bool {
 	return extension == ".cmd" || extension == ".bat"
 }
 
-func validRegularFile(path string) bool {
-	if !safeExecutablePath(path) {
-		return false
+func terminalCommandLine(shell string, args []string) (string, error) {
+	if !safeExecutablePath(shell) || len(args) != 3 || args[0] != "/d" || args[1] != "/k" ||
+		args[2] == "" || strings.ContainsAny(args[2], "\x00\r\n") {
+		return "", errors.New("invalid Windows terminal command line")
 	}
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
+	return quoteCMD(shell) + " /d /k " + args[2], nil
 }
 
 type windowsFileIdentity struct {

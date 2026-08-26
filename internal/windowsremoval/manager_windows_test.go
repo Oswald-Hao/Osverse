@@ -348,7 +348,7 @@ func TestBrokenLegacyHarnessCanBeRemovedWhenRuntimeTargetIsMissing(t *testing.T)
 	}
 }
 
-func TestBrokenLegacyHarnessShimOnlyRemovalRejectsExternalTarget(t *testing.T) {
+func TestBrokenLegacyHarnessShimOnlyRemovalPreservesExternalTarget(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -363,16 +363,145 @@ func TestBrokenLegacyHarnessShimOnlyRemovalRejectsExternalTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	external := filepath.Join(home, "Documents", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(external), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(external, []byte("external runtime"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	content := "@rem Osverse managed shim v1: deepseek-harness\r\n@echo off\r\nsetlocal DisableDelayedExpansion\r\n\"" + external + "\" %*\r\n"
 	if err := os.WriteFile(shim, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusBroken}
-	if _, err := manager.CreatePlan(context.Background(), component); !errors.Is(err, removal.ErrRemovalUnsupported) {
-		t.Fatalf("external legacy target CreatePlan() = %v, want ErrRemovalUnsupported", err)
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatalf("external legacy target CreatePlan() = %v", err)
 	}
-	if _, err := os.Lstat(shim); err != nil {
-		t.Fatalf("rejected external shim was changed: %v", err)
+	if len(plan.Effects) != 2 || plan.Effects[0].Path != shim {
+		t.Fatalf("external target recovery effects = %#v", plan.Effects)
+	}
+	if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(shim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("owned shim remains: %v", err)
+	}
+	if raw, err := os.ReadFile(external); err != nil || string(raw) != "external runtime" {
+		t.Fatalf("external target changed = (%q, %v)", raw, err)
+	}
+}
+
+func TestExternalPerUserHarnessEntryMovesToRecoveryWithoutDeletingTarget(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.randomID = func() (string, error) { return "remove-external-user-harness", nil }
+	target := filepath.Join(home, "AppData", "Roaming", "npm", "node_modules", "@deepseek-ai", "dsh", "bin.js")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("external runtime"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(home, "AppData", "Roaming", "npm", "dsh.cmd")
+	content := "@echo off\r\nnode \"" + target + "\" %*\r\n"
+	if err := os.WriteFile(entry, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: entry, ResolvedPath: entry, Source: "path", Managed: false, Version: "0.1.0-rc.6"}}}
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatalf("CreatePlan() for external per-user entry = %v", err)
+	}
+	if len(plan.Effects) != 2 || plan.Effects[0].Path != entry || plan.Effects[0].Action != "recover" || !plan.Effects[0].Recoverable {
+		t.Fatalf("external entry effects = %#v", plan.Effects)
+	}
+	if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(entry); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("external command entry remains: %v", err)
+	}
+	if raw, err := os.ReadFile(target); err != nil || string(raw) != "external runtime" {
+		t.Fatalf("external runtime changed = (%q, %v)", raw, err)
+	}
+}
+
+func TestEveryManagedCLIRecoversResidualToolRootWithoutScanInstallation(t *testing.T) {
+	for _, tc := range []struct{ id, name string }{
+		{"claude-code", "Claude Code"}, {"codex-cli", "Codex CLI"}, {"opencode-cli", "OpenCode CLI"},
+		{"deepseek-harness", "DeepSeek Harness"}, {"qwen-code", "Qwen Code"}, {"kimi-code", "Kimi Code"},
+		{"github-copilot-cli", "GitHub Copilot CLI"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := NewManager(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager.randomID = func() (string, error) { return "remove-residual-" + tc.id, nil }
+			toolRoot := filepath.Join(home, "AppData", "Local", "Osverse", "tools", tc.id)
+			if err := os.MkdirAll(toolRoot, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(toolRoot, "partial.download"), []byte("partial"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			component := domain.Component{ID: tc.id, Name: tc.name, Category: "Core CLI", Status: domain.StatusBroken}
+			plan, err := manager.CreatePlan(context.Background(), component)
+			if err != nil {
+				t.Fatalf("CreatePlan() = %v", err)
+			}
+			if len(plan.Effects) != 2 || plan.Effects[0].Path != toolRoot {
+				t.Fatalf("residual effects = %#v", plan.Effects)
+			}
+			if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(toolRoot); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("tool root remains: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedCLIRemovalRejectsScannedCommandOutsideUserProfile(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsideRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(outsideRoot, "system-bin", "dsh.cmd")
+	if err := os.MkdirAll(filepath.Dir(outside), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("@echo off\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := domain.Component{ID: "deepseek-harness", Name: "DeepSeek Harness", Category: "Core CLI", Status: domain.StatusInstalled,
+		Installations: []domain.Installation{{Path: outside, ResolvedPath: outside, Source: "path"}}}
+	if _, err := manager.CreatePlan(context.Background(), component); !errors.Is(err, removal.ErrRemovalUnsupported) {
+		t.Fatalf("outside-user CreatePlan() = %v, want ErrRemovalUnsupported", err)
+	}
+	if _, err := os.Lstat(outside); err != nil {
+		t.Fatalf("outside-user command changed: %v", err)
 	}
 }
 
@@ -461,12 +590,12 @@ func TestBrokenHarnessRecoversEditedOwnedShimButPreservesExternalShim(t *testing
 			wantMoved: true, wantEffects: 3,
 		},
 		{
-			name: "external user shim",
+			name: "freshly scanned external user shim",
 			shim: func(target string) string {
 				return "@echo off\r\n\"" + target + "\" %*\r\n"
 			},
 			status:    domain.StatusBroken,
-			wantMoved: false, wantEffects: 2,
+			wantMoved: true, wantEffects: 3,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -506,9 +635,6 @@ func TestBrokenHarnessRecoversEditedOwnedShimButPreservesExternalShim(t *testing
 			_, shimErr := os.Lstat(shim)
 			if tc.wantMoved && !errors.Is(shimErr, os.ErrNotExist) {
 				t.Fatalf("owned shim remains: %v", shimErr)
-			}
-			if !tc.wantMoved && shimErr != nil {
-				t.Fatalf("external shim was changed: %v", shimErr)
 			}
 		})
 	}
@@ -638,7 +764,7 @@ func TestManagedWrapperRemovalRollsBackWhenRuntimeIsLocked(t *testing.T) {
 	}
 }
 
-func TestManagedCommandWrapperRemovalRejectsUnexpectedWrapperName(t *testing.T) {
+func TestManagedCommandWrapperRemovalRecoversUnexpectedWrapperName(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -666,8 +792,17 @@ func TestManagedCommandWrapperRemovalRejectsUnexpectedWrapperName(t *testing.T) 
 	}
 	component := domain.Component{ID: "kimi-code", Name: "Kimi Code", Category: "Core CLI", Status: domain.StatusInstalled,
 		Installations: []domain.Installation{{Path: shim, ResolvedPath: shim, Source: "osverse", Managed: true, Version: "0.36.1"}}}
-	if _, err := manager.CreatePlan(context.Background(), component); !errors.Is(err, removal.ErrRemovalUnsupported) {
-		t.Fatalf("CreatePlan() err = %v, want ErrRemovalUnsupported", err)
+	plan, err := manager.CreatePlan(context.Background(), component)
+	if err != nil {
+		t.Fatalf("CreatePlan() = %v", err)
+	}
+	if _, err := manager.Execute(context.Background(), plan.ID, component); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{shim, toolRoot} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("corrupt managed path remains: %s: %v", path, err)
+		}
 	}
 }
 

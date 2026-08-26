@@ -2,6 +2,13 @@
 
 Osverse follows semantic versioning while it is in prerelease. Published artifacts and exact dates are available on the [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) page.
 
+## 0.9.0-beta.13
+
+- Launch every supported Windows CMD/BAT CLI through the system command processor with a validated verbatim command line and a new console.
+- Recover exact freshly scanned per-user CLI entries and residual managed roots for all seven Core CLIs while preserving external runtimes, profiles, credentials, and sessions.
+- Offer recoverable removal for every broken or failed Core CLI and keep system-level command entries outside the automatic removal boundary.
+- Update Echo to the security-fixed 4.15.3 release and extend native Windows lifecycle regressions through NSIS and full package smoke tests.
+
 ## 0.3.0-beta.2
 
 - Accept the valid Windows desktop `installing` task phase so verified vendor and Microsoft Store installations continue polling instead of being reported as an invalid task state.
