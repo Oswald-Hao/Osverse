@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -146,25 +145,17 @@ func launchInvocation(request platform.LaunchRequest) (string, []string, uint32,
 	for _, argument := range request.Args {
 		line += " " + quoteCMD(argument)
 	}
-	local := os.Getenv("LOCALAPPDATA")
-	terminal := filepath.Join(local, "Microsoft", "WindowsApps", "wt.exe")
-	if validRegularFile(terminal) {
-		return terminal, []string{"new-tab", "--", shell, "/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP, nil
-	}
-	return shell, []string{"/d", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
+	// Always ask the system command processor to create the console itself.
+	// Windows Terminal's app-execution alias can be a regular file while the
+	// packaged application behind it is unavailable to this process. In that
+	// state Start succeeds inconsistently (or wt exits immediately) and the
+	// managed .cmd/.bat entry is never executed.
+	return shell, []string{"/d", "/s", "/k", line}, xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.CREATE_NEW_CONSOLE, nil
 }
 
 func launchesBatchScript(path string) bool {
 	extension := strings.ToLower(filepath.Ext(path))
 	return extension == ".cmd" || extension == ".bat"
-}
-
-func validRegularFile(path string) bool {
-	if !safeExecutablePath(path) {
-		return false
-	}
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
 }
 
 type windowsFileIdentity struct {
