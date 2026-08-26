@@ -476,17 +476,22 @@ describe('environment status dashboard', () => {
     expect(within(card as HTMLElement).queryByRole('button', { name: /启动/ })).not.toBeInTheDocument()
   })
 
-  it('offers recovery removal for a broken Windows Harness installation', () => {
+  it('offers recovery removal for any broken Windows managed CLI installation', () => {
     mockUseEnvironmentScan.mockReturnValue(scanState({ snapshot: {
       ...snapshot,
       components: [...snapshot.components, {
         id: 'deepseek-harness', name: 'DeepSeek Harness', category: 'Core CLI', status: 'broken',
+        installations: [], message: '版本检测失败', minimumOS: 'Windows 10 1809',
+      }, {
+        id: 'qwen-code', name: 'Qwen Code', category: 'Core CLI', status: 'broken',
         installations: [], message: '版本检测失败', minimumOS: 'Windows 10 1809',
       }],
     }}))
     render(<App />)
     const card = screen.getByRole('heading', { name: 'DeepSeek Harness' }).closest('article')
     expect(within(card as HTMLElement).getByRole('button', { name: /移除/ })).toBeEnabled()
+    const qwen = screen.getByRole('heading', { name: 'Qwen Code' }).closest('article')
+    expect(within(qwen as HTMLElement).getByRole('button', { name: /移除/ })).toBeEnabled()
   })
 
   it('previews exact recoverable effects before removing a detected installation', async () => {
