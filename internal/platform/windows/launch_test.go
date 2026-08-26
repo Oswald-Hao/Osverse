@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,17 +61,82 @@ func TestLockedIdentityDetectsReplacement(t *testing.T) {
 	}
 }
 
-func TestLaunchInvocationCallsCommandScriptsInTerminal(t *testing.T) {
-	path := `C:\Users\Alice\.local\bin\dsh.cmd`
-	executable, args, _, err := launchInvocation(platform.LaunchRequest{Path: path, Args: []string{"--profile", "web"}, Terminal: true})
+func TestLaunchInvocationCallsEveryManagedCommandScriptInSystemConsole(t *testing.T) {
+	for _, test := range []struct {
+		command string
+		args    []string
+	}{
+		{command: "claude"}, {command: "codex"}, {command: "opencode"},
+		{command: "dsh", args: []string{"--profile", "web"}},
+		{command: "qwen"}, {command: "kimi"}, {command: "copilot"},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			path := `C:\Users\Alice\.local\bin\` + test.command + `.cmd`
+			executable, args, flags, err := launchInvocation(platform.LaunchRequest{Path: path, Args: test.args, Terminal: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if executable != comspec() || len(args) != 3 || args[0] != "/d" || args[1] != "/k" ||
+				flags&xwindows.CREATE_NEW_CONSOLE == 0 {
+				t.Fatalf("launchInvocation() = executable %q args %#v", executable, args)
+			}
+			line := args[len(args)-1]
+			if !strings.HasPrefix(line, `call "`+path+`"`) {
+				t.Fatalf("terminal command line = %q", line)
+			}
+			for _, argument := range test.args {
+				if !strings.Contains(line, quoteCMD(argument)) {
+					t.Fatalf("terminal command line %q omitted %q", line, argument)
+				}
+			}
+			raw, err := terminalCommandLine(executable, args)
+			if err != nil || !strings.HasPrefix(raw, quoteCMD(executable)+" /d /k call ") || !strings.HasSuffix(raw, line) {
+				t.Fatalf("terminalCommandLine() = (%q, %v)", raw, err)
+			}
+		})
+	}
+}
+
+func TestDetachedStarterExecutesBatchWithoutWindowsTerminal(t *testing.T) {
+	root := t.TempDir()
+	localAppData := filepath.Join(root, "Local App Data")
+	t.Setenv("LOCALAPPDATA", localAppData)
+	terminalAlias := filepath.Join(localAppData, "Microsoft", "WindowsApps", "wt.exe")
+	if err := os.MkdirAll(filepath.Dir(terminalAlias), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A regular but non-executable alias reproduces machines where the Windows
+	// Terminal app-execution alias exists but cannot be started by this process.
+	if err := os.WriteFile(terminalAlias, []byte("unavailable app alias"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "batch-started.txt")
+	script := filepath.Join(root, "managed command.cmd")
+	content := "@echo off\r\nif not \"%~1\"==\"expected\" exit /b 17\r\n>\"" + marker + "\" echo started\r\nexit\r\n"
+	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if executable == "" || len(args) < 3 {
-		t.Fatalf("launchInvocation() = executable %q args %#v", executable, args)
+	if err := NewDetachedStarter().Start(platform.LaunchRequest{
+		Path: script, ExpectedResolvedPath: resolved, Args: []string{"expected"}, Terminal: true,
+	}); err != nil {
+		t.Fatalf("Start() through cmd.exe = %v", err)
 	}
-	line := args[len(args)-1]
-	if !strings.HasPrefix(line, `call "`+path+`"`) || !strings.Contains(line, `"--profile" "web"`) {
-		t.Fatalf("terminal command line = %q", line)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		raw, err := os.ReadFile(marker)
+		if err == nil && strings.TrimSpace(string(raw)) == "started" {
+			break
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("managed batch entry was not executed")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
