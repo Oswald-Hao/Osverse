@@ -178,7 +178,14 @@ afterEach(() => {
 
 describe('environment status dashboard', () => {
   it('renders system facts, local scan-time semantics, and summary counts', () => {
-    const dateTimeFormat = vi.spyOn(Intl, 'DateTimeFormat')
+    const OriginalDateTimeFormat = Intl.DateTimeFormat
+    const dateTimeOptions: Array<Intl.DateTimeFormatOptions | undefined> = []
+    const dateTimeFormat = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+      function (locales, options) {
+        dateTimeOptions.push(options)
+        return new OriginalDateTimeFormat(locales, options)
+      },
+    )
 
     try {
       render(<App />)
@@ -198,7 +205,7 @@ describe('environment status dashboard', () => {
       expect(scanTime?.nextElementSibling).not.toHaveTextContent(/^\s*$/)
 
       expect(dateTimeFormat).toHaveBeenCalledTimes(2)
-      for (const [, options] of dateTimeFormat.mock.calls) {
+      for (const options of dateTimeOptions) {
         expect(options).not.toHaveProperty('timeZone')
       }
 
