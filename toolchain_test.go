@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const pinnedWailsVersion = "2.14.0"
+const pinnedWailsVersion = "2.15.0"
 
 func TestWailsVersionPinsStayAligned(t *testing.T) {
 	t.Parallel()

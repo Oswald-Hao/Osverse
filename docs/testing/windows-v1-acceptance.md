@@ -4,7 +4,7 @@
 
 ## 自动化门禁
 
-- [x] Go 1.25.12、Node.js 22.23.2、Wails 2.14.0 工具链固定；2.14 修复 WebView2 bootstrapper 下载失败时退出且吞掉网络错误的问题。
+- [x] Go 1.25.12、Node.js 22.23.2、Wails 2.15.0 工具链固定；保留 WebView2 bootstrapper 下载失败时正确退出并报告网络错误的行为。
 - [x] Windows 原生 `go test ./...`、`go test -race ./...`、`go vet ./...`。
 - [x] 前端测试、类型检查与高危依赖审计。
 - [x] Wails Windows amd64 原生构建，内嵌 WebView2 bootstrapper。
