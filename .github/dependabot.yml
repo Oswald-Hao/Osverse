@@ -10,6 +10,13 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
+    groups:
+      react-runtime:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev
