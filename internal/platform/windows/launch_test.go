@@ -4,6 +4,7 @@ package windows
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,6 +41,43 @@ func TestLocalWebLaunchAllocatesLoopbackPortAndWaitsForHarness(t *testing.T) {
 	defer server.Close()
 	if err := waitForLocalWeb(server.URL, time.Second); err != nil {
 		t.Fatalf("waitForLocalWeb() error = %v", err)
+	}
+}
+
+func TestLocalWebBrowserLaunchRunsAfterReadinessWithoutBlockingCaller(t *testing.T) {
+	waited, opened, dispatched := false, false, false
+	starter := detachedStarter{
+		waitLocalWeb: func(endpoint string, timeout time.Duration) error {
+			waited = endpoint == "http://127.0.0.1:3080" && timeout == localWebReadyTimeout
+			return nil
+		},
+		openLocalWeb: func(endpoint string) error {
+			opened = endpoint == "http://127.0.0.1:3080"
+			return nil
+		},
+		runAsync: func(task func()) {
+			dispatched = true
+			task()
+		},
+	}
+	starter.launchLocalWeb("http://127.0.0.1:3080")
+	if !dispatched || !waited || !opened {
+		t.Fatalf("local web launch = dispatched %v waited %v opened %v", dispatched, waited, opened)
+	}
+}
+
+func TestLocalWebEndpointRejectsNonLoopbackOrInjectedURLs(t *testing.T) {
+	for _, endpoint := range []string{
+		"https://127.0.0.1:3080", "http://localhost:3080", "http://127.0.0.1:0",
+		"http://127.0.0.1:70000", "http://127.0.0.1:3080/path", "http://127.0.0.1:3080?x=1",
+		"http://127.0.0.1:3080\r\nexample",
+	} {
+		if validLocalWebEndpoint(endpoint) {
+			t.Errorf("accepted unsafe endpoint %q", endpoint)
+		}
+	}
+	if !validLocalWebEndpoint("http://127.0.0.1:3080") {
+		t.Fatal("rejected fixed loopback endpoint")
 	}
 }
 
@@ -138,5 +176,97 @@ func TestDetachedStarterExecutesBatchWithoutWindowsTerminal(t *testing.T) {
 			t.Fatal("managed batch entry was not executed")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestDetachedStarterProvidesRealInteractiveConsoleHandles(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("USERPROFILE", root)
+	marker := filepath.Join(root, "console-handles.txt")
+	script := filepath.Join(root, "interactive command.cmd")
+	content := "@echo off\r\n\"%~1\" -test.run=^TestWindowsLaunchConsoleHelper$ -- \"%~2\"\r\nexit\r\n"
+	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewDetachedStarter().Start(platform.LaunchRequest{
+		Path: script, ExpectedResolvedPath: resolved, Args: []string{os.Args[0], marker}, Terminal: true,
+	}); err != nil {
+		t.Fatalf("Start() = %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		raw, err := os.ReadFile(marker)
+		if err == nil {
+			text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+			if !strings.Contains(text, "stdin=console\n") || !strings.Contains(text, "stdout=console\n") ||
+				!strings.Contains(strings.ToLower(text), "cwd="+strings.ToLower(root)+"\n") {
+				t.Fatalf("console helper = %q", text)
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("interactive console helper did not start")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestWindowsLaunchConsoleHelper(t *testing.T) {
+	separator := -1
+	for index, argument := range os.Args {
+		if argument == "--" {
+			separator = index
+			break
+		}
+	}
+	if separator < 0 || separator+1 >= len(os.Args) {
+		t.Skip("helper process only")
+	}
+	marker := os.Args[separator+1]
+	var inputMode, outputMode uint32
+	inputErr := xwindows.GetConsoleMode(xwindows.Stdin, &inputMode)
+	outputErr := xwindows.GetConsoleMode(xwindows.Stdout, &outputMode)
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		t.Fatal(cwdErr)
+	}
+	content := fmt.Sprintf("stdin=%s\nstdout=%s\ncwd=%s\n", consoleResult(inputErr), consoleResult(outputErr), cwd)
+	if err := os.WriteFile(marker, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func consoleResult(err error) string {
+	if err == nil {
+		return "console"
+	}
+	return "unavailable"
+}
+
+func TestEnvironmentUTF16BlockIsSortedAndDoubleTerminated(t *testing.T) {
+	block, err := environmentUTF16Block([]string{"Path=C:\\Tools", "APPDATA=C:\\Data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(block) < 2 || block[len(block)-1] != 0 || block[len(block)-2] != 0 {
+		t.Fatalf("environment block is not double terminated: %#v", block)
+	}
+	entries := make([]string, 0, 2)
+	start := 0
+	for index, value := range block {
+		if value == 0 && index > start {
+			entries = append(entries, xwindows.UTF16ToString(block[start:index]))
+			start = index + 1
+		}
+	}
+	if len(entries) != 2 || entries[0] != "APPDATA=C:\\Data" || entries[1] != "Path=C:\\Tools" {
+		t.Fatalf("environment entries = %#v", entries)
 	}
 }
