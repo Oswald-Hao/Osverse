@@ -496,6 +496,45 @@ func TestCopilotInstallPlansAndTasksStayOnCopilotManager(t *testing.T) {
 	}
 }
 
+func TestGeminiInstallPlansAndTasksStayOnGeminiManager(t *testing.T) {
+	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
+		t.Fatal("Gemini plan reached generic CLI manager")
+		return install.Plan{}, nil
+	}}}
+	gemini := &fakeInstallManager{}
+	gemini.create = func(_ context.Context, id string) (install.Plan, error) {
+		if id != "gemini-cli" {
+			t.Fatalf("Gemini CreatePlan(%q)", id)
+		}
+		return install.Plan{ID: "gemini-plan", ComponentID: id}, nil
+	}
+	gemini.start = func(_ context.Context, id string, _ proxyservice.Protocol, _ int) (install.Task, error) {
+		return install.Task{ID: "gemini-task", PlanID: id, ComponentID: "gemini-cli"}, nil
+	}
+	gemini.task = func(id string) (install.Task, error) {
+		return install.Task{ID: id, ComponentID: "gemini-cli", Phase: "completed"}, nil
+	}
+	gemini.cancel = func(string) error { return nil }
+	app := newAppWithAllServices(fakeScanner{scan: func(context.Context) (domain.EnvironmentSnapshot, error) {
+		return domain.EnvironmentSnapshot{}, nil
+	}}, &fakeProxyProber{}, cli)
+	app.geminiPlanner, app.geminiExecutor = gemini, gemini
+	plan, err := app.CreateInstallPlan("gemini-cli")
+	if err != nil || app.planOwners[plan.ID] != "gemini" {
+		t.Fatalf("CreateInstallPlan() = (%#v, %v), owner=%q", plan, err, app.planOwners[plan.ID])
+	}
+	task, err := app.StartInstall(plan.ID)
+	if err != nil || task.ID != "gemini-task" {
+		t.Fatalf("StartInstall() = (%#v, %v)", task, err)
+	}
+	if current, err := app.GetInstallTask(task.ID); err != nil || current.Phase != "completed" {
+		t.Fatalf("GetInstallTask() = (%#v, %v)", current, err)
+	}
+	if err := app.CancelInstallTask(task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestKimiInstallPlansAndTasksStayOnKimiManager(t *testing.T) {
 	cli := &fakeInstallManager{fakeInstallPlanner: fakeInstallPlanner{create: func(context.Context, string) (install.Plan, error) {
 		t.Fatal("Kimi plan reached generic CLI manager")

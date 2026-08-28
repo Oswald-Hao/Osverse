@@ -10,8 +10,8 @@ import (
 
 func TestWindowsComponentProbesHaveStableCatalog(t *testing.T) {
 	probes := windowsComponentProbes(platformwindows.NewExecRunner(), `C:\Users\Test`)
-	if len(probes) != 13 {
-		t.Fatalf("probe count = %d, want 13", len(probes))
+	if len(probes) != 14 {
+		t.Fatalf("probe count = %d, want 14", len(probes))
 	}
 	seen := map[string]bool{}
 	for _, probe := range probes {

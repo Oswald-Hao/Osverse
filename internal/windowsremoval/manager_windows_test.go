@@ -154,6 +154,7 @@ func TestManagedCommandWrapperRemovalAcceptsGeneratedWrappers(t *testing.T) {
 		{componentID: "qwen-code", name: "Qwen Code", command: "qwen", version: "0.21.13"},
 		{componentID: "kimi-code", name: "Kimi Code", command: "kimi", version: "0.36.1"},
 		{componentID: "github-copilot-cli", name: "GitHub Copilot CLI", command: "copilot", version: "1.0.80"},
+		{componentID: "gemini-cli", name: "Gemini CLI", command: "gemini", version: "0.57.0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.componentID, func(t *testing.T) {
@@ -439,6 +440,7 @@ func TestEveryManagedCLIRecoversResidualToolRootWithoutScanInstallation(t *testi
 		{"claude-code", "Claude Code"}, {"codex-cli", "Codex CLI"}, {"opencode-cli", "OpenCode CLI"},
 		{"deepseek-harness", "DeepSeek Harness"}, {"qwen-code", "Qwen Code"}, {"kimi-code", "Kimi Code"},
 		{"github-copilot-cli", "GitHub Copilot CLI"},
+		{"gemini-cli", "Gemini CLI"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			home, err := filepath.EvalSymlinks(t.TempDir())

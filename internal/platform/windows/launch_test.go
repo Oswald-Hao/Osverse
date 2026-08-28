@@ -106,7 +106,7 @@ func TestLaunchInvocationCallsEveryManagedCommandScriptInSystemConsole(t *testin
 	}{
 		{command: "claude"}, {command: "codex"}, {command: "opencode"},
 		{command: "dsh", args: []string{"--profile", "web"}},
-		{command: "qwen"}, {command: "kimi"}, {command: "copilot"},
+		{command: "qwen"}, {command: "kimi"}, {command: "copilot"}, {command: "gemini"},
 	} {
 		t.Run(test.command, func(t *testing.T) {
 			path := `C:\Users\Alice\.local\bin\` + test.command + `.cmd`
