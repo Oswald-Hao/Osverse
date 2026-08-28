@@ -181,7 +181,11 @@ func TestDetachedStarterExecutesBatchWithoutWindowsTerminal(t *testing.T) {
 
 func TestDetachedStarterProvidesRealInteractiveConsoleHandles(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("USERPROFILE", root)
+	profile := filepath.Join(root, "profile")
+	if err := os.Mkdir(profile, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("USERPROFILE", profile)
 	marker := filepath.Join(root, "console-handles.txt")
 	script := filepath.Join(root, "interactive command.cmd")
 	content := "@echo off\r\n\"%~1\" -test.run=^TestWindowsLaunchConsoleHelper$ -- \"%~2\"\r\nexit\r\n"
@@ -203,7 +207,7 @@ func TestDetachedStarterProvidesRealInteractiveConsoleHandles(t *testing.T) {
 		if err == nil {
 			text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 			if !strings.Contains(text, "stdin=console\n") || !strings.Contains(text, "stdout=console\n") ||
-				!strings.Contains(strings.ToLower(text), "cwd="+strings.ToLower(root)+"\n") {
+				!strings.Contains(strings.ToLower(text), "cwd="+strings.ToLower(profile)+"\n") {
 				t.Fatalf("console helper = %q", text)
 			}
 			break
@@ -213,6 +217,19 @@ func TestDetachedStarterProvidesRealInteractiveConsoleHandles(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("interactive console helper did not start")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// The marker proves the child had interactive handles, but under the race
+	// detector cmd.exe can still be completing its final ExitProcess after the
+	// helper has returned. Wait until Windows releases the working directory so
+	// testing.TempDir can clean it up deterministically.
+	for {
+		if err := os.Remove(profile); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("interactive console process did not release its working directory")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
