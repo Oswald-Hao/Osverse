@@ -24,8 +24,9 @@ const (
 )
 
 var inheritedEnvironment = []string{
-	"USERPROFILE", "DSH_HOME", "APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "SystemRoot",
-	"TEMP", "TMP", "ComSpec", "LANG", "TERM",
+	"USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH", "USERNAME", "DSH_HOME", "APPDATA", "LOCALAPPDATA",
+	"PATH", "PATHEXT", "SystemRoot", "WINDIR", "TEMP", "TMP", "ComSpec", "LANG", "TERM",
+	"PROCESSOR_ARCHITECTURE",
 }
 
 type execRunner struct{}

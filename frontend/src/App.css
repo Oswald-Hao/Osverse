@@ -621,6 +621,7 @@ button:focus-visible {
 .tool-icon--qwen { color: #6950ef; background: #eeeaff; }
 .tool-icon--kimi { color: #111820; background: #f4f1e8; }
 .tool-icon--copilot { color: #fff; background: linear-gradient(145deg, #353b48, #10141b); }
+.tool-icon--gemini { color: #fff; background: linear-gradient(145deg, #4285f4, #9b72cb 55%, #d96570); }
 .tool-icon--cc-switch,
 .tool-icon--cockpit { overflow: hidden; background: transparent; border-color: transparent; box-shadow: none; }
 

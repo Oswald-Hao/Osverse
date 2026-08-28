@@ -91,6 +91,7 @@ var componentRules = map[string]componentRule{
 	"qwen-code":          {category: "Core CLI", command: "qwen"},
 	"kimi-code":          {category: "Core CLI", command: "kimi"},
 	"github-copilot-cli": {category: "Core CLI", command: "copilot"},
+	"gemini-cli":         {category: "Core CLI", command: "gemini"},
 	"claude-desktop":     {category: "Desktop Applications", packageName: "claude-desktop", command: "claude-desktop", desktopFile: "claude-desktop.desktop"},
 	"chatgpt-desktop":    {category: "Desktop Applications", packageName: "chatgpt-desktop", command: "chatgpt-desktop", desktopFile: "chatgpt-desktop.desktop"},
 	"opencode-desktop":   {category: "Desktop Applications", packageName: "opencode-desktop", command: "opencode-desktop", desktopFile: "opencode-desktop.desktop"},

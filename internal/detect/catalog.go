@@ -75,5 +75,15 @@ func CoreCLISpecs() []CommandSpec {
 			),
 			MinimumOS: platformMinimumOS(),
 		},
+		{
+			ID:              "gemini-cli",
+			Name:            "Gemini CLI",
+			ExecutableNames: platformExecutableNames("gemini"),
+			VersionArgs:     []string{"--version"},
+			VersionPattern: regexp.MustCompile(
+				`^(?:(?i:gemini(?:[[:space:]-]+cli)?)[[:space:]]+)?v?([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$`,
+			),
+			MinimumOS: platformGeminiMinimumOS(),
+		},
 	}
 }

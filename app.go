@@ -100,6 +100,8 @@ type App struct {
 	kimiExecutor      InstallExecutor
 	copilotPlanner    InstallPlanner
 	copilotExecutor   InstallExecutor
+	geminiPlanner     InstallPlanner
+	geminiExecutor    InstallExecutor
 	appLauncher       AppLauncher
 	componentLauncher ComponentLauncher
 	removal           RemovalService
@@ -317,6 +319,9 @@ func (app *App) CreateInstallPlan(componentID string) (install.Plan, error) {
 	} else if componentID == "github-copilot-cli" && app.copilotPlanner != nil {
 		planner = app.copilotPlanner
 		owner = "copilot"
+	} else if componentID == "gemini-cli" && app.geminiPlanner != nil {
+		planner = app.geminiPlanner
+		owner = "gemini"
 	}
 	app.mu.RUnlock()
 	if planner == nil {
@@ -364,6 +369,8 @@ func (app *App) StartInstall(planID string) (install.Task, error) {
 		executor = app.kimiExecutor
 	} else if owner == "copilot" {
 		executor = app.copilotExecutor
+	} else if owner == "gemini" {
+		executor = app.geminiExecutor
 	}
 	selection := app.proxySelection
 	app.mu.RUnlock()
@@ -405,6 +412,8 @@ func (app *App) GetInstallTask(taskID string) (install.Task, error) {
 		executor = app.kimiExecutor
 	} else if app.taskOwners[taskID] == "copilot" {
 		executor = app.copilotExecutor
+	} else if app.taskOwners[taskID] == "gemini" {
+		executor = app.geminiExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {
@@ -474,6 +483,8 @@ func componentDisplayName(id string) string {
 		return "Kimi Code"
 	case "github-copilot-cli":
 		return "GitHub Copilot CLI"
+	case "gemini-cli":
+		return "Gemini CLI"
 	case "claude-desktop":
 		return "Claude Desktop"
 	case "chatgpt-desktop":
@@ -491,7 +502,7 @@ func componentDisplayName(id string) string {
 
 func knownComponentID(id string) bool {
 	switch id {
-	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "kimi-code", "github-copilot-cli", "claude-desktop", "chatgpt-desktop",
+	case "claude-code", "codex-cli", "opencode-cli", "deepseek-harness", "qwen-code", "kimi-code", "github-copilot-cli", "gemini-cli", "claude-desktop", "chatgpt-desktop",
 		"codex-desktop", "opencode-desktop", "cc-switch", "cockpit-tools":
 		return true
 	default:
@@ -645,6 +656,8 @@ func (app *App) CancelInstallTask(taskID string) error {
 		executor = app.kimiExecutor
 	} else if app.taskOwners[taskID] == "copilot" {
 		executor = app.copilotExecutor
+	} else if app.taskOwners[taskID] == "gemini" {
+		executor = app.geminiExecutor
 	}
 	app.mu.RUnlock()
 	if executor == nil {

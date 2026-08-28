@@ -7,7 +7,7 @@ afterEach(cleanup)
 
 it('provides a local icon for every supported component', () => {
   const ids = [
-    'claude-code', 'codex-cli', 'opencode-cli', 'deepseek-harness', 'qwen-code', 'kimi-code', 'github-copilot-cli',
+    'claude-code', 'codex-cli', 'opencode-cli', 'deepseek-harness', 'qwen-code', 'kimi-code', 'github-copilot-cli', 'gemini-cli',
     'claude-desktop', 'chatgpt-desktop', 'codex-desktop', 'opencode-desktop', 'cc-switch', 'cockpit-tools',
   ]
   const { container } = render(<>{ids.map((id) => <ToolIcon key={id} id={id} />)}</>)
@@ -20,6 +20,7 @@ it('provides a local icon for every supported component', () => {
   expect(container.querySelector('[data-tool-icon="codex-desktop"]')).toHaveAttribute('data-icon-family', 'codex')
   expect(container.querySelector('[data-tool-icon="chatgpt-desktop"]')).toHaveAttribute('data-icon-family', 'chatgpt')
   expect(container.querySelector('[data-tool-icon="kimi-code"]')).toHaveAttribute('data-icon-family', 'kimi')
+  expect(container.querySelector('[data-tool-icon="gemini-cli"]')).toHaveAttribute('data-icon-family', 'gemini')
   expect(container.querySelector('[data-tool-icon="codex-desktop"] svg')?.innerHTML)
     .not.toBe(container.querySelector('[data-tool-icon="chatgpt-desktop"] svg')?.innerHTML)
 
