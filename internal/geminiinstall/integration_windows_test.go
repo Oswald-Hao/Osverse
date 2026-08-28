@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -67,6 +69,18 @@ func integrationRuntimeArchive(t *testing.T) ([]byte, runtimeArtifact) {
 
 func runInstalledCommand(home string) (string, []byte, error) {
 	path := filepath.Join(home, ".local", "bin", commandName+".cmd")
-	output, err := exec.Command("cmd.exe", "/d", "/s", "/c", `call "`+path+`" --version`).CombinedOutput()
+	shell := os.Getenv("ComSpec")
+	if !filepath.IsAbs(shell) || strings.ContainsAny(shell+path, "\x00\r\n&|<>^%!") {
+		return path, nil, fmt.Errorf("unsafe Windows integration command")
+	}
+	// Supplying a complete command line avoids os/exec's generic Windows
+	// argument quoting, which is not cmd.exe syntax and can turn the quotes
+	// around a batch path into literal filename characters. This matches the
+	// raw CreateProcess command line used by the production launcher.
+	command := exec.Command(shell)
+	command.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: `"` + shell + `" /d /c call "` + path + `" --version`,
+	}
+	output, err := command.CombinedOutput()
 	return path, output, err
 }
