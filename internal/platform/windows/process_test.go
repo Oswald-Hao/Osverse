@@ -59,6 +59,29 @@ func TestCommandEnvironmentPreservesHarnessHome(t *testing.T) {
 	}
 }
 
+func TestCommandEnvironmentPreservesWindowsHomeVariables(t *testing.T) {
+	t.Setenv("HOME", `C:\Users\Alice`)
+	t.Setenv("HOMEDRIVE", `C:`)
+	t.Setenv("HOMEPATH", `\Users\Alice`)
+	want := map[string]bool{
+		`HOME=C:\Users\Alice`:   false,
+		`HOMEDRIVE=C:`:          false,
+		`HOMEPATH=\Users\Alice`: false,
+	}
+	for _, entry := range commandEnvironment(nil) {
+		for expected := range want {
+			if strings.EqualFold(entry, expected) {
+				want[expected] = true
+			}
+		}
+	}
+	for entry, found := range want {
+		if !found {
+			t.Errorf("command environment dropped %s", entry)
+		}
+	}
+}
+
 func TestExecRunnerReleasesTransferredEvidenceAfterProcessStart(t *testing.T) {
 	root := t.TempDir()
 	lockedPath := filepath.Join(root, "uninstaller-lock.exe")
