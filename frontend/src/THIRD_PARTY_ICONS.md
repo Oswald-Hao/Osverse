@@ -2,7 +2,7 @@
 
 Osverse renders tool icons locally and never loads a remote image at runtime.
 
-The Anthropic, OpenCode, DeepSeek, Qwen, and GitHub Copilot vector paths are adapted from the corresponding Simple Icons glyphs under the Simple Icons CC0-1.0 license. Source: [simple-icons/simple-icons@c956d67](https://github.com/simple-icons/simple-icons/tree/c956d67dfa7c37ae65206fc0775b0c02d1e695c2). Retrieved 2026-08-17.
+The Anthropic, OpenCode, DeepSeek, Qwen, GitHub Copilot, and Google Gemini vector paths are adapted from the corresponding Simple Icons glyphs under the Simple Icons CC0-1.0 license. Source: [simple-icons/simple-icons@c956d67](https://github.com/simple-icons/simple-icons/tree/c956d67dfa7c37ae65206fc0775b0c02d1e695c2). The Gemini glyph was verified against that pinned source on 2026-08-27; the other glyphs were retrieved 2026-08-17.
 
 The ChatGPT tile uses the OpenAI knot shown for the official ChatGPT app in the [OpenAI Help Center](https://help.openai.com/en/articles/7905742-what-does-the-official-chatgpt-ios-app-icon-look-like). Its local 24×24 vector was adapted from the MIT-licensed OpenAI glyph in [farion1231/cc-switch v3.19.2](https://github.com/farion1231/cc-switch/blob/v3.19.2/src/icons/extracted/openai.svg).
 

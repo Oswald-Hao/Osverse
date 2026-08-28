@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/Oswald-Hao/Osverse/internal/copilotinstall"
+	"github.com/Oswald-Hao/Osverse/internal/geminiinstall"
 	"github.com/Oswald-Hao/Osverse/internal/harnessinstall"
 	"github.com/Oswald-Hao/Osverse/internal/install"
 	"github.com/Oswald-Hao/Osverse/internal/kimiinstall"
@@ -33,6 +34,10 @@ func configurePlatformServices(app *App, home string) {
 	if manager, err := copilotinstall.NewManager(home); err == nil {
 		app.copilotPlanner = manager
 		app.copilotExecutor = manager
+	}
+	if manager, err := geminiinstall.NewManager(home); err == nil {
+		app.geminiPlanner = manager
+		app.geminiExecutor = manager
 	}
 	if manager, err := windowsinstall.NewManager(home); err == nil {
 		app.installPlanner = manager

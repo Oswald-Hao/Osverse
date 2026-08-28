@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>你的本地 AI 开发环境控制台。</strong><br>
-  在一个界面里检测、安装、更新、启动和安全移除 Claude Code、Codex CLI、OpenCode、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI、桌面应用与第三方 API。
+  在一个界面里检测、安装、更新、启动和安全移除 Claude Code、Codex CLI、OpenCode、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI、Gemini CLI、桌面应用与第三方 API。
 </p>
 
 <p align="center">
@@ -35,11 +35,12 @@
 
 换一台电脑，不应该重新花几个小时找运行时、代理端口、CLI 安装位置和各不相同的 API 配置文件。Osverse 把这些工作收进一个可检查、可确认、可恢复的桌面流程，并且尊重你已经安装好的工具。
 
-- **已有工具无需搬家。** Claude Code、Codex CLI、OpenCode、Qwen Code、Kimi Code、GitHub Copilot CLI 会从用户真实可用的命令路径中发现，不要求放进 Osverse 目录。
+- **已有工具无需搬家。** Claude Code、Codex CLI、OpenCode、Qwen Code、Kimi Code、GitHub Copilot CLI、Gemini CLI 会从用户真实可用的命令路径中发现，不要求放进 Osverse 目录。
 - **DeepSeek Harness 开箱即用。** Osverse 固定官方 Harness 与 Node.js 版本，逐个校验锁定依赖，不执行 npm 生命周期脚本；安装后可直接启动官方 Web 工作台，并能把已验证的第三方 API 档案安全应用到 Harness。
 - **Qwen Code 不依赖本机 Node。** Osverse 使用官方跨平台独立包，固定版本、长度和 SHA-256，安全解包后用包内 Node 启动；第三方 OpenAI 兼容 API 也可从 API 档案直接应用。
 - **Kimi Code 原生接入第三方 API。** Osverse 校验并安装官方独立二进制，可将已确认的 OpenAI Chat、OpenAI Responses 或 Anthropic Messages 档案写入 Kimi 原生 Provider，同时保持服务商的精确模型名。
 - **GitHub Copilot CLI 可验证安装。** Osverse 使用 GitHub 官方 standalone 包，锁定版本、长度和 SHA-256，并关闭上游自更新以避免绕过 Osverse 的统一更新验证；登录与订阅仍由 GitHub Copilot 管理。
+- **Gemini CLI 自带隔离运行时。** Osverse 固定 Google 官方 Apache-2.0 bundle 与 Node.js 版本，分别校验精确长度和 SHA-256，不执行 npm 生命周期脚本，也不要求安装或改动系统 Node/npm。
 - **每个真实安装都能控制。** 同一工具存在多个安装位置时会分别展示；启动前由后端重新扫描并核对文件身份，不会执行界面传入的任意路径。
 - **安装过程可解释。** 安装前显示后端生成的变更计划；下载同时校验固定长度和 SHA-256；版本原子切换，失败和异常退出都可恢复。
 - **移除可以预览和恢复。** 用户安装和 Osverse 管理的文件先进入系统回收站；系统软件包只通过固定提权动作移除，配置、凭据和会话默认保留。
@@ -52,7 +53,7 @@
 
 | 范围 | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
-| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI 的检测与事务式安装/更新 | 同左；Harness、Qwen Code、Kimi Code 与 Copilot CLI 使用独立的受校验用户级运行时 |
+| 核心 CLI | Claude Code、Codex CLI、OpenCode CLI、DeepSeek Harness、Qwen Code、Kimi Code、GitHub Copilot CLI、Gemini CLI 的检测与事务式安装/更新 | 同左；Harness、Qwen Code、Kimi Code、Copilot CLI 与 Gemini CLI 使用独立的受校验用户级运行时 |
 | 桌面应用 | Claude Desktop（Ubuntu 22.04+）、OpenCode Desktop | Claude Desktop、OpenCode Desktop、ChatGPT Desktop、Codex Desktop（分别识别） |
 | API 管理工具 | CC Switch、Cockpit Tools | CC Switch、Cockpit Tools |
 | API 档案 | Anthropic/OpenAI 兼容协议、模型名、Base URL、加密 Key | 同左；主密钥由当前 Windows 用户的 DPAPI 保护 |
@@ -92,6 +93,12 @@ API 档案探测到 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Mes
 在“核心 CLI”中选择 **GitHub Copilot CLI**，Osverse 会安装官方 `v1.0.80` standalone 包。Linux x64、Linux arm64、Windows x64、macOS x64 与 macOS arm64 制品均锁定官方 URL、精确长度和 SHA-256；当前 Linux x64 与 Windows x64 应用已启用安装。命令入口固定加入 `--no-auto-update`，因此运行时只能随经过测试的新 Osverse 版本更新，不会自行覆盖受管文件。
 
 首次启动按提示登录，也可以在终端运行 `copilot login`。使用需要有效的 GitHub Copilot 订阅；它不接受 Osverse 的通用第三方 API 档案，API Key、Base URL 和模型字段不会写入 Copilot 配置。详见 [GitHub Copilot CLI 接入指南](docs/guides/github-copilot-cli.md)。
+
+### Gemini CLI
+
+在“核心 CLI”中选择 **Gemini CLI**，Osverse 会安装 Google 官方 `0.57.0` npm bundle 与独立 Node.js `22.23.2` 运行时。两份制品都固定官方 HTTPS 地址、精确长度和 SHA-256；安装过程直接安全展开经过校验的文件，不运行 npm，也不会写入全局 `node_modules`。当前在 Ubuntu x64 与 Windows x64 应用中启用；上游建议 Ubuntu 20.04+ 与 Windows 11 24H2+。
+
+首次启动后按 Google 官方流程登录，或使用 Gemini API Key。Gemini CLI 不接受 Osverse 的通用 OpenAI/Anthropic 第三方 API 档案，因此 Osverse 不会把这些 Key、Base URL 或模型写入 `~/.gemini`。更新或移除受管运行时时，Google 登录、设置与会话数据默认保留。详见 [Gemini CLI 接入指南](docs/guides/gemini-cli.md)。
 
 ## 安装
 
@@ -141,7 +148,7 @@ gh attestation verify ./osverse_*.deb --repo Oswald-Hao/Osverse
 - 启动和移除前会重新扫描并验证目标身份；前端不能提交任意可执行路径或系统包名。
 - 用户文件使用可回滚操作移入 Freedesktop 回收站；配置、API 凭据和登录会话默认不删除。
 - Windows 上受管 CLI 使用锁定文件身份移入 `%LOCALAPPDATA%\Osverse\recovery`，卸载桌面应用只允许固定的 WinGet ID、Microsoft Store ID、MSI ProductCode 或受信任卸载器路径。
-- 安装源来自内置白名单，并同时校验文件长度与 SHA-256。Qwen Code、Kimi Code 与 Copilot CLI 会拒绝归档路径穿越、链接、特殊文件和异常归档结构；DeepSeek Harness 额外使用嵌入式 npm lockfile 对每个包做 SHA-512 校验，且不会执行包内安装脚本。
+- 安装源来自内置白名单，并同时校验文件长度与 SHA-256。Qwen Code、Kimi Code、Copilot CLI 与 Gemini CLI 会拒绝归档路径穿越、链接、特殊文件和异常归档结构；Gemini CLI 还把官方 bundle 与 Node.js 分别固定校验，DeepSeek Harness 则使用嵌入式 npm lockfile 对每个包做 SHA-512 校验。两者都不会执行 npm 生命周期脚本。
 - 安装末段的运行时提交、命令入口和 PATH 激活属于同一事务；失败只回滚本次新写入的版本，保留重新校验通过的已有版本，并明确报告无法自动清理的残留。
 - Osverse 自更新只接受固定仓库的语义化版本、匹配平台的结构化清单和精确发布路径；稳定版默认不接收预发布版，测试版可升级到更新的测试版或稳定版。
 - Osverse 管理的 CLI 版本位于 `~/.local/share/osverse/tools`，使用不可变版本目录、原子符号链接、即时回滚与权限为 `0600` 的崩溃恢复日志。
@@ -227,4 +234,4 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build -platform windows/am
 
 Apache-2.0，见 [LICENSE](LICENSE)。
 
-Osverse 是独立项目。Claude、Codex、OpenAI、OpenCode、DeepSeek、Qwen、Kimi、Moonshot AI、GitHub 和 Copilot 等名称属于各自权利人；列出它们仅表示兼容，不代表背书或合作关系。Copilot CLI 的上游许可证副本随受管运行时一同安装。
+Osverse 是独立项目。Claude、Codex、OpenAI、OpenCode、DeepSeek、Qwen、Kimi、Moonshot AI、GitHub、Copilot、Google 和 Gemini 等名称属于各自权利人；列出它们仅表示兼容，不代表背书或合作关系。Copilot CLI 的上游许可证副本随受管运行时一同安装。
