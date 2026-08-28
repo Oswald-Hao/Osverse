@@ -2,6 +2,13 @@
 
 Osverse follows semantic versioning while it is in prerelease. Published artifacts and exact dates are available on the [GitHub Releases](https://github.com/Oswald-Hao/Osverse/releases) page.
 
+## 0.9.0-beta.14
+
+- Give every Windows CLI a real interactive console with usable stdin/stdout/stderr, a user-profile working directory, and the expected home environment so Claude Code and other terminal applications no longer open as empty or unusable windows.
+- Start DeepSeek Harness without blocking the desktop bridge, wait longer for the real local workspace, and reliably dispatch a closed default browser through the Windows shell with bounded retries.
+- Add Gemini CLI 0.57.0 discovery, checksum-pinned transactional installation, launch, update, and safe removal on Ubuntu x64 and Windows x64 with a private Node.js 22.23.2 runtime; Google credentials, settings, and sessions remain untouched.
+- Cover desktop install task progress, cancellation, active-operation rejection, and retry behavior end to end, and upgrade the validated Wails, React, React DOM, React Testing Library, and Vitest toolchain.
+
 ## 0.9.0-beta.13
 
 - Launch every supported Windows CMD/BAT CLI through the system command processor with a validated verbatim command line and a new console.
