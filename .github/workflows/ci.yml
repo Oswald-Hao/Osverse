@@ -278,7 +278,7 @@ jobs:
 
       - name: Build user-scoped NSIS installer
         shell: pwsh
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 
       - name: Package and verify Windows release candidates
         shell: pwsh
@@ -360,7 +360,7 @@ jobs:
         run: npm --prefix frontend ci
 
       - name: Build production application
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -tags webkit2_40
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build -tags webkit2_40
 
       - name: Inspect application binary
         shell: bash
@@ -456,7 +456,7 @@ jobs:
       # requires library version 2.40+, while webkit2_36 supports Focal's
       # ABI-compatible 4.0 package and preserves the glibc 2.31 baseline.
       - name: Build Ubuntu 20.04-compatible application
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -tags webkit2_36
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build -tags webkit2_36
 
       - name: Inspect application binary
         shell: bash

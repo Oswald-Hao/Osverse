@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Oswald-Hao/Osverse/internal/install"
 	proxyservice "github.com/Oswald-Hao/Osverse/internal/proxy"
 )
 
@@ -137,6 +138,174 @@ func TestDownloadCancellationCannotCommit(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".local/bin/cc-switch")); !os.IsNotExist(err) {
 		t.Fatalf("launcher exists: %v", err)
+	}
+}
+
+func TestTaskLifecycleCompletesVerifiedDesktopInstall(t *testing.T) {
+	payload := append([]byte("\x7fELF"), []byte(strings.Repeat("verified", 64))...)
+	digest := sha256.Sum256(payload)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", itoa(len(payload)))
+		_, _ = writer.Write(payload)
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	item := artifact{
+		ID: "cc-switch", Name: "CC Switch", Command: "cc-switch", DesktopFile: "cc-switch.desktop",
+		Version: "1.2.3", Architecture: runtime.GOARCH, URL: server.URL,
+		SHA256: hex.EncodeToString(digest[:]), DownloadBytes: int64(len(payload)),
+	}
+	manager := testManager(home, item)
+	manager.client = func(proxyservice.Protocol, int) (*http.Client, error) { return server.Client(), nil }
+	plan, err := manager.CreatePlan(context.Background(), item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := manager.Start(context.Background(), plan.ID, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.ID == "" || started.PlanID != plan.ID || started.Phase != "queued" || started.Progress != 0 {
+		t.Fatalf("started task = %#v", started)
+	}
+
+	completed := waitForDesktopTask(t, manager, started.ID)
+	if completed.Phase != "completed" || completed.Progress != 100 || completed.ErrorCode != "" || completed.FinishedAt.IsZero() {
+		t.Fatalf("completed task = %#v", completed)
+	}
+	image := filepath.Join(home, ".local", "share", "osverse", "apps", item.ID, item.Version, "application.AppImage")
+	installed, err := os.ReadFile(image)
+	if err != nil || !bytes.Equal(installed, payload) {
+		t.Fatalf("installed image = (%d bytes, %v)", len(installed), err)
+	}
+	if err := manager.Cancel(started.ID); err != nil {
+		t.Fatalf("cancel completed task: %v", err)
+	}
+	if _, err := manager.Task("missing"); !errors.Is(err, ErrTaskUnavailable) {
+		t.Fatalf("missing task error = %v", err)
+	}
+}
+
+func TestTaskLifecycleRetainsPublicFailureState(t *testing.T) {
+	payload := append([]byte("\x7fELF"), []byte(strings.Repeat("corrupt", 64))...)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", itoa(len(payload)))
+		_, _ = writer.Write(payload)
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	item := artifact{
+		ID: "cc-switch", Name: "CC Switch", Command: "cc-switch", DesktopFile: "cc-switch.desktop",
+		Version: "1.2.3", Architecture: runtime.GOARCH, URL: server.URL,
+		SHA256: strings.Repeat("0", 64), DownloadBytes: int64(len(payload)),
+	}
+	manager := testManager(home, item)
+	manager.client = func(proxyservice.Protocol, int) (*http.Client, error) { return server.Client(), nil }
+	plan, err := manager.CreatePlan(context.Background(), item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := manager.Start(context.Background(), plan.ID, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := waitForDesktopTask(t, manager, started.ID)
+	if failed.Phase != "failed" || failed.ErrorCode != "INSTALL_FAILED" || failed.Message != "下载文件校验失败，未安装" || failed.FinishedAt.IsZero() {
+		t.Fatalf("failed task = %#v", failed)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".local", "bin", item.Command)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed install created launcher: %v", err)
+	}
+}
+
+func TestTaskCancellationRejectsConcurrentInstallAndPreservesRetryPlan(t *testing.T) {
+	payload := append([]byte("\x7fELF"), []byte(strings.Repeat("retry", 96))...)
+	digest := sha256.Sum256(payload)
+	firstStarted := make(chan struct{})
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if attempts.Add(1) == 1 {
+			close(firstStarted)
+			<-request.Context().Done()
+			return
+		}
+		writer.Header().Set("Content-Length", itoa(len(payload)))
+		_, _ = writer.Write(payload)
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	item := artifact{
+		ID: "cc-switch", Name: "CC Switch", Command: "cc-switch", DesktopFile: "cc-switch.desktop",
+		Version: "1.2.3", Architecture: runtime.GOARCH, URL: server.URL,
+		SHA256: hex.EncodeToString(digest[:]), DownloadBytes: int64(len(payload)),
+	}
+	manager := testManager(home, item)
+	manager.client = func(proxyservice.Protocol, int) (*http.Client, error) { return server.Client(), nil }
+	firstPlan, err := manager.CreatePlan(context.Background(), item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstTask, err := manager.Start(context.Background(), firstPlan.ID, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first desktop download did not start")
+	}
+
+	retryPlan, err := manager.CreatePlan(context.Background(), item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Start(context.Background(), retryPlan.ID, "", 0); !errors.Is(err, ErrInstallActive) {
+		t.Fatalf("concurrent Start() error = %v", err)
+	}
+	if err := manager.Cancel(firstTask.ID); err != nil {
+		t.Fatal(err)
+	}
+	canceled := waitForDesktopTask(t, manager, firstTask.ID)
+	if canceled.Phase != "canceled" || canceled.ErrorCode != "INSTALL_CANCELED" || canceled.FinishedAt.IsZero() {
+		t.Fatalf("canceled task = %#v", canceled)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".local", "bin", item.Command)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canceled install created launcher: %v", err)
+	}
+
+	retried, err := manager.Start(context.Background(), retryPlan.ID, "", 0)
+	if err != nil {
+		t.Fatalf("retry Start() = %v", err)
+	}
+	completed := waitForDesktopTask(t, manager, retried.ID)
+	if completed.Phase != "completed" || completed.Progress != 100 || attempts.Load() != 2 {
+		t.Fatalf("retried task = %#v, attempts = %d", completed, attempts.Load())
+	}
+}
+
+func waitForDesktopTask(t *testing.T, manager *Manager, id string) install.Task {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	lastProgress := 0
+	for {
+		task, err := manager.Task(id)
+		if err != nil {
+			t.Fatalf("Task(%q) = %v", id, err)
+		}
+		if task.Progress < lastProgress {
+			t.Fatalf("task progress regressed from %d to %d: %#v", lastProgress, task.Progress, task)
+		}
+		lastProgress = task.Progress
+		if terminal(task.Phase) {
+			return task
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task did not finish: %#v", task)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Your local control center for AI development tools.</strong><br>
-  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, DeepSeek Harness, Qwen Code, Kimi Code, GitHub Copilot CLI, desktop apps, and third-party API profiles from one place.
+  Detect, install, update, launch, and safely remove Claude Code, Codex CLI, OpenCode, DeepSeek Harness, Qwen Code, Kimi Code, GitHub Copilot CLI, Gemini CLI, desktop apps, and third-party API profiles from one place.
 </p>
 
 <p align="center">
@@ -35,11 +35,12 @@
 
 Moving to a new machine should not mean spending hours rediscovering runtimes, proxy settings, CLI locations, and API configuration formats. Osverse turns that setup work into an inspectable desktop workflow while preserving tools you already installed.
 
-- **Find what is already there.** Claude Code, Codex CLI, OpenCode, Qwen Code, Kimi Code, and GitHub Copilot CLI are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
+- **Find what is already there.** Claude Code, Codex CLI, OpenCode, Qwen Code, Kimi Code, GitHub Copilot CLI, and Gemini CLI are discovered from the user's effective command paths; they do not need to live inside an Osverse directory.
 - **Run DeepSeek Harness without environment setup.** Osverse pins the official Harness and Node.js versions, verifies every locked dependency, runs no npm lifecycle scripts, launches the official web workspace, and can safely apply a verified third-party API profile to Harness.
 - **Run Qwen Code without a system Node.js.** Osverse installs the official standalone archive with pinned version, length, and SHA-256, then uses its private Node runtime. Confirmed OpenAI-compatible API profiles can be applied directly.
 - **Connect Kimi Code to third-party APIs natively.** Osverse verifies the official standalone binary and writes confirmed OpenAI Chat, OpenAI Responses, or Anthropic Messages profiles through Kimi's native provider format while preserving the vendor's exact model ID.
 - **Install GitHub Copilot CLI from verified artifacts.** Osverse pins GitHub's official standalone package and disables upstream self-update so managed files cannot bypass Osverse's release verification. Authentication and subscription remain owned by GitHub Copilot.
+- **Run Gemini CLI from an isolated runtime.** Osverse pins Google's official Apache-2.0 bundle and Node.js runtime, verifies exact lengths and SHA-256 digests independently, executes no npm lifecycle scripts, and never requires or changes a system Node/npm installation.
 - **Control every real installation.** Multiple locations are shown separately. Before launch, the backend rescans and verifies file identity instead of executing an arbitrary frontend-provided path.
 - **Install without surrendering control.** Every supported CLI install starts with a backend-generated plan, verifies exact size and SHA-256, switches versions atomically, and can recover after interruption.
 - **Preview and recover removals.** User and Osverse-managed files go to the desktop Trash, while system packages use a fixed privileged action. Config, credentials, and sessions are preserved by default.
@@ -52,7 +53,7 @@ Moving to a new machine should not mean spending hours rediscovering runtimes, p
 
 | Area | Ubuntu 20.04/22.04 | Windows 10/11 x64 |
 | --- | --- | --- |
-| Core CLI | Claude Code, Codex CLI, OpenCode CLI, DeepSeek Harness, Qwen Code, Kimi Code, and GitHub Copilot CLI detection plus transactional install/update | Same; Harness, Qwen Code, Kimi Code, and Copilot CLI use verified private runtimes |
+| Core CLI | Claude Code, Codex CLI, OpenCode CLI, DeepSeek Harness, Qwen Code, Kimi Code, GitHub Copilot CLI, and Gemini CLI detection plus transactional install/update | Same; Harness, Qwen Code, Kimi Code, Copilot CLI, and Gemini CLI use verified private runtimes |
 | Desktop apps | Claude Desktop on Ubuntu 22.04+, OpenCode Desktop | Claude Desktop, OpenCode Desktop, ChatGPT Desktop, and Codex Desktop (detected separately) |
 | API tools | CC Switch, Cockpit Tools | CC Switch, Cockpit Tools |
 | API profiles | Anthropic/OpenAI-compatible endpoint, model, Base URL, encrypted key | Same; master key protected by current-user DPAPI |
@@ -92,6 +93,12 @@ After a profile confirms OpenAI Chat Completions, OpenAI Responses, or Anthropic
 Select **GitHub Copilot CLI** under Core CLI to install the official `v1.0.80` standalone package. Official URL, exact length, and SHA-256 metadata are pinned for Linux x64/arm64, Windows x64, and macOS x64/arm64; installation is currently enabled in the Linux x64 and Windows x64 apps. The managed command always adds `--no-auto-update`, so runtime upgrades arrive only through a tested Osverse release.
 
 Follow the prompt on first launch or run `copilot login` in a terminal. An active GitHub Copilot subscription is required. Copilot CLI does not consume Osverse's generic third-party API profiles, so no profile key, Base URL, or model is written into its configuration. See the [GitHub Copilot CLI integration guide](docs/guides/github-copilot-cli.md).
+
+### Gemini CLI
+
+Select **Gemini CLI** under Core CLI to install Google's official `0.57.0` npm bundle with a private Node.js `22.23.2` runtime. Both artifacts are pinned by official HTTPS URL, exact byte length, and SHA-256. Osverse safely expands the verified files without invoking npm or writing to global `node_modules`. Installation is enabled in the current Ubuntu x64 and Windows x64 apps; upstream recommends Ubuntu 20.04+ and Windows 11 24H2+.
+
+Follow Google's authentication flow on first launch, or use a Gemini API key. Gemini CLI does not consume Osverse's generic OpenAI/Anthropic third-party profiles, so Osverse never writes those keys, Base URLs, or models into `~/.gemini`. Google authentication, settings, and sessions remain in place when a managed runtime is updated or removed. See the [Gemini CLI integration guide](docs/guides/gemini-cli.md).
 
 ## Install
 
@@ -141,7 +148,7 @@ Osverse is deliberately narrower than a generic package manager.
 - Launch and removal rescan and verify target identity; the frontend cannot supply an arbitrary executable path or system package name.
 - User files are moved transactionally to the Freedesktop Trash, while config, API credentials, and login sessions remain untouched by default.
 - On Windows, locked managed-CLI identities move to `%LOCALAPPDATA%\Osverse\recovery`; desktop removal accepts only fixed WinGet IDs, Microsoft Store IDs, MSI ProductCodes, or trusted uninstaller paths.
-- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. Qwen Code, Kimi Code, and Copilot CLI extraction reject traversal, links, special entries, and unexpected archive layouts. DeepSeek Harness additionally verifies every npm tarball against an embedded lockfile with SHA-512 and executes no package install scripts.
+- Downloads come from a built-in allowlist and must match both an exact byte count and SHA-256 digest. Qwen Code, Kimi Code, Copilot CLI, and Gemini CLI extraction reject traversal, links, special entries, and unexpected archive layouts. Gemini independently pins its official bundle and Node.js runtime; DeepSeek Harness verifies every npm tarball against an embedded lockfile with SHA-512. Neither runs npm lifecycle scripts.
 - Runtime commit, command entry activation, and PATH updates form one final installation transaction. Failures remove only a newly written version, preserve a reverified existing version, and explicitly report residue that could not be cleaned automatically.
 - Osverse self-update accepts only semantic versions and platform artifacts from the fixed official repository and release-manifest path. Stable builds ignore prereleases; prerelease builds can advance to newer prereleases or stable releases.
 - Managed CLI versions live under `~/.local/share/osverse/tools`; an external command with the same name is not overwritten.
@@ -186,7 +193,7 @@ All screenshots above are from a real Osverse session on Ubuntu 22.04, not desig
 
 ## Build from source
 
-The pinned toolchain is Go 1.25.12, Node.js 22.23.2, and Wails 2.14.0.
+The pinned toolchain is Go 1.25.12, Node.js 22.23.2, and Wails 2.15.0.
 
 ```bash
 sudo apt-get update
@@ -199,10 +206,10 @@ go test -race ./...
 go vet ./...
 
 # Ubuntu 22.04
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_40
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 dev -tags webkit2_40
 
 # Ubuntu 20.04 (WebKitGTK 2.38 baseline)
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev -tags webkit2_36
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 dev -tags webkit2_36
 ```
 
 On Windows 10/11 x64 (PowerShell, with Go, Node.js, WebView2, and the Wails build environment):
@@ -212,10 +219,10 @@ npm --prefix frontend ci
 go test ./...
 go test -race ./...
 go vet ./...
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 dev
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 dev
 
 # Build a per-user NSIS installer
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.14.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
+go run github.com/wailsapp/wails/v2/cmd/wails@v2.15.0 build -platform windows/amd64 -nsis -webview2 embed -installscope user -trimpath
 ```
 
 Release packaging is checksum-pinned and produces Windows NSIS/portable artifacts plus Linux `.deb`, `.AppImage`, portable tar, checksums, SBOM, and update metadata:
@@ -235,4 +242,4 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), open a
 
 Apache-2.0. See [LICENSE](LICENSE).
 
-Osverse is an independent project. Claude, Codex, OpenAI, OpenCode, DeepSeek, Qwen, Kimi, Moonshot AI, GitHub, Copilot, and other product names belong to their respective owners; inclusion indicates interoperability, not endorsement. A copy of the upstream Copilot CLI license is installed with every managed runtime.
+Osverse is an independent project. Claude, Codex, OpenAI, OpenCode, DeepSeek, Qwen, Kimi, Moonshot AI, GitHub, Copilot, Google, Gemini, and other product names belong to their respective owners; inclusion indicates interoperability, not endorsement. A copy of the upstream Copilot CLI license is installed with every managed runtime.

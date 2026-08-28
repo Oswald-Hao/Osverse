@@ -11,3 +11,5 @@ func platformExecutableNames(base string) []string {
 }
 
 func platformMinimumOS() string { return "Windows 10 1809" }
+
+func platformGeminiMinimumOS() string { return "Windows 11 24H2" }

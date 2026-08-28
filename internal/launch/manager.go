@@ -46,6 +46,7 @@ var fixedComponents = map[string]componentKind{
 	"qwen-code":          {category: "Core CLI"},
 	"kimi-code":          {category: "Core CLI"},
 	"github-copilot-cli": {category: "Core CLI"},
+	"gemini-cli":         {category: "Core CLI"},
 	"claude-desktop":     {category: "Desktop Applications"},
 	"chatgpt-desktop":    {category: "Desktop Applications"},
 	"codex-desktop":      {category: "Desktop Applications"},

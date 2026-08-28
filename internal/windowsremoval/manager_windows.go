@@ -45,6 +45,7 @@ var componentRules = map[string]componentRule{
 	"qwen-code":          {category: "Core CLI", command: "qwen"},
 	"kimi-code":          {category: "Core CLI", command: "kimi"},
 	"github-copilot-cli": {category: "Core CLI", command: "copilot"},
+	"gemini-cli":         {category: "Core CLI", command: "gemini"},
 	"claude-desktop":     {category: "Desktop Applications", uninstallKind: "winget", uninstallID: "Anthropic.Claude"},
 	"chatgpt-desktop":    {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9NT1R1C2HH7J"},
 	"codex-desktop":      {category: "Desktop Applications", uninstallKind: "store", uninstallID: "9PLM9XGG6VKS"},

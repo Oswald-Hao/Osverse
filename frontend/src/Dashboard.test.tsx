@@ -101,6 +101,15 @@ const snapshot: EnvironmentSnapshot = {
       minimumOS: 'Ubuntu 20.04',
     },
     {
+      id: 'gemini-cli',
+      name: 'Gemini CLI',
+      category: 'Core CLI',
+      status: 'missing',
+      installations: [],
+      message: '未检测到安装',
+      minimumOS: 'Ubuntu 20.04',
+    },
+    {
       id: 'claude-desktop',
       name: 'Claude Desktop',
       category: 'Desktop Applications',
@@ -147,8 +156,8 @@ const snapshot: EnvironmentSnapshot = {
     },
   ],
   ready: 1,
-  total: 10,
-  needsAttention: 6,
+  total: 11,
+  needsAttention: 7,
 }
 
 function scanState(
@@ -178,7 +187,14 @@ afterEach(() => {
 
 describe('environment status dashboard', () => {
   it('renders system facts, local scan-time semantics, and summary counts', () => {
-    const dateTimeFormat = vi.spyOn(Intl, 'DateTimeFormat')
+    const OriginalDateTimeFormat = Intl.DateTimeFormat
+    const dateTimeOptions: Array<Intl.DateTimeFormatOptions | undefined> = []
+    const dateTimeFormat = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(
+      function (locales, options) {
+        dateTimeOptions.push(options)
+        return new OriginalDateTimeFormat(locales, options)
+      },
+    )
 
     try {
       render(<App />)
@@ -198,13 +214,13 @@ describe('environment status dashboard', () => {
       expect(scanTime?.nextElementSibling).not.toHaveTextContent(/^\s*$/)
 
       expect(dateTimeFormat).toHaveBeenCalledTimes(2)
-      for (const [, options] of dateTimeFormat.mock.calls) {
+      for (const options of dateTimeOptions) {
         expect(options).not.toHaveProperty('timeZone')
       }
 
       expect(screen.getByRole('article', { name: '已就绪 1' })).toBeVisible()
-      expect(screen.getByRole('article', { name: '工具总数 10' })).toBeVisible()
-      expect(screen.getByRole('article', { name: '需要关注 6' })).toBeVisible()
+      expect(screen.getByRole('article', { name: '工具总数 11' })).toBeVisible()
+      expect(screen.getByRole('article', { name: '需要关注 7' })).toBeVisible()
     } finally {
       dateTimeFormat.mockRestore()
     }
@@ -258,6 +274,7 @@ describe('environment status dashboard', () => {
     expect(within(cli).getByText('Claude Code')).toBeVisible()
     expect(within(cli).getByText('Codex CLI')).toBeVisible()
     expect(within(cli).getByText('Kimi Code')).toBeVisible()
+    expect(within(cli).getByText('Gemini CLI')).toBeVisible()
     expect(within(cli).queryByText('Claude Desktop')).not.toBeInTheDocument()
     expect(within(desktop).getByText('Claude Desktop')).toBeVisible()
     expect(within(desktop).getByText('ChatGPT Desktop')).toBeVisible()
@@ -412,6 +429,8 @@ describe('environment status dashboard', () => {
     expect(within(copilotCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
     const kimiCard = screen.getByRole('heading', { name: 'Kimi Code' }).closest('article')
     expect(within(kimiCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
+    const geminiCard = screen.getByRole('heading', { name: 'Gemini CLI' }).closest('article')
+    expect(within(geminiCard as HTMLElement).getByRole('button', { name: /安装/ })).toBeEnabled()
     const claudeCard = screen.getByRole('heading', { name: 'Claude Code' }).closest('article')
     expect(within(claudeCard as HTMLElement).getByRole('button', { name: /启动/ })).toBeEnabled()
     const desktopCard = screen.getByRole('heading', { name: 'Claude Desktop' }).closest('article')
@@ -422,7 +441,7 @@ describe('environment status dashboard', () => {
     expect(within(ccSwitch as HTMLElement).getByRole('button', { name: /更新/ })).toBeEnabled()
     const chatGPT = screen.getByRole('heading', { name: 'ChatGPT Desktop' }).closest('article')
     expect(within(chatGPT as HTMLElement).getByRole('button', { name: /配置/ })).toBeEnabled()
-    expect(screen.getAllByText('官方校验安装')).toHaveLength(6)
+    expect(screen.getAllByText('官方校验安装')).toHaveLength(7)
   })
 
   it('starts detected CLI and external desktop installations through Osverse', () => {

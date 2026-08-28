@@ -8,22 +8,38 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/Oswald-Hao/Osverse/internal/platform"
 	xwindows "golang.org/x/sys/windows"
 )
 
-type detachedStarter struct{}
+const localWebReadyTimeout = 90 * time.Second
 
-func NewDetachedStarter() platform.ProcessStarter { return detachedStarter{} }
+type detachedStarter struct {
+	waitLocalWeb func(string, time.Duration) error
+	openLocalWeb func(string) error
+	runAsync     func(func())
+}
 
-func (detachedStarter) Start(request platform.LaunchRequest) error {
+func NewDetachedStarter() platform.ProcessStarter {
+	return detachedStarter{
+		waitLocalWeb: waitForLocalWeb,
+		openLocalWeb: openLocalWeb,
+		runAsync:     func(task func()) { go task() },
+	}
+}
+
+func (starter detachedStarter) Start(request platform.LaunchRequest) error {
 	if !safeExecutablePath(request.Path) || !safeExecutablePath(request.ExpectedResolvedPath) {
 		return errors.New("unsafe launch path")
 	}
@@ -48,27 +64,31 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(path, args...)
-	attributes := &syscall.SysProcAttr{CreationFlags: flags}
+	var startErr error
 	if request.Terminal {
 		raw, err := terminalCommandLine(path, args)
 		if err != nil {
 			return err
 		}
-		// cmd.exe does not use the CommandLineToArgvW quoting convention
-		// applied by os/exec. Pass its already-validated command line
-		// verbatim so quoted batch paths survive process creation.
-		command = exec.Command(path)
-		attributes.CmdLine = raw
+		// Go's os/exec connects nil streams to NUL. That is correct for a
+		// background process but leaves a newly created console without usable
+		// input or output, causing interactive CLIs such as Claude Code to exit
+		// or render an empty window. CreateProcess without
+		// STARTF_USESTDHANDLES lets Windows attach the three standard handles to
+		// the new console instead.
+		startErr = startTerminalConsole(path, raw, flags, commandEnvironment(nil), terminalWorkingDirectory())
+	} else {
+		command := exec.Command(path, args...)
+		command.Env = commandEnvironment(nil)
+		command.Stdin, command.Stdout, command.Stderr = nil, nil, nil
+		command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
+		if err := command.Start(); err != nil {
+			return err
+		}
+		startErr = command.Process.Release()
 	}
-	command.Env = commandEnvironment(nil)
-	command.Stdin, command.Stdout, command.Stderr = nil, nil, nil
-	command.SysProcAttr = attributes
-	if err := command.Start(); err != nil {
-		return err
-	}
-	if err := command.Process.Release(); err != nil {
-		return err
+	if startErr != nil {
+		return startErr
 	}
 	after, err := openLockedIdentity(request.Path)
 	if err != nil {
@@ -79,14 +99,107 @@ func (detachedStarter) Start(request platform.LaunchRequest) error {
 		return errors.New("launch target changed")
 	}
 	if localWebURL != "" {
-		if err := waitForLocalWeb(localWebURL, 30*time.Second); err != nil {
-			return err
+		starter.launchLocalWeb(localWebURL)
+	}
+	return nil
+}
+
+func (starter detachedStarter) launchLocalWeb(endpoint string) {
+	wait := starter.waitLocalWeb
+	if wait == nil {
+		wait = waitForLocalWeb
+	}
+	open := starter.openLocalWeb
+	if open == nil {
+		open = openLocalWeb
+	}
+	run := starter.runAsync
+	if run == nil {
+		run = func(task func()) { go task() }
+	}
+	run(func() {
+		if wait(endpoint, localWebReadyTimeout) != nil {
+			return
 		}
-		if err := openLocalWeb(localWebURL); err != nil {
+		for attempt := 0; attempt < 3; attempt++ {
+			if open(endpoint) == nil {
+				return
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+	})
+}
+
+func startTerminalConsole(application, commandLine string, flags uint32, environment []string, directory string) error {
+	applicationUTF16, err := xwindows.UTF16PtrFromString(application)
+	if err != nil {
+		return err
+	}
+	commandLineUTF16, err := xwindows.UTF16PtrFromString(commandLine)
+	if err != nil {
+		return err
+	}
+	environmentBlock, err := environmentUTF16Block(environment)
+	if err != nil {
+		return err
+	}
+	var environmentPointer *uint16
+	if len(environmentBlock) > 0 {
+		environmentPointer = &environmentBlock[0]
+	}
+	var directoryPointer *uint16
+	if directory != "" {
+		directoryPointer, err = xwindows.UTF16PtrFromString(directory)
+		if err != nil {
 			return err
 		}
 	}
-	return nil
+	startup := xwindows.StartupInfo{Cb: uint32(unsafe.Sizeof(xwindows.StartupInfo{}))}
+	var process xwindows.ProcessInformation
+	err = xwindows.CreateProcess(
+		applicationUTF16, commandLineUTF16, nil, nil, false,
+		flags|xwindows.CREATE_UNICODE_ENVIRONMENT, environmentPointer, directoryPointer, &startup, &process,
+	)
+	if err != nil {
+		return err
+	}
+	threadErr := xwindows.CloseHandle(process.Thread)
+	processErr := xwindows.CloseHandle(process.Process)
+	return errors.Join(threadErr, processErr)
+}
+
+func environmentUTF16Block(environment []string) ([]uint16, error) {
+	entries := append([]string(nil), environment...)
+	sort.SliceStable(entries, func(i, j int) bool { return strings.ToUpper(entries[i]) < strings.ToUpper(entries[j]) })
+	block := make([]uint16, 0, len(entries)*32)
+	for _, entry := range entries {
+		if entry == "" || strings.ContainsRune(entry, 0) {
+			return nil, errors.New("invalid Windows environment entry")
+		}
+		encoded, err := xwindows.UTF16FromString(entry)
+		if err != nil {
+			return nil, err
+		}
+		block = append(block, encoded...)
+	}
+	// Every encoded entry already carries one NUL. One additional NUL closes
+	// the Unicode environment block; an empty block still needs two NULs.
+	if len(block) == 0 {
+		return []uint16{0, 0}, nil
+	}
+	return append(block, 0), nil
+}
+
+func terminalWorkingDirectory() string {
+	home := os.Getenv("USERPROFILE")
+	if !safeExecutablePath(home) {
+		return ""
+	}
+	info, err := os.Stat(home)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return filepath.Clean(home)
 }
 
 func prepareLocalWebLaunch(request platform.LaunchRequest) (platform.LaunchRequest, string, error) {
@@ -106,7 +219,7 @@ func prepareLocalWebLaunch(request platform.LaunchRequest) (platform.LaunchReque
 }
 
 func waitForLocalWeb(endpoint string, timeout time.Duration) error {
-	if !strings.HasPrefix(endpoint, "http://127.0.0.1:") || timeout <= 0 {
+	if !validLocalWebEndpoint(endpoint) || timeout <= 0 {
 		return errors.New("invalid local web endpoint")
 	}
 	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: time.Second}
@@ -126,6 +239,28 @@ func waitForLocalWeb(endpoint string, timeout time.Duration) error {
 }
 
 func openLocalWeb(endpoint string) error {
+	if !validLocalWebEndpoint(endpoint) {
+		return errors.New("invalid local web endpoint")
+	}
+	// Starting Explorer with an HTTP URL asks the interactive Windows shell to
+	// dispatch the user's default browser. Unlike an in-process ShellExecute
+	// call from a short-lived background goroutine, the separate shell process
+	// remains alive long enough to complete first-browser startup and DDE
+	// handoff when no browser window already exists.
+	if root := os.Getenv("SystemRoot"); safeCommandProcessorRoot(root) {
+		explorer := filepath.Join(filepath.Clean(root), "explorer.exe")
+		if info, err := os.Stat(explorer); err == nil && !info.IsDir() {
+			command := exec.Command(explorer, endpoint)
+			command.Env = commandEnvironment(nil)
+			command.Stdin, command.Stdout, command.Stderr = nil, nil, nil
+			command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: xwindows.CREATE_NEW_PROCESS_GROUP | xwindows.DETACHED_PROCESS}
+			if err := command.Start(); err == nil {
+				if err := command.Process.Release(); err == nil {
+					return nil
+				}
+			}
+		}
+	}
 	verb, err := xwindows.UTF16PtrFromString("open")
 	if err != nil {
 		return err
@@ -135,6 +270,19 @@ func openLocalWeb(endpoint string) error {
 		return err
 	}
 	return xwindows.ShellExecute(0, verb, target, nil, nil, xwindows.SW_SHOWNORMAL)
+}
+
+func validLocalWebEndpoint(endpoint string) bool {
+	if !strings.HasPrefix(endpoint, "http://127.0.0.1:") || strings.ContainsAny(endpoint, "\x00\r\n") {
+		return false
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return false
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	return err == nil && port > 0 && port <= 65535
 }
 
 func launchInvocation(request platform.LaunchRequest) (string, []string, uint32, error) {
