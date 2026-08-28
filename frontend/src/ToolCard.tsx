@@ -15,7 +15,7 @@ const actionLabels: Record<Component['status'], string> = {
 }
 
 const installableComponents = new Set([
-  'claude-code', 'codex-cli', 'opencode-cli', 'deepseek-harness', 'qwen-code', 'kimi-code', 'github-copilot-cli',
+  'claude-code', 'codex-cli', 'opencode-cli', 'deepseek-harness', 'qwen-code', 'kimi-code', 'github-copilot-cli', 'gemini-cli',
   'claude-desktop', 'chatgpt-desktop', 'codex-desktop',
   'opencode-desktop', 'cc-switch', 'cockpit-tools',
 ])
