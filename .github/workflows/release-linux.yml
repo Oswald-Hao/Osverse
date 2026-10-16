@@ -72,7 +72,7 @@ jobs:
           build/linux/fetch-appimage-tools.sh build/tools/appimage
           build/linux/package.sh "$version" build/bin/osverse ubuntu22.04 build/release/ubuntu22.04 build/tools/appimage
       - name: Upload Ubuntu 22.04 packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-ubuntu22.04
           path: build/release/ubuntu22.04/*
@@ -127,7 +127,7 @@ jobs:
           build/linux/fetch-appimage-tools.sh build/tools/appimage
           build/linux/package.sh "$version" build/bin/osverse ubuntu20.04 build/release/ubuntu20.04 build/tools/appimage
       - name: Upload Ubuntu 20.04 packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-ubuntu20.04
           path: build/release/ubuntu20.04/*
@@ -207,7 +207,7 @@ jobs:
           $version = '${{ github.ref_name }}'.Substring(1)
           ./build/windows/smoke.ps1 -Installer "build/release/windows/osverse-$version-windows-amd64-setup.exe"
       - name: Upload Windows packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-windows-amd64
           path: build/release/windows/*
